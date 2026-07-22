@@ -15,58 +15,57 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 from types import MethodType
-from unittest.mock import call, MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import click
-import griffe as gf
 import griffe
+import griffe as gf
 import pytest
 import requests
 from click.testing import CliRunner
-from PIL import Image as PILImage
 from griffe import AliasResolutionError, DocstringSectionKind, ExprName
+from PIL import Image as PILImage
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
-from yaml12 import format_yaml as _format_yaml, parse_yaml as _parse_yaml
+from yaml12 import format_yaml as _format_yaml
+from yaml12 import parse_yaml as _parse_yaml
 
-from great_docs import Config, create_default_config, GreatDocs, load_config
-from great_docs._apiref import _globals
-from great_docs._apiref import content
-from great_docs._apiref import spec
+from great_docs import Config, GreatDocs, create_default_config, load_config
+from great_docs._apiref import _globals, content, spec, write
 from great_docs._apiref._docstring_sections import (
+    DCDocstringSection,
     DocstringSectionKindPatched,
     DocstringSectionNotes,
     DocstringSectionSeeAlso,
     DocstringSectionWarnings,
     ExampleCode,
     ExampleText,
+    _DocstringSectionPatched,
     transform,
     tuple_to_data,
-    _DocstringSectionPatched,
 )
-from great_docs._apiref._preview import Formatter
 from great_docs._apiref._format import (
+    HAS_RUFF,
     format_name,
     format_see_also,
     format_str,
     format_value,
     formatted_signature,
-    HAS_RUFF,
     repr_obj,
 )
 from great_docs._apiref._globals import EXCLUSIONS
-from great_docs._apiref._docstring_sections import DCDocstringSection
+from great_docs._apiref._preview import Formatter
 from great_docs._apiref._render import (
-    get_render_type,
     RenderDocAttribute,
     RenderDocClass,
     RenderDocFunction,
     RenderDocModule,
+    get_render_type,
 )
 from great_docs._apiref._render._label import (
-    get_label,
     _attribute_label,
     _class_label,
     _function_label,
+    get_label,
 )
 from great_docs._apiref._render.api_page import RenderAPIPage
 from great_docs._apiref._render.base import RenderBase
@@ -86,68 +85,45 @@ from great_docs._apiref._render.mixin_page import RenderPageMixin
 from great_docs._apiref._render.reference_page import RenderReferencePage
 from great_docs._apiref._render.reference_section import RenderReferenceSection
 from great_docs._apiref._rst_converters import (
-    escape,
-    sanitize,
+    _GOOGLE_RAISES_RE,
+    _RST_CODE_BLOCK_RE,
     _convert_bold_section_headers,
     _convert_google_sections,
     _convert_rst_citations,
     _convert_rst_directives,
     _convert_rst_grid_tables,
     _convert_rst_simple_tables,
-    convert_rst_text,
     _convert_sphinx_fields,
     _convert_sphinx_roles,
-    fence_doctest_blocks,
     _parse_google_entries,
-    _GOOGLE_RAISES_RE,
     _replace_rst_code_block,
-    _RST_CODE_BLOCK_RE,
-    _rst_directive_to_callout,
     _rst_grid_table_to_md,
     _rst_simple_table_to_md,
     _smart_dedent,
+    convert_rst_text,
+    escape,
+    fence_doctest_blocks,
+    sanitize,
 )
 from great_docs._apiref._tools import render_code_variable, render_type_object
-from great_docs._apiref._visitor import ctx_node, Node
 from great_docs._apiref._type_checks import (
     griffe_to_doc,
+    is_doc_attribute,
+    is_doc_class,
+    is_doc_function,
     is_field_init_false,
     is_initvar,
     is_protocol,
     is_typealias,
     is_typevar,
-    is_doc_attribute,
-    is_doc_class,
-    is_doc_function,
 )
-from great_docs._apiref.resolve import (
-    ObjectNotFoundError,
-    _Resolver,
-    _sections_from_package,
-    _is_external_alias,
-    _to_simple_dict,
-)
+from great_docs._apiref._visitor import Node, ctx_node
+from great_docs._apiref.api_reference import APIReference, Settings
 from great_docs._apiref.collect import (
-    build_manifest,
     _ManifestBuilder,
     _PackagePrefixRemover,
+    build_manifest,
     remove_package_prefix,
-)
-from great_docs._apiref.spec import SpecSection
-from great_docs._apiref.api_reference import APIReference, Settings
-from great_docs._apiref.introspect import (
-    dynamic_alias,
-    get_object,
-    get_parser_defaults,
-    replace_docstring,
-    _is_valueless,
-    resolve_alias,
-)
-from great_docs._apiref import write
-from great_docs._apiref.write import _insert_contents, merge_frontmatter as _merge_frontmatter
-from great_docs._apiref.inventory import (
-    create_inventory,
-    write_inventory,
 )
 from great_docs._apiref.content import (
     Doc,
@@ -161,14 +137,21 @@ from great_docs._apiref.content import (
     Section,
     SummaryItem,
 )
-from great_docs._apiref.inventory import InventoryItem
-from great_docs._apiref.spec import ChildrenStyle
-from great_docs._apiref.spec import SpecObject
-from great_docs._apiref.spec import SpecOptions
+from great_docs._apiref.introspect import (
+    _is_valueless,
+    dynamic_alias,
+    get_object,
+    get_parser_defaults,
+    replace_docstring,
+    resolve_alias,
+)
+from great_docs._apiref.inventory import (
+    InventoryItem,
+    create_inventory,
+    write_inventory,
+)
 from great_docs._apiref.pandoc.blocks import (
     Block,
-    blockcontent_to_str,
-    blockcontent_to_str_items,
     Blocks,
     BulletList,
     CodeBlock,
@@ -181,19 +164,32 @@ from great_docs._apiref.pandoc.blocks import (
     Plain,
     RawHTMLBlockTag,
     RenderedDocObject,
+    blockcontent_to_str,
+    blockcontent_to_str_items,
 )
 from great_docs._apiref.pandoc.components import Attr
 from great_docs._apiref.pandoc.inlines import (
     Code,
     Emph,
-    inlinecontent_to_str,
     Inlines0,
     InterLink,
-    shortcode,
     Str,
     Strong,
+    inlinecontent_to_str,
+    shortcode,
 )
+from great_docs._apiref.resolve import (
+    ObjectNotFoundError,
+    _is_external_alias,
+    _Resolver,
+    _sections_from_package,
+    _to_simple_dict,
+)
+from great_docs._apiref.spec import ChildrenStyle, SpecObject, SpecOptions, SpecSection
 from great_docs._apiref.typing_information import TypeInformation, TypeSections
+from great_docs._apiref.write import _insert_contents
+from great_docs._apiref.write import merge_frontmatter as _merge_frontmatter
+from great_docs._builtin.directives._callouts import render_callout
 from great_docs.cli import (
     _detect_optional_dependencies,
     _detect_package_manager,
@@ -32487,24 +32483,24 @@ def test_rstconv_directive_deprecated_with_description():
 
 
 def test_rstconv_directive_to_callout_version_no_version():
-    """_rst_directive_to_callout handles version directive with no version string."""
-    result = _rst_directive_to_callout("versionadded", "")
+    """A version directive without a version retains its generic title."""
+    result = render_callout("versionadded", "")
 
     assert "Added in version" in result
     assert ".callout-note" in result
 
 
 def test_rstconv_directive_to_callout_note_empty():
-    """_rst_directive_to_callout for note with empty body."""
-    result = _rst_directive_to_callout("note", "")
+    """An empty note still produces a valid Quarto callout."""
+    result = render_callout("note", "")
 
     assert ".callout-note" in result
     assert ":::" in result
 
 
 def test_rstconv_directive_to_callout_note_with_content():
-    """_rst_directive_to_callout for note with content."""
-    result = _rst_directive_to_callout("note", "Some text", "inline part")
+    """A note callout contains its inline and block content."""
+    result = render_callout("note", "Some text", "inline part")
 
     assert ".callout-note" in result
     assert "inline part" in result or "Some text" in result
@@ -33059,7 +33055,7 @@ def test_rstconv_grid_table_body_row_short_padding():
 
 def test_rstconv_directive_block_empty_body():
     """Block directive with empty body lines hits else branch."""
-    result = _rst_directive_to_callout("warning", "")
+    result = render_callout("warning", "")
 
     assert ".callout-warning" in result
     assert ":::" in result

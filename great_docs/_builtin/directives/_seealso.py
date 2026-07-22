@@ -1,9 +1,4 @@
-"""
-Built-in handlers for great-docs `%`-directives, registered on the pipeline events
-
-`%nodoc` skips an object; `%seealso` merges its entries into the object's
-See Also section.
-"""
+"""The built-in `%seealso` section directive"""
 
 from __future__ import annotations
 
@@ -14,7 +9,6 @@ import griffe as gf
 from great_docs._utils import parse_seealso
 from great_docs.hooks import on_object_resolved
 
-_NODOC_RE = re.compile(r"^\s*%nodoc(?:\s+(true|yes|1))?\s*$", re.MULTILINE | re.IGNORECASE)
 _SEEALSO_LINE_RE = re.compile(
     r"^[^\S\r\n]*%seealso(?:[^\S\r\n]+[^\r\n]*)?[^\S\r\n]*\r?$\n?",
     re.MULTILINE,
@@ -22,28 +16,7 @@ _SEEALSO_LINE_RE = re.compile(
 _SEEALSO_TITLE = "see also"
 
 
-@on_object_resolved(priority=-100)
-def exclude_nodoc(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias | None:
-    """
-    Skip an object whose docstring carries the `%nodoc` directive
-
-    Parameters
-    ----------
-    obj
-        The object just resolved from its reference.
-
-    Returns
-    -------
-    The object, or `None` when its docstring carries `%nodoc`.
-    """
-    docstring = obj.docstring
-    text = docstring.value if docstring is not None else None
-    if text is not None and _NODOC_RE.search(text):
-        return None
-    return obj
-
-
-@on_object_resolved(priority=100)
+@on_object_resolved(priority=100)  # pyright: ignore[reportArgumentType]
 def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     """
     Merge an object's `%seealso` entries into its See Also section
@@ -51,13 +24,12 @@ def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     Parameters
     ----------
     obj
-        The object just resolved from its reference.
+        The resolved object.
 
     Returns
     -------
-    The same object. When its docstring carries `%seealso`, the directive line
-    is removed and its entries are folded into the object's See Also section
-    (merged with an existing one, deduped by name, or added as a new section).
+    The object with directive lines removed and their unique entries merged
+    into its See Also section.
     """
     docstring = obj.docstring
     if docstring is None or "%seealso" not in docstring.value:
@@ -66,11 +38,8 @@ def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     value = docstring.value
     cleaned = _strip_seealso(value)
     if cleaned == value:
-        # `%seealso` occurs, but not as a directive line (e.g. inline prose).
         return obj
 
-    # Drop the directive line(s), then reparse the cleaned prose so the parsed
-    # sections match the value the renderer will read.
     docstring.value = cleaned
     docstring.__dict__.pop("parsed", None)
 
@@ -79,15 +48,14 @@ def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
         return obj
 
     sections = docstring.parsed
-
     existing = _find_see_also(sections)
-    seen = _existing_names(existing.value.contents) if existing is not None else set()
+    seen: set[str] = _existing_names(existing.value.contents) if existing is not None else set()
     added: list[str] = []
-    for name, desc in entries:
+    for name, description in entries:
         if name in seen:
             continue
         seen.add(name)
-        added.append(_entry_line(name, desc))
+        added.append(_entry_line(name, description))
 
     if existing is not None:
         if added:
@@ -100,21 +68,56 @@ def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
 
 
 def _strip_seealso(text: str) -> str:
-    """Remove `%seealso` directive line(s) and collapse the blank lines left behind"""
+    """
+    Remove `%seealso` directive lines and collapse excess gaps
+
+    Parameters
+    ----------
+    text
+        Docstring text containing `%seealso` directives.
+
+    Returns
+    -------
+    The text with directive lines removed and excess blank lines collapsed.
+    """
     cleaned = _SEEALSO_LINE_RE.sub("", text)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
-def _entry_line(name: str, desc: str) -> str:
-    """Format one See Also entry as a `name : desc` line, or bare `name` when undescribed"""
-    return f"{name} : {desc}" if desc else name
+def _entry_line(name: str, description: str) -> str:
+    """
+    Format a See Also entry with its optional description
+
+    Parameters
+    ----------
+    name
+        The referenced object name.
+    description
+        An optional description of the referenced object.
+
+    Returns
+    -------
+    A formatted See Also entry.
+    """
+    return f"{name} : {description}" if description else name
 
 
 def _find_see_also(
     sections: list[gf.DocstringSection],
 ) -> gf.DocstringSectionAdmonition | None:
-    """Return the first See Also admonition among `sections`, or `None`"""
+    """
+    Return the first See Also admonition in a sequence of sections
+
+    Parameters
+    ----------
+    sections
+        Parsed docstring sections to search.
+
+    Returns
+    -------
+    The first matching See Also section, or `None` when none exists.
+    """
     for section in sections:
         if (
             isinstance(section, gf.DocstringSectionAdmonition)
@@ -125,7 +128,18 @@ def _find_see_also(
 
 
 def _existing_names(contents: str) -> set[str]:
-    """Collect the leading qualified names already present in a See Also body"""
+    """
+    Collect qualified names already represented in a See Also body
+
+    Parameters
+    ----------
+    contents
+        The contents of a See Also section.
+
+    Returns
+    -------
+    The qualified names represented in the section.
+    """
     names: set[str] = set()
     for line in contents.splitlines():
         name_part = line.split(":", 1)[0]

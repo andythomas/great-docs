@@ -2,7 +2,7 @@ import textwrap
 
 import griffe as gf
 
-from great_docs._builtin._directives import add_seealso
+from great_docs._builtin.directives._seealso import add_seealso
 
 
 def _obj(doc: str) -> gf.Function:
@@ -144,7 +144,7 @@ def test_add_seealso_registers_on_import():
 def test_nodoc_runs_before_seealso():
     # nodoc must short-circuit before seealso runs — enforced by priority,
     # not import order. Assert run order, not the priority numbers.
-    from great_docs._builtin._directives import exclude_nodoc
+    from great_docs._builtin.directives._nodoc import exclude_nodoc
     from great_docs.hooks import _object_resolved
 
     order = list(_object_resolved.REGISTRY)

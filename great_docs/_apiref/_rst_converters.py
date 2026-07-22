@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import re
 
+from great_docs._builtin.directives._callouts import (
+    CALLOUT_DIRECTIVES,
+    convert_directives,
+    render_callout,
+)
+
 # Shared text utilities --------------------------------------------------------
 
 
@@ -170,6 +176,9 @@ def convert_rst_text(text: str) -> str:
 
     # Sphinx cross-reference roles -> markdown code spans
     text = _convert_sphinx_roles(text)
+
+    # Great Docs directives -> Quarto callout blocks
+    text = convert_directives(text)
 
     # RST admonition / version directives -> Quarto callout blocks
     text = _convert_rst_directives(text)
@@ -506,99 +515,74 @@ def _convert_sphinx_roles(text: str) -> str:
 # RST directive → Quarto callout conversion -----------------------------------
 
 
-_RST_DIRECTIVE_CALLOUT_MAP: dict[str, str] = {
-    "note": "note",
-    "warning": "warning",
-    "caution": "caution",
-    "danger": "important",
-    "important": "important",
-    "tip": "tip",
-    "hint": "tip",
-}
-
-_RST_VERSION_DIRECTIVES = frozenset({"versionadded", "versionchanged", "deprecated"})
-
-_RST_VERSION_LABELS: dict[str, str] = {
-    "versionadded": "Added in version",
-    "versionchanged": "Changed in version",
-    "deprecated": "Deprecated since version",
-}
-
-# Build alternation of all recognised RST directive names
-_ALL_RST_DIRECTIVE_NAMES = sorted(
-    set(_RST_DIRECTIVE_CALLOUT_MAP) | _RST_VERSION_DIRECTIVES,
-    key=len,
-    reverse=True,
+_RST_DIRECTIVE_NAME_PATTERN = "|".join(
+    re.escape(name) for name in sorted(CALLOUT_DIRECTIVES, key=len, reverse=True)
 )
-_RST_DIRECTIVE_NAME_PAT = "|".join(re.escape(n) for n in _ALL_RST_DIRECTIVE_NAMES)
-
-
-def _rst_directive_to_callout(name: str, body: str, inline: str = "") -> str:
-    """Build a Quarto callout div from a parsed RST directive"""
-    if name in _RST_VERSION_DIRECTIVES:
-        label = _RST_VERSION_LABELS[name]
-        # Version number may be on the inline portion or the start of body
-        version_text = (inline.strip() + " " + body.strip()).strip()
-        parts = version_text.split(None, 1) if version_text else []
-        version = parts[0] if parts else ""
-        desc = parts[1] if len(parts) > 1 else ""
-        callout = "warning" if name == "deprecated" else "note"
-        title = f"{label} {version}" if version else label
-        body_line = f"\n{desc}\n" if desc else "\n"
-        return f'::: {{.callout-{callout} title="{title}"}}{body_line}:::'
-    else:
-        callout = _RST_DIRECTIVE_CALLOUT_MAP.get(name, "note")
-        content = (inline.strip() + " " + body.strip()).strip()
-        body_line = f"\n{content}\n" if content else "\n"
-        return f"::: {{.callout-{callout}}}{body_line}:::"
+_RST_DIRECTIVE_RE = re.compile(
+    rf"^(?P<indent>[ \t]*)\.\.[ \t]+(?P<name>{_RST_DIRECTIVE_NAME_PATTERN})::"
+    r"(?:[ \t]*(?P<inline>.*?))?[ \t]*$"
+)
 
 
 def _convert_rst_directives(text: str) -> str:
-    """Convert RST admonition / version directives to Quarto callout blocks
+    """Render Sphinx callout directives in docstring text as Quarto blocks"""
+    lines = text.splitlines()
+    converted: list[str] = []
+    index = 0
 
-    Handles inline form (``.. note:: body``) and block form
-    (``.. note::\\n\\n    indented body``).
-    """
+    while index < len(lines):
+        match = _RST_DIRECTIVE_RE.match(lines[index])
+        if match is None:
+            converted.append(lines[index])
+            index += 1
+            continue
 
-    # --- block form (with optional blank line before indented body) ----------
-    def _replace_block(m: re.Match) -> str:
-        name = m.group("name")
-        inline = m.group("inline") or ""
-        body = "\n".join(_dedent_lines(m.group("body").splitlines()))
-        return _rst_directive_to_callout(name, body, inline)
+        directive_indent = len(match.group("indent"))
+        body_lines, index = _rst_indented_body(lines, index + 1, directive_indent)
+        body = "\n".join(_dedent_lines(body_lines))
+        converted.extend(
+            render_callout(
+                match.group("name"),
+                body,
+                match.group("inline") or "",
+            ).splitlines()
+        )
 
-    text = re.sub(
-        rf"^\.\.\s+(?P<name>{_RST_DIRECTIVE_NAME_PAT})::"
-        rf"\s*(?P<inline>[^\n]*)\n"
-        rf"(?:\n)?"  # optional blank line
-        rf"(?P<body>(?:[ ]{{4,}}\S.*\n?)+)",
-        _replace_block,
-        text,
-        flags=re.MULTILINE,
-    )
+    return "\n".join(converted)
 
-    # --- inline form (body text on the same line, no block follows) ----------
-    def _replace_inline(m: re.Match) -> str:
-        name = m.group("name")
-        body = m.group("body").strip()
-        return _rst_directive_to_callout(name, "", body)
 
-    text = re.sub(
-        rf"^\.\.\s+(?P<name>{_RST_DIRECTIVE_NAME_PAT})::\s*(?P<body>[^\n]+)$",
-        _replace_inline,
-        text,
-        flags=re.MULTILINE,
-    )
+def _rst_indented_body(
+    lines: list[str],
+    start: int,
+    directive_indent: int,
+) -> tuple[list[str], int]:
+    """Collect an RST directive body and its first unconsumed line"""
+    body: list[str] = []
+    index = start
 
-    # --- bare form (directive with no body at all) ---------------------------
-    text = re.sub(
-        rf"^\.\.\s+(?P<name>{_RST_DIRECTIVE_NAME_PAT})::\s*$",
-        lambda m: _rst_directive_to_callout(m.group("name"), ""),
-        text,
-        flags=re.MULTILINE,
-    )
+    while index < len(lines):
+        line = lines[index]
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if indent <= directive_indent:
+                break
+            body.append(line)
+            index += 1
+            continue
 
-    return text
+        next_content = index + 1
+        while next_content < len(lines) and not lines[next_content].strip():
+            next_content += 1
+        if next_content >= len(lines):
+            break
+        next_line = lines[next_content]
+        next_indent = len(next_line) - len(next_line.lstrip())
+        if next_indent <= directive_indent:
+            break
+        body.append("")
+        index += 1
+
+    return body, index
 
 
 # Bold section-header conversion ----------------------------------------------

@@ -5,6 +5,6 @@ Importing this package imports each handler submodule, which registers its
 handlers as a side effect.
 """
 
-from . import _directives  # noqa: F401  — registers its object_resolved handler
+from . import directives as directives  # pyright: ignore[reportUnusedImport]
 
 __all__: list[str] = []
