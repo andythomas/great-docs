@@ -422,13 +422,16 @@ docstring and that name is a documented symbol, it automatically becomes a click
 
 ## Docstrings and Sphinx Compatibility
 
-If your project also publishes Sphinx-based documentation, you may have Sphinx cross-reference
-roles (like `` :py:exc:`ValueError` ``) or RST directives (like `.. versionadded:: 2.0`) in your
-docstrings. Great Docs automatically cleans these up during the build, converting them to readable
-Markdown equivalents. You don't need to maintain two versions of your docstrings.
+Great Docs uses `%` directives for callouts and API-reference behavior. For example,
+`%versionadded 2.0` adds a version annotation, while `%warning` adds a warning callout.
 
-See [API Documentation: Sphinx & RST Cleanup](api-documentation.qmd#sphinx-rst-cleanup) for
-details on which constructs are handled.
+Projects that publish Sphinx documentation can use compatible RST forms such as
+`.. versionadded:: 2.0`. Great Docs also converts Sphinx cross-reference roles such as
+`` :py:exc:`ValueError` ``. This compatibility lets both documentation systems use the same
+docstrings.
+
+See [API Documentation: Docstring Directives](api-documentation.qmd#docstring-directives) for the
+supported directives and syntax.
 
 ## Next Steps
 
