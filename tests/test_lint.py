@@ -341,22 +341,36 @@ class TestCheckDocstringStyle:
 
 class TestCheckDirectiveConsistency:
     def test_known_directives_ok(self):
-        doc = "Short.\n\n%seealso func_b\n%nodoc\n"
+        names = (
+            "seealso",
+            "nodoc",
+            "versionadded",
+            "versionchanged",
+            "deprecated",
+            "note",
+            "warning",
+            "caution",
+            "danger",
+            "important",
+            "tip",
+            "hint",
+        )
+        doc = "Short.\n\n" + "\n".join(f"%{name}" for name in names)
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
-        assert len(result.issues) == 0
+        assert result.issues == []
 
     def test_unknown_directive(self):
-        doc = "Short.\n\n%deprecated since v2.0\n"
+        doc = "Short.\n\n%versionremoved 2.0\n"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
         assert len(result.issues) == 1
         assert result.issues[0].check == "unknown-directive"
-        assert "%deprecated" in result.issues[0].message
+        assert "%versionremoved" in result.issues[0].message
 
     def test_no_docstring_skipped(self):
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=None)})
@@ -895,7 +909,7 @@ class TestCheckDirectiveConsistencyEdgeCases:
         """Unknown directive in a class method docstring."""
         method = _make_griffe_obj(
             kind="function",
-            docstring="Method.\n\n%deprecated since v2\n",
+            docstring="Method.\n\n%versionremoved 2.0\n",
         )
         cls = _make_griffe_obj(
             kind="class",
