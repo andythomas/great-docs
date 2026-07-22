@@ -5,7 +5,9 @@ from great_docs._apiref._rst_converters import (
     _convert_rst_directives,
     convert_docstring_text,
 )
+from great_docs._builtin.directives import _callouts
 from great_docs._builtin.directives._callouts import add_callouts, convert_directives
+from great_docs.pandoc import blocks as pandoc_blocks
 
 
 @pytest.mark.parametrize(
@@ -52,7 +54,7 @@ def test_inline_body_accepts_an_indented_continuation():
 
 def test_version_directive_without_version_uses_generic_title():
     assert convert_directives("%versionadded") == (
-        '::: {.callout-note title="Added in version"}\n:::'
+        '::: {.callout-note title="Added in version"}\n\n:::'
     )
 
 

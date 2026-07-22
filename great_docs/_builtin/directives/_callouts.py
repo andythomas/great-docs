@@ -7,6 +7,8 @@ import re
 import griffe as gf
 
 from great_docs.hooks import on_object_resolved
+from great_docs.pandoc.blocks import Div
+from great_docs.pandoc.components import Attr
 
 _CALLOUT_MAP: dict[str, str] = {
     "note": "note",
@@ -74,12 +76,14 @@ def render_callout(name: str, body: str, inline: str = "") -> str:
         label = _VERSION_LABELS[name]
         title = f"{label} {version}" if version else label
         callout = "warning" if name == "deprecated" else "note"
-        body_line = f"\n{description}\n" if description else "\n"
-        return f'::: {{.callout-{callout} title="{title}"}}{body_line}:::'
+        attr = Attr(
+            classes=[f"callout-{callout}"],
+            attributes={"title": title},
+        )
+        return str(Div(content=description, attr=attr))
 
     callout = _CALLOUT_MAP[name]
-    body_line = f"\n{content}\n" if content else "\n"
-    return f"::: {{.callout-{callout}}}{body_line}:::"
+    return str(Div(content=content, attr=Attr(classes=[f"callout-{callout}"])))
 
 
 def convert_directives(text: str) -> str:
