@@ -4,15 +4,15 @@ from functools import cached_property
 from typing import TYPE_CHECKING, cast
 
 from great_docs._apiref._render.mixin_page import RenderPageMixin
-
-from .._format import markdown_escape
-from ..pandoc.blocks import (
+from great_docs.pandoc.blocks import (
     BlockContent,
     Blocks,
     DefinitionItem,
     Meta,
 )
-from ..pandoc.inlines import Link
+from great_docs.pandoc.inlines import Link
+
+from .._format import markdown_escape
 from .base import RenderBase
 
 if TYPE_CHECKING:

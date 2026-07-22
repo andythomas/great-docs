@@ -1,5 +1,4 @@
-"""
-Pandoc element components.
+"""Pandoc element components.
 
 Specification: https://pandoc.org/lua-filters.html#element-components-1
 """

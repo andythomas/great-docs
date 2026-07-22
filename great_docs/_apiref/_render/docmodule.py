@@ -2,17 +2,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..pandoc.blocks import Div
-from ..pandoc.components import Attr
-from ..pandoc.inlines import Code
+from great_docs.pandoc.blocks import Div
+from great_docs.pandoc.components import Attr
+from great_docs.pandoc.inlines import Code
+
 from .doc import RenderDoc
 from .mixin_members import RenderDocMembersMixin
 
 if TYPE_CHECKING:
     import griffe as gf
 
+    from great_docs.pandoc.blocks import BlockContent
+
     from .. import content
-    from ..pandoc.blocks import BlockContent
 
 
 class __RenderDocModule(RenderDocMembersMixin, RenderDoc):

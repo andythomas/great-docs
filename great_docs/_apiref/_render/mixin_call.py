@@ -6,13 +6,7 @@ from typing import TYPE_CHECKING, TypeAlias, cast
 
 import griffe as gf
 
-from .._format import formatted_signature, repr_obj
-from .._docstring_sections import (
-    DCDocstringSectionInitParameters,
-    DCDocstringSectionParameterAttributes,
-)
-from .._rst_converters import convert_rst_text
-from ..pandoc.blocks import (
+from great_docs.pandoc.blocks import (
     BlockContent,
     Blocks,
     CodeBlock,
@@ -20,8 +14,15 @@ from ..pandoc.blocks import (
     DefinitionList,
     Div,
 )
-from ..pandoc.components import Attr
-from ..pandoc.inlines import Code
+from great_docs.pandoc.components import Attr
+from great_docs.pandoc.inlines import Code
+
+from .._docstring_sections import (
+    DCDocstringSectionInitParameters,
+    DCDocstringSectionParameterAttributes,
+)
+from .._format import formatted_signature, repr_obj
+from .._rst_converters import convert_rst_text
 from .doc import RenderDoc
 
 if TYPE_CHECKING:

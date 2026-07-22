@@ -1,5 +1,4 @@
-"""
-Pandoc inline elements.
+"""Pandoc inline elements.
 
 Specification: https://pandoc.org/lua-filters.html#inline
 """

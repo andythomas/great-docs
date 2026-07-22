@@ -1,5 +1,4 @@
-"""
-Pandoc block elements.
+"""Pandoc block elements.
 
 Specification: https://pandoc.org/lua-filters.html#block
 """
@@ -11,7 +10,7 @@ import itertools
 import sys
 from dataclasses import dataclass
 from textwrap import indent
-from typing import Literal, Optional, Sequence, Union
+from typing import Any, Literal, Optional, Sequence, Union
 
 from yaml12 import format_yaml
 
@@ -22,6 +21,7 @@ else:
 
 from .components import Attr
 from .inlines import (
+    Code,
     Inline,
     InlineContent,
     InlineContentItem,
@@ -293,7 +293,7 @@ class Meta(Block):
     Pandoc meta data block
     """
 
-    table: dict[str, "Any"]
+    table: dict[str, Any]
 
     def __str__(self):
         yml = format_yaml(self.table)
@@ -340,7 +340,7 @@ class RenderedDocObject(Block):
     """
 
     title: Header | None = None
-    signature: "Code | str | None" = None
+    signature: Code | str | None = None
     body: BlockContent | None = None
 
     def __str__(self):

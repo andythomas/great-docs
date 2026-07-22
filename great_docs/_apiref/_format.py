@@ -12,9 +12,8 @@ from typing import TYPE_CHECKING, cast
 import griffe as gf
 
 from great_docs._subprocess import TEXT_MODE_KWARGS
-
-from .pandoc.components import Attr
-from .pandoc.inlines import InterLink, Span
+from great_docs.pandoc.components import Attr
+from great_docs.pandoc.inlines import InterLink, Span
 
 if TYPE_CHECKING:
     from typing import Any

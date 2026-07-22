@@ -150,34 +150,6 @@ from great_docs._apiref.inventory import (
     create_inventory,
     write_inventory,
 )
-from great_docs._apiref.pandoc.blocks import (
-    Block,
-    Blocks,
-    BulletList,
-    CodeBlock,
-    DefinitionList,
-    Div,
-    Header,
-    Meta,
-    OrderedList,
-    Para,
-    Plain,
-    RawHTMLBlockTag,
-    RenderedDocObject,
-    blockcontent_to_str,
-    blockcontent_to_str_items,
-)
-from great_docs._apiref.pandoc.components import Attr
-from great_docs._apiref.pandoc.inlines import (
-    Code,
-    Emph,
-    Inlines0,
-    InterLink,
-    Str,
-    Strong,
-    inlinecontent_to_str,
-    shortcode,
-)
 from great_docs._apiref.resolve import (
     ObjectNotFoundError,
     _is_external_alias,
@@ -204,6 +176,34 @@ from great_docs.cli import (
     scan,
     setup_github_pages,
     uninstall,
+)
+from great_docs.pandoc.blocks import (
+    Block,
+    Blocks,
+    BulletList,
+    CodeBlock,
+    DefinitionList,
+    Div,
+    Header,
+    Meta,
+    OrderedList,
+    Para,
+    Plain,
+    RawHTMLBlockTag,
+    RenderedDocObject,
+    blockcontent_to_str,
+    blockcontent_to_str_items,
+)
+from great_docs.pandoc.components import Attr
+from great_docs.pandoc.inlines import (
+    Code,
+    Emph,
+    Inlines0,
+    InterLink,
+    Str,
+    Strong,
+    inlinecontent_to_str,
+    shortcode,
 )
 
 
@@ -33563,7 +33563,7 @@ def test_emph_str():
 
 def test_image_str():
     """Image.__str__ renders markdown image syntax."""
-    from great_docs._apiref.pandoc.inlines import Image
+    from great_docs.pandoc.inlines import Image
 
     img = Image(caption="Logo", src="img.png")
     assert str(img) == "![Logo](img.png)"
@@ -33777,7 +33777,7 @@ def test_render_type_object_with_type():
     """render_type_object renders a python type."""
 
     # Use a type from the package itself that griffe can find
-    result = render_type_object("great_docs._apiref.pandoc.components.Attr")
+    result = render_type_object("great_docs.pandoc.components.Attr")
     assert isinstance(result, str)
 
 
