@@ -885,6 +885,57 @@ def test_rst_directives_render_as_callouts(pkg_name: str, expected_items):
 
 @pytest.mark.dedicated
 @requires_bs4
+def test_gdtest_directives_renders_every_callout():
+    """All canonical directives appear as callouts without raw directive text"""
+    pkg = "gdtest_directives"
+    if not _has_rendered_site(pkg):
+        pytest.skip(f"{pkg} not rendered")
+
+    page = _ref_dir(pkg) / "process.html"
+    assert page.exists(), "process.html missing"
+    soup = _load_html(page)
+
+    expected_callouts = {
+        "callout-note": 3,
+        "callout-warning": 2,
+        "callout-caution": 1,
+        "callout-important": 2,
+        "callout-tip": 2,
+    }
+    for class_name, count in expected_callouts.items():
+        assert len(soup.select(f"div.{class_name}")) == count
+
+    main = soup.select_one("main.content")
+    assert main is not None
+    text = main.get_text(" ", strip=True)
+    for expected in (
+        "Added in version 2.0",
+        "Changed in version 2.1",
+        "Deprecated since version 3.0",
+        "Inline note.",
+        "Multiline warning.",
+        "Preserve this paragraph.",
+        "Inline hint.",
+    ):
+        assert expected in text
+
+    for name in (
+        "versionadded",
+        "versionchanged",
+        "deprecated",
+        "note",
+        "warning",
+        "caution",
+        "danger",
+        "important",
+        "tip",
+        "hint",
+    ):
+        assert f"%{name}" not in text
+
+
+@pytest.mark.dedicated
+@requires_bs4
 def test_constant_pages_show_value():
     """Constant pages display the value (e.g., `DEFAULT_TIMEOUT: int = 30`)."""
     pkg = "gdtest_constants"

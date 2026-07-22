@@ -167,6 +167,7 @@ ALL_PACKAGES: list[str] = [
     "gdtest_rst_danger",  # 32
     "gdtest_rst_important",  # 33
     "gdtest_rst_mixed_dirs",  # 34
+    "gdtest_directives",  # 34b
     "gdtest_sphinx_func_role",  # 35
     "gdtest_sphinx_class_role",  # 36
     "gdtest_sphinx_exc_role",  # 37
@@ -1422,6 +1423,11 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "Docstrings mix multiple RST directives: versionadded, deprecated, "
         "note, warning, tip in the same module and sometimes SAME docstring. "
         "All should render as distinct callouts."
+    ),
+    "gdtest_directives": (
+        "One docstring contains all ten canonical Great Docs callout directives. "
+        "Inline, multiline, versioned, and aliased callouts should render without "
+        "leaving raw directive text."
     ),
     "gdtest_sphinx_func_role": (
         "Docstrings contain :py:func:`other_func` cross-reference roles. "
