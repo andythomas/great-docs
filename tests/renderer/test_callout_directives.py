@@ -1,6 +1,7 @@
 import griffe as gf
 import pytest
 
+from great_docs._apiref import RenderDocFunction, content
 from great_docs._apiref._rst_converters import (
     convert_docstring_text,
 )
@@ -134,9 +135,7 @@ def test_add_callouts_replaces_directives_in_docstring_value():
 
     assert result is function
     assert function.docstring is not None
-    assert function.docstring.value == (
-        "Summary.\n\n::: {.callout-warning}\nBe careful.\n:::"
-    )
+    assert function.docstring.value == ("Summary.\n\n::: {.callout-warning}\nBe careful.\n:::")
 
 
 def test_add_callouts_preserves_cached_parsed_docstring():
@@ -151,3 +150,51 @@ def test_add_callouts_preserves_cached_parsed_docstring():
     assert function.docstring is not None
     assert function.docstring.value == "::: {.callout-warning}\nBe careful.\n:::"
     assert function.docstring.__dict__["parsed"] is sentinel
+
+
+def test_add_callouts_passes_through_an_object_without_a_docstring():
+    function = gf.Function("process")
+
+    assert add_callouts(function) is function
+    assert function.docstring is None
+
+
+def test_add_callouts_passes_through_an_irrelevant_docstring():
+    function = gf.Function("process")
+    docstring = gf.Docstring("Summary.", parent=function)
+    function.docstring = docstring
+
+    assert add_callouts(function) is function
+    assert function.docstring is docstring
+    assert function.docstring.value == "Summary."
+
+
+def test_first_line_callout_is_rendered_in_the_docstring_body():
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(
+        "%warning Be careful.",
+        parent=function,
+        parser="numpy",
+    )
+    add_callouts(function)
+
+    renderer = RenderDocFunction(content.Doc.from_griffe(function.name, function))
+
+    assert renderer.docstring_subject is None
+    assert "::: {.callout-warning}\nBe careful.\n:::" in str(renderer.render_body())
+
+
+def test_normal_first_line_remains_the_docstring_subject():
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(
+        "Process the input.\n\nMore details.",
+        parent=function,
+        parser="numpy",
+    )
+
+    renderer = RenderDocFunction(content.Doc.from_griffe(function.name, function))
+
+    assert renderer.docstring_subject == "Process the input."
+    body = str(renderer.render_body())
+    assert "Process the input." not in body
+    assert "More details." in body

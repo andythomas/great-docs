@@ -371,7 +371,10 @@ class __RenderDoc(RenderBase):
             and (sections := self.obj.docstring.parsed)
             and isinstance(sections[0], gf.DocstringSectionText)
         ):
-            return self.obj.docstring.value.splitlines()[0]
+            first_line = self.obj.docstring.value.splitlines()[0]
+            if first_line == "$$" or first_line.startswith(":::"):
+                return None
+            return first_line
 
     def render_docstring_subject(self) -> BlockContent:
         """

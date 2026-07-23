@@ -1,14 +1,12 @@
 """
 gdtest_directives — all canonical Great Docs callout directives in one page
 
-Dimensions: L3, L4
 Focus: Canonical directives render as styled callouts without raw directive text.
 """
 
 SPEC = {
     "name": "gdtest_directives",
     "description": "Tests all canonical Great Docs callout directives",
-    "dimensions": ["L3", "L4"],
     "pyproject_toml": {
         "project": {
             "name": "gdtest-directives",

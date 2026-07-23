@@ -1,6 +1,7 @@
 import griffe as gf
 import pytest
 
+from great_docs._apiref import RenderDocFunction, content
 from great_docs._apiref._rst_converters import (
     convert_docstring_text,
     convert_rst_text,
@@ -98,9 +99,7 @@ def test_directive_bodies_preserve_indented_markdown_and_paragraphs():
 def test_inline_directive_body_accepts_an_indented_continuation():
     text = ".. warning:: Important.\n\n    More detail."
 
-    assert convert_rst_directives(text) == (
-        "::: {.callout-warning}\nImportant.\nMore detail.\n:::"
-    )
+    assert convert_rst_directives(text) == ("::: {.callout-warning}\nImportant.\nMore detail.\n:::")
 
 
 def test_bare_directive_at_end_renders_an_empty_callout():
@@ -159,3 +158,55 @@ def test_handler_replaces_value_without_touching_cached_parsed_docstring(
     assert function.docstring is not None
     assert function.docstring.value == "Summary.\n\n::: {.callout-note}\nBe careful.\n:::"
     assert function.docstring.__dict__["parsed"] is sentinel
+
+
+def test_add_rst_directives_passes_through_an_object_without_a_docstring():
+    function = gf.Function("process")
+
+    assert add_rst_directives(function) is function
+    assert function.docstring is None
+
+
+def test_add_rst_directives_passes_through_an_irrelevant_docstring():
+    function = gf.Function("process")
+    docstring = gf.Docstring("Summary.", parent=function)
+    function.docstring = docstring
+
+    assert add_rst_directives(function) is function
+    assert function.docstring is docstring
+    assert function.docstring.value == "Summary."
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            ".. warning:: Be careful.",
+            "::: {.callout-warning}\nBe careful.\n:::",
+        ),
+        (
+            ".. todo:: Follow up.",
+            '::: {.callout-note title="Todo"}\nFollow up.\n:::',
+        ),
+        (
+            ".. math:: x^2",
+            "$$\nx^2\n$$",
+        ),
+    ],
+)
+def test_first_line_rst_directive_is_rendered_in_the_docstring_body(
+    source: str,
+    expected: str,
+):
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(
+        source,
+        parent=function,
+        parser="numpy",
+    )
+    add_rst_directives(function)
+
+    renderer = RenderDocFunction(content.Doc.from_griffe(function.name, function))
+
+    assert renderer.docstring_subject is None
+    assert expected in str(renderer.render_body())

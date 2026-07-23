@@ -502,16 +502,16 @@ content as the optional description.
 
 | Directive | Appearance |
 | --- | --- |
-| `%versionadded 2.0` | 🆕 Green callout: "Added in version 2.0" |
-| `%versionchanged 3.1` | 🔄 Blue callout: "Changed in version 3.1" |
-| `%deprecated 2.6` | ⚠️ Red callout: "Deprecated since version 2.6" |
-| `%note ...` | ℹ️ Blue callout |
-| `%warning ...` | ⚠️ Amber callout |
-| `%caution ...` | Caution callout |
-| `%danger ...` | 🚨 Red callout |
-| `%important ...` | ❗ Orange callout |
-| `%tip ...` | 💡 Green callout |
-| `%hint ...` | 💡 Green callout |
+| `%versionadded 2.0` | Quarto `note` callout titled "Added in version 2.0" |
+| `%versionchanged 3.1` | Quarto `note` callout titled "Changed in version 3.1" |
+| `%deprecated 2.6` | Quarto `warning` callout titled "Deprecated since version 2.6" |
+| `%note ...` | Quarto `note` callout |
+| `%warning ...` | Quarto `warning` callout |
+| `%caution ...` | Quarto `caution` callout |
+| `%danger ...` | Quarto `important` callout |
+| `%important ...` | Quarto `important` callout |
+| `%tip ...` | Quarto `tip` callout |
+| `%hint ...` | Quarto `tip` callout |
 
 ### Sphinx Compatibility
 
