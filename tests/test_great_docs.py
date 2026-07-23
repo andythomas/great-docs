@@ -90,7 +90,6 @@ from great_docs._apiref._rst_converters import (
     _convert_bold_section_headers,
     _convert_google_sections,
     _convert_rst_citations,
-    _convert_rst_directives,
     _convert_rst_grid_tables,
     _convert_rst_simple_tables,
     _convert_sphinx_fields,
@@ -32363,125 +32362,6 @@ def test_rstconv_sphinx_role_multiple():
     assert "`Bar`" in result
 
 
-def test_rstconv_directive_note_block():
-    """Block-form .. note:: converted to callout-note."""
-    text = ".. note::\n\n    This is important.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "This is important." in result
-
-
-def test_rstconv_directive_warning_block():
-    """Block-form .. warning:: converted to callout-warning."""
-    text = ".. warning::\n\n    Be careful.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-warning" in result
-
-
-def test_rstconv_directive_tip_block():
-    """Block-form .. tip:: converted to callout-tip."""
-    text = ".. tip::\n\n    A useful tip.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-tip" in result
-
-
-def test_rstconv_directive_hint_block():
-    """.. hint:: maps to callout-tip."""
-    text = ".. hint::\n\n    A hint.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-tip" in result
-
-
-def test_rstconv_directive_danger_block():
-    """.. danger:: maps to callout-important."""
-    text = ".. danger::\n\n    Dangerous.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-important" in result
-
-
-def test_rstconv_directive_important_block():
-    """.. important:: maps to callout-important."""
-    text = ".. important::\n\n    Very important.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-important" in result
-
-
-def test_rstconv_directive_caution_block():
-    """.. caution:: maps to callout-caution."""
-    text = ".. caution::\n\n    Exercise caution.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-caution" in result
-
-
-def test_rstconv_directive_inline_form():
-    """Inline-form ``.. note:: text`` on a single line."""
-    text = ".. note:: This is a quick note."
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "This is a quick note." in result
-
-
-def test_rstconv_directive_bare():
-    """Bare directive ``.. note::`` with no body."""
-    text = ".. note::"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-
-
-def test_rstconv_directive_versionadded():
-    """.. versionadded:: produces callout-note with version title."""
-    text = ".. versionadded:: 2.0"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "Added in version 2.0" in result
-
-
-def test_rstconv_directive_versionchanged():
-    """.. versionchanged:: produces callout-note."""
-    text = ".. versionchanged:: 3.1"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "Changed in version 3.1" in result
-
-
-def test_rstconv_directive_deprecated():
-    """.. deprecated:: produces callout-warning."""
-    text = ".. deprecated:: 1.5"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-warning" in result
-    assert "Deprecated since version 1.5" in result
-
-
-def test_rstconv_directive_versionadded_block():
-    """Block-form .. versionadded:: with body text."""
-    text = ".. versionadded:: 2.0\n\n    Use the new API.\n"
-    result = _convert_rst_directives(text)
-
-    assert "Added in version 2.0" in result
-    assert "Use the new API." in result
-
-
-def test_rstconv_directive_deprecated_with_description():
-    """.. deprecated:: with inline version and block description."""
-    text = ".. deprecated:: 1.0\n\n    Use new_func() instead.\n"
-    result = _convert_rst_directives(text)
-
-    assert "Deprecated since version 1.0" in result
-    assert "Use new_func() instead." in result
-
-
 def test_rstconv_directive_to_callout_version_no_version():
     """A version directive without a version retains its generic title."""
     result = render_callout("versionadded", "")
@@ -32504,14 +32384,6 @@ def test_rstconv_directive_to_callout_note_with_content():
 
     assert ".callout-note" in result
     assert "inline part" in result or "Some text" in result
-
-
-def test_rstconv_directive_inline_with_inline_arg():
-    """Block directive with inline text plus block body."""
-    text = ".. note:: Important\n\n    Details here.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
 
 
 def test_rstconv_bold_section_examples():

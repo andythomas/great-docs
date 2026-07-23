@@ -2,11 +2,11 @@ import griffe as gf
 import pytest
 
 from great_docs._apiref._rst_converters import (
-    _convert_rst_directives,
     convert_docstring_text,
 )
 from great_docs._builtin.directives import _callouts
 from great_docs._builtin.directives._callouts import add_callouts, convert_directives
+from great_docs._builtin.directives._rst_directives import convert_rst_directives
 from great_docs.pandoc import blocks as pandoc_blocks
 
 
@@ -99,7 +99,7 @@ def test_great_docs_and_sphinx_directives_are_equivalent(
     great_docs: str,
     sphinx: str,
 ):
-    assert convert_directives(great_docs) == _convert_rst_directives(sphinx)
+    assert convert_directives(great_docs) == convert_rst_directives(sphinx)
 
 
 @pytest.mark.parametrize("parser", ["numpy", "google", "sphinx"])
