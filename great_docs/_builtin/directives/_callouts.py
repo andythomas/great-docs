@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from textwrap import dedent
 
 import griffe as gf
 
@@ -40,7 +41,7 @@ _DIRECTIVE_RE = re.compile(
 @on_object_resolved(priority=0)  # pyright: ignore[reportArgumentType]
 def add_callouts(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     """
-    Render an object's canonical directives as callout sections
+    Replace canonical directives in docstring text with Quarto callouts
 
     Parameters
     ----------
@@ -49,26 +50,36 @@ def add_callouts(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
 
     Returns
     -------
-    The object with canonical directive blocks removed from its source text and
-    appended as Quarto callout sections.
+    The object with canonical directives replaced in its docstring value.
     """
     docstring = obj.docstring
-    if docstring is None or not any(f"%{name}" in docstring.value for name in CALLOUT_DIRECTIVES):
+    if docstring is None:
         return obj
 
-    cleaned, callouts = _extract_callouts(docstring.value)
-    if not callouts:
-        return obj
-
-    docstring.value = cleaned
-    docstring.__dict__.pop("parsed", None)
-    docstring.parsed.append(gf.DocstringSectionText("\n\n".join(callouts)))
+    converted = convert_directives(docstring.value)
+    if converted != docstring.value:
+        docstring.value = converted
     return obj
 
 
 def render_callout(name: str, body: str, inline: str = "") -> str:
-    """Render a recognized docstring directive as Quarto callout markup"""
-    content = _join_content(inline, body)
+    """
+    Render a recognized docstring directive as Quarto callout markup
+
+    Parameters
+    ----------
+    name
+        The directive name.
+    body
+        The directive's indented body.
+    inline
+        Text written on the directive line.
+
+    Returns
+    -------
+    Quarto callout markup.
+    """
+    content = join_content(inline, body)
     if name in _VERSION_DIRECTIVES:
         parts = content.split(None, 1) if content else []
         version = parts[0] if parts else ""
@@ -87,7 +98,18 @@ def render_callout(name: str, body: str, inline: str = "") -> str:
 
 
 def convert_directives(text: str) -> str:
-    """Render canonical callout directives in docstring text as Quarto blocks"""
+    """
+    Render canonical callout directives in docstring text as Quarto blocks
+
+    Parameters
+    ----------
+    text
+        Docstring text containing canonical directives.
+
+    Returns
+    -------
+    The text with recognized directives replaced by Quarto callouts.
+    """
     lines = text.splitlines()
     converted: list[str] = []
     index = 0
@@ -100,8 +122,8 @@ def convert_directives(text: str) -> str:
             continue
 
         directive_indent = len(match.group("indent"))
-        body_lines, index = _indented_body(lines, index + 1, directive_indent)
-        body = "\n".join(_dedent_lines(body_lines))
+        body_lines, index = collect_indented_body(lines, index + 1, directive_indent)
+        body = "\n".join(dedent_lines(body_lines))
         converted.extend(
             render_callout(
                 match.group("name"),
@@ -113,47 +135,46 @@ def convert_directives(text: str) -> str:
     return "\n".join(converted)
 
 
-def _join_content(inline: str, body: str) -> str:
-    """Join inline directive text with its multiline body"""
+def join_content(inline: str, body: str) -> str:
+    """
+    Join inline directive text with its multiline body
+
+    Parameters
+    ----------
+    inline
+        Text written on the directive line.
+    body
+        Text collected from the directive body.
+
+    Returns
+    -------
+    The non-empty inline and body text joined in source order.
+    """
     parts = [part.strip() for part in (inline, body) if part.strip()]
     return "\n".join(parts)
 
 
-def _extract_callouts(text: str) -> tuple[str, list[str]]:
-    """Separate docstring prose from its rendered canonical callouts"""
-    lines = text.splitlines()
-    cleaned: list[str] = []
-    callouts: list[str] = []
-    index = 0
-
-    while index < len(lines):
-        match = _DIRECTIVE_RE.match(lines[index])
-        if match is None:
-            cleaned.append(lines[index])
-            index += 1
-            continue
-
-        directive_indent = len(match.group("indent"))
-        body_lines, index = _indented_body(lines, index + 1, directive_indent)
-        body = "\n".join(_dedent_lines(body_lines))
-        callouts.append(
-            render_callout(
-                match.group("name"),
-                body,
-                match.group("inline") or "",
-            )
-        )
-
-    cleaned_text = re.sub(r"\n{3,}", "\n\n", "\n".join(cleaned)).strip()
-    return cleaned_text, callouts
-
-
-def _indented_body(
+def collect_indented_body(
     lines: list[str],
     start: int,
     directive_indent: int,
 ) -> tuple[list[str], int]:
-    """Collect an indented directive body and its first unconsumed line"""
+    """
+    Collect an indented directive body and its first unconsumed line
+
+    Parameters
+    ----------
+    lines
+        Source lines following a directive.
+    start
+        Index at which to start collecting.
+    directive_indent
+        Indentation of the directive line.
+
+    Returns
+    -------
+    The collected body lines and the index of the first unconsumed line.
+    """
     body: list[str] = []
     index = start
 
@@ -182,10 +203,17 @@ def _indented_body(
     return body, index
 
 
-def _dedent_lines(lines: list[str]) -> list[str]:
-    """Align body lines to the least-indented nonblank content"""
-    margin = min(
-        (len(line) - len(line.lstrip()) for line in lines if line.strip()),
-        default=0,
-    )
-    return [line[margin:] if line.strip() else "" for line in lines]
+def dedent_lines(lines: list[str]) -> list[str]:
+    """
+    Align body lines to the least-indented nonblank content
+
+    Parameters
+    ----------
+    lines
+        Body lines to align.
+
+    Returns
+    -------
+    The body lines with their common indentation removed.
+    """
+    return dedent("\n".join(lines)).splitlines()

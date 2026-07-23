@@ -119,10 +119,10 @@ def test_great_docs_directives_are_parser_independent(parser: str):
     assert "Preserve the input." in rendered
 
 
-def test_callouts_are_extracted_after_a_numpy_returns_section():
+def test_add_callouts_replaces_directives_in_docstring_value():
     function = gf.Function("process")
     function.docstring = gf.Docstring(
-        "Summary.\n\nReturns\n-------\nlist\n    A copy.\n\n%warning Be careful.",
+        "Summary.\n\n%warning Be careful.",
         parent=function,
         parser="numpy",
     )
@@ -131,6 +131,20 @@ def test_callouts_are_extracted_after_a_numpy_returns_section():
 
     assert result is function
     assert function.docstring is not None
-    assert "%warning" not in function.docstring.value
-    assert isinstance(function.docstring.parsed[-1], gf.DocstringSectionText)
-    assert ".callout-warning" in function.docstring.parsed[-1].value
+    assert function.docstring.value == (
+        "Summary.\n\n::: {.callout-warning}\nBe careful.\n:::"
+    )
+
+
+def test_add_callouts_preserves_cached_parsed_docstring():
+    function = gf.Function("process")
+    function.docstring = gf.Docstring("%warning Be careful.", parent=function)
+    sentinel = object()
+    function.docstring.__dict__["parsed"] = sentinel
+
+    result = add_callouts(function)
+
+    assert result is function
+    assert function.docstring is not None
+    assert function.docstring.value == "::: {.callout-warning}\nBe careful.\n:::"
+    assert function.docstring.__dict__["parsed"] is sentinel
