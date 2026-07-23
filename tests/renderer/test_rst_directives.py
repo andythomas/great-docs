@@ -1,6 +1,10 @@
 import griffe as gf
 import pytest
 
+from great_docs._apiref._rst_converters import (
+    convert_docstring_text,
+    convert_rst_text,
+)
 from great_docs._builtin.directives._rst_directives import (
     add_rst_directives,
     convert_rst_directives,
@@ -51,6 +55,36 @@ def test_todo_directive_renders_a_titled_note():
     assert convert_rst_directives(".. todo:: Follow up") == (
         '::: {.callout-note title="Todo"}\nFollow up\n:::'
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            ":param value: Description.\n:type value: int",
+            "## Parameters {.doc-section .doc-section-parameters}",
+        ),
+        ("Use :func:`run`.", "Use `run()`."),
+        (
+            "=====  =====\nA      B\n=====  =====\n1      2\n=====  =====",
+            "| A | B |",
+        ),
+        (".. [1] Source.", "1. Source."),
+        (">>> 1 + 1\n2", "```python\n>>> 1 + 1\n```"),
+    ],
+)
+def test_general_rst_conversion_remains_after_directive_handling(
+    source: str,
+    expected: str,
+):
+    converted = convert_rst_directives(source)
+
+    assert expected in convert_docstring_text(converted, heading_level=2)
+
+
+@pytest.mark.parametrize("source", ["%note Keep this.", ".. note:: Keep this."])
+def test_general_rst_conversion_leaves_directives_to_builtin_handlers(source: str):
+    assert convert_rst_text(source) == source
 
 
 def test_directive_bodies_preserve_indented_markdown_and_paragraphs():

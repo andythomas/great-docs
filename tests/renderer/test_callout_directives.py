@@ -104,14 +104,17 @@ def test_great_docs_and_sphinx_directives_are_equivalent(
 
 @pytest.mark.parametrize("parser", ["numpy", "google", "sphinx"])
 def test_great_docs_directives_are_parser_independent(parser: str):
-    docstring = gf.Docstring(
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(
         "Summary.\n\n%warning\n    Preserve the input.",
+        parent=function,
         parser=parser,
     )
+    add_callouts(function)
 
     rendered = "\n".join(
         convert_docstring_text(section.value, heading_level=2)
-        for section in docstring.parsed
+        for section in function.docstring.parsed
         if isinstance(section, gf.DocstringSectionText)
     )
 

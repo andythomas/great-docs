@@ -86,7 +86,6 @@ from great_docs._apiref._render.reference_page import RenderReferencePage
 from great_docs._apiref._render.reference_section import RenderReferenceSection
 from great_docs._apiref._rst_converters import (
     _GOOGLE_RAISES_RE,
-    _RST_CODE_BLOCK_RE,
     _convert_bold_section_headers,
     _convert_google_sections,
     _convert_rst_citations,
@@ -95,7 +94,6 @@ from great_docs._apiref._rst_converters import (
     _convert_sphinx_fields,
     _convert_sphinx_roles,
     _parse_google_entries,
-    _replace_rst_code_block,
     _rst_grid_table_to_md,
     _rst_simple_table_to_md,
     _smart_dedent,
@@ -160,7 +158,6 @@ from great_docs._apiref.spec import ChildrenStyle, SpecObject, SpecOptions, Spec
 from great_docs._apiref.typing_information import TypeInformation, TypeSections
 from great_docs._apiref.write import _insert_contents
 from great_docs._apiref.write import merge_frontmatter as _merge_frontmatter
-from great_docs._builtin.directives._callouts import render_callout
 from great_docs.cli import (
     _detect_optional_dependencies,
     _detect_package_manager,
@@ -31976,36 +31973,6 @@ def test_rstconvconvert_rst_text_code_block():
     assert "x = 1" in result
 
 
-def test_rstconvconvert_rst_text_math_directive():
-    """convert_rst_text converts .. math:: to $$...$$ display math."""
-    text = ".. math::\n\n    E = mc^2\n"
-    result = convert_rst_text(text)
-
-    assert "$$" in result
-    assert "E = mc^2" in result
-
-
-def test_rstconvconvert_rst_text_math_empty_body():
-    """convert_rst_text handles .. math:: with empty indented body."""
-
-    # Construct text that hits the empty-lines branch of math
-    text = ".. math::\n\n    \n"
-    m = _RST_CODE_BLOCK_RE.search(text)
-    if m:
-        result = _replace_rst_code_block(m)
-
-        assert "$$" in result
-
-
-def test_rstconv_rst_directive_preserved():
-    """Known RST directives like .. note:: are left untouched by code block conversion."""
-    text = ".. note::\n\n    This is a note.\n"
-    result = convert_rst_text(text)
-
-    # The note directive should be converted by _convert_rst_directives, not code block handler
-    assert "```python" not in result
-
-
 def test_rstconv_code_block_no_prefix():
     """RST :: code block with no prefix text (bare ::)."""
     text = "::\n\n    code_here\n"
@@ -32360,30 +32327,6 @@ def test_rstconv_sphinx_role_multiple():
 
     assert "`foo()`" in result
     assert "`Bar`" in result
-
-
-def test_rstconv_directive_to_callout_version_no_version():
-    """A version directive without a version retains its generic title."""
-    result = render_callout("versionadded", "")
-
-    assert "Added in version" in result
-    assert ".callout-note" in result
-
-
-def test_rstconv_directive_to_callout_note_empty():
-    """An empty note still produces a valid Quarto callout."""
-    result = render_callout("note", "")
-
-    assert ".callout-note" in result
-    assert ":::" in result
-
-
-def test_rstconv_directive_to_callout_note_with_content():
-    """A note callout contains its inline and block content."""
-    result = render_callout("note", "Some text", "inline part")
-
-    assert ".callout-note" in result
-    assert "inline part" in result or "Some text" in result
 
 
 def test_rstconv_bold_section_examples():
@@ -32923,14 +32866,6 @@ def test_rstconv_grid_table_body_row_short_padding():
 
     assert result is not None
     assert "| A | B | C |" in result
-
-
-def test_rstconv_directive_block_empty_body():
-    """Block directive with empty body lines hits else branch."""
-    result = render_callout("warning", "")
-
-    assert ".callout-warning" in result
-    assert ":::" in result
 
 
 def test_rstconv_sphinx_fields_no_matching():

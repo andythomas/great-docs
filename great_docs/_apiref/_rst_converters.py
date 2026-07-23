@@ -8,12 +8,6 @@ from __future__ import annotations
 
 import re
 
-from great_docs._builtin.directives._callouts import (
-    CALLOUT_DIRECTIVES,
-    convert_directives,
-    render_callout,
-)
-
 # Shared text utilities --------------------------------------------------------
 
 
@@ -77,40 +71,10 @@ _RST_CODE_BLOCK_RE = re.compile(
     re.MULTILINE,
 )
 
-_RST_DIRECTIVES = frozenset(
-    {
-        "versionadded",
-        "versionchanged",
-        "deprecated",
-        "note",
-        "warning",
-        "caution",
-        "danger",
-        "important",
-        "tip",
-        "hint",
-        "seealso",
-        "todo",
-    }
-)
-
-
 def _replace_rst_code_block(m: re.Match) -> str:
     """Convert one RST ``::`` block to markdown; used as an `_RST_CODE_BLOCK_RE` callback"""
     prefix_text = m.group(1)
     indented_block = m.group(3)
-
-    # Skip known RST directives (e.g. ``.. note::``) — preserved for
-    # post-render's directive handler.
-    stripped_prefix = prefix_text.strip()
-    if stripped_prefix.startswith(".."):
-        directive_name = stripped_prefix[2:].strip()
-        if directive_name == "math":
-            # ``.. math::`` → display math ``$$…$$``
-            dedented = "\n".join(_dedent_lines(indented_block.splitlines()))
-            return f"\n$$\n{dedented.strip()}\n$$\n"
-        if directive_name in _RST_DIRECTIVES:
-            return m.group(0)  # leave untouched
 
     dedented = "\n".join(_dedent_lines(indented_block.splitlines()))
 
@@ -168,7 +132,7 @@ def convert_rst_text(text: str) -> str:
     # proper margin detection).
     text = _smart_dedent(text)
 
-    # RST `::` code blocks -> fenced code blocks (includes `.. math::`)
+    # RST `::` code blocks -> fenced code blocks
     text = _RST_CODE_BLOCK_RE.sub(_replace_rst_code_block, text)
 
     # RST inline math `:math:`…`` -> `$…$`
@@ -176,12 +140,6 @@ def convert_rst_text(text: str) -> str:
 
     # Sphinx cross-reference roles -> markdown code spans
     text = _convert_sphinx_roles(text)
-
-    # Great Docs directives -> Quarto callout blocks
-    text = convert_directives(text)
-
-    # RST admonition / version directives -> Quarto callout blocks
-    text = _convert_rst_directives(text)
 
     # RST simple tables -> Markdown pipe tables
     text = _convert_rst_simple_tables(text)
@@ -510,79 +468,6 @@ def _convert_sphinx_roles(text: str) -> str:
         return f"`{inner}`"
 
     return _SPHINX_ROLE_RE.sub(_replace, text)
-
-
-# RST directive → Quarto callout conversion -----------------------------------
-
-
-_RST_DIRECTIVE_NAME_PATTERN = "|".join(
-    re.escape(name) for name in sorted(CALLOUT_DIRECTIVES, key=len, reverse=True)
-)
-_RST_DIRECTIVE_RE = re.compile(
-    rf"^(?P<indent>[ \t]*)\.\.[ \t]+(?P<name>{_RST_DIRECTIVE_NAME_PATTERN})::"
-    r"(?:[ \t]*(?P<inline>.*?))?[ \t]*$"
-)
-
-
-def _convert_rst_directives(text: str) -> str:
-    """Render Sphinx callout directives in docstring text as Quarto blocks"""
-    lines = text.splitlines()
-    converted: list[str] = []
-    index = 0
-
-    while index < len(lines):
-        match = _RST_DIRECTIVE_RE.match(lines[index])
-        if match is None:
-            converted.append(lines[index])
-            index += 1
-            continue
-
-        directive_indent = len(match.group("indent"))
-        body_lines, index = _rst_indented_body(lines, index + 1, directive_indent)
-        body = "\n".join(_dedent_lines(body_lines))
-        converted.extend(
-            render_callout(
-                match.group("name"),
-                body,
-                match.group("inline") or "",
-            ).splitlines()
-        )
-
-    return "\n".join(converted)
-
-
-def _rst_indented_body(
-    lines: list[str],
-    start: int,
-    directive_indent: int,
-) -> tuple[list[str], int]:
-    """Collect an RST directive body and its first unconsumed line"""
-    body: list[str] = []
-    index = start
-
-    while index < len(lines):
-        line = lines[index]
-        if line.strip():
-            indent = len(line) - len(line.lstrip())
-            if indent <= directive_indent:
-                break
-            body.append(line)
-            index += 1
-            continue
-
-        next_content = index + 1
-        while next_content < len(lines) and not lines[next_content].strip():
-            next_content += 1
-        if next_content >= len(lines):
-            break
-        next_line = lines[next_content]
-        next_indent = len(next_line) - len(next_line.lstrip())
-        if next_indent <= directive_indent:
-            break
-        body.append("")
-        index += 1
-
-    return body, index
 
 
 # Bold section-header conversion ----------------------------------------------
