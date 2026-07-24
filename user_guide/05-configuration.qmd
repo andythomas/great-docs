@@ -470,6 +470,26 @@ covered in their own dedicated page.
 
 See [Theming & Appearance](theming.qmd) for full details on all visual customization options.
 
+## HTML Math Renderer
+
+Great Docs forwards `site.html-math-method` to Quarto's HTML configuration. It defaults to
+KaTeX, which renders mathematical notation without a browser-side MathJax dependency:
+
+```{.yaml filename="great-docs.yml"}
+site:
+  html-math-method: katex
+```
+
+To use MathJax instead, set the method explicitly:
+
+```{.yaml filename="great-docs.yml"}
+site:
+  html-math-method: mathjax
+```
+
+Other Quarto-supported HTML math methods can also be selected with this setting. Configure it in
+`great-docs.yml`; Great Docs writes the corresponding value into its generated `_quarto.yml`.
+
 ## User Guide Directory
 
 By default, Great Docs looks for a `user_guide/` directory in your project root. To use a different

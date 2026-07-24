@@ -21,6 +21,15 @@ def _make_config(tmp_path: Path, yaml_text: str) -> Config:
     return Config(tmp_path)
 
 
+def test_site_html_math_method_defaults_to_katex(tmp_project: Path):
+    assert Config(tmp_project).site["html-math-method"] == "katex"
+
+
+def test_site_html_math_method_accepts_override(tmp_project: Path):
+    cfg = _make_config(tmp_project, "site:\n  html-math-method: mathjax\n")
+    assert cfg.site["html-math-method"] == "mathjax"
+
+
 class TestConfigInit:
     def test_no_config_file_uses_defaults(self, tmp_project: Path):
         cfg = Config(tmp_project)
@@ -216,6 +225,7 @@ class TestScalarProperties:
             "theme": "flatly",
             "toc": True,
             "toc-depth": 2,
+            "html-math-method": "katex",
             "language": "en",
             "show_dates": False,
             "date_format": "%B %d, %Y",
