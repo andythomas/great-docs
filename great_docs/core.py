@@ -5332,8 +5332,9 @@ class GreatDocs:
             if file_info:
                 files_info.append(file_info)
 
-                # Track if there's an index.qmd
-                if qmd_path.name == "index.qmd":
+                # Track if there's a root-level index.qmd (subdir index.qmd files
+                # are used only for section titles, not as the UG landing page)
+                if qmd_path.name == "index.qmd" and qmd_path.parent == user_guide_dir:
                     has_index = True
 
                 # Group by section
