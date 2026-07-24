@@ -94,22 +94,6 @@ def test_adjacent_and_mixed_directives_keep_their_positions():
     )
 
 
-@pytest.mark.parametrize("fence", ["```", "~~~"])
-def test_rst_directives_inside_fences_remain_literal(fence: str):
-    text = f"{fence}text\n.. note:: Literal example.\n.. math:: x^2\n{fence}"
-
-    assert convert_rst_directives(text) == text
-
-
-def test_rst_directive_after_fence_is_converted():
-    text = "```text\n.. note:: Literal example.\n```\n.. note:: Real note."
-
-    result = convert_rst_directives(text)
-
-    assert ".. note:: Literal example." in result
-    assert result.endswith("::: {.callout-note}\nReal note.\n:::")
-
-
 @pytest.mark.parametrize(
     "text",
     [

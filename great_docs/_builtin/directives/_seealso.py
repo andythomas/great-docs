@@ -71,8 +71,7 @@ def _extract_seealso(text: str) -> tuple[str, list[tuple[str, str]]]:
     -------
     Cleaned source and the entries removed from it.
     """
-    lines = text.splitlines()
-    fenced = fenced_lines(lines)
+    lines, fenced = fenced_lines(text)
     cleaned: list[str] = []
     entries: list[tuple[str, str]] = []
 

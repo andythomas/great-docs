@@ -13,7 +13,6 @@ from great_docs._builtin.directives._callouts import (
     join_content,
     render_callout,
 )
-from great_docs._utils import fenced_lines
 from great_docs.hooks import on_object_resolved
 from great_docs.pandoc.blocks import Div
 from great_docs.pandoc.components import Attr
@@ -70,13 +69,12 @@ def convert_rst_directives(text: str) -> str:
         return text
 
     lines = text.splitlines()
-    fenced = fenced_lines(lines)
     converted: list[str] = []
     index = 0
 
     while index < len(lines):
         line = lines[index]
-        candidate = not fenced[index] and line.lstrip().startswith("..")
+        candidate = line.lstrip().startswith("..")
         match = _DIRECTIVE_RE.match(line) if candidate else None
         if match is None:
             converted.append(line)

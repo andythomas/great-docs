@@ -114,8 +114,7 @@ def convert_directives(text: str) -> str:
     if "%" not in text:
         return text
 
-    lines = text.splitlines()
-    fenced = fenced_lines(lines)
+    lines, fenced = fenced_lines(text)
     converted: list[str] = []
     index = 0
 

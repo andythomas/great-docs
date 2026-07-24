@@ -11,19 +11,24 @@ _SEEALSO_RE = re.compile(
 _FENCE_RE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 
 
-def fenced_lines(lines: list[str]) -> list[bool]:
+def fenced_lines(text: str) -> tuple[list[str], list[bool]]:
     """
-    Mark lines contained by Markdown code fences
+    Split source text and identify lines contained by Markdown code fences
 
     Parameters
     ----------
-    lines
-        Source lines to classify.
+    text
+        Source text to classify.
 
     Returns
     -------
-    A mask that marks opening fences, fenced content, and closing fences.
+    Source lines and a mask marking opening fences, fenced content, and
+    closing fences.
     """
+    lines = text.splitlines()
+    if "```" not in text and "~~~" not in text:
+        return lines, [False] * len(lines)
+
     fenced: list[bool] = []
     fence_char = ""
     fence_length = 0
@@ -51,7 +56,7 @@ def fenced_lines(lines: list[str]) -> list[bool]:
             fence_char = ""
             fence_length = 0
 
-    return fenced
+    return lines, fenced
 
 
 def parse_seealso(docstring: str) -> list[tuple[str, str]]:
