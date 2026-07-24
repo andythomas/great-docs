@@ -72,6 +72,28 @@ def test_adjacent_directives_are_converted_independently():
     assert result == ("::: {.callout-note}\nFirst.\n:::\n::: {.callout-tip}\nSecond.\n:::")
 
 
+@pytest.mark.parametrize("fence", ["```", "~~~"])
+def test_canonical_directives_inside_fences_remain_literal(fence: str):
+    text = f"{fence}text\n%warning Literal example.\n{fence}"
+
+    assert convert_directives(text) == text
+
+
+def test_shorter_fence_does_not_close_a_longer_fence():
+    text = "````text\n```\n%warning Literal example.\n````"
+
+    assert convert_directives(text) == text
+
+
+def test_canonical_directive_after_fence_is_converted():
+    text = "```text\n%warning Literal example.\n```\n%warning Real warning."
+
+    result = convert_directives(text)
+
+    assert "%warning Literal example." in result
+    assert result.endswith("::: {.callout-warning}\nReal warning.\n:::")
+
+
 @pytest.mark.parametrize("name", ["nodoc", "seealso target", "unknown text"])
 def test_non_callout_directives_are_unchanged(name: str):
     text = f"%{name}"

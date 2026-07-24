@@ -13,6 +13,7 @@ from great_docs._builtin.directives._callouts import (
     join_content,
     render_callout,
 )
+from great_docs._utils import fenced_lines
 from great_docs.hooks import on_object_resolved
 from great_docs.pandoc.blocks import Div
 from great_docs.pandoc.components import Attr
@@ -65,14 +66,20 @@ def convert_rst_directives(text: str) -> str:
     -------
     The text with supported directives replaced by Quarto markup.
     """
+    if ".." not in text:
+        return text
+
     lines = text.splitlines()
+    fenced = fenced_lines(lines)
     converted: list[str] = []
     index = 0
 
     while index < len(lines):
-        match = _DIRECTIVE_RE.match(lines[index])
+        line = lines[index]
+        candidate = not fenced[index] and line.lstrip().startswith("..")
+        match = _DIRECTIVE_RE.match(line) if candidate else None
         if match is None:
-            converted.append(lines[index])
+            converted.append(line)
             index += 1
             continue
 
