@@ -6050,34 +6050,59 @@ class GreatDocs:
                     subdirs[parent_str].append(file_info)
 
             if subdirs:
-                # Put root-level files first (index.qmd at the very top)
-                root_files.sort(key=lambda fi: (fi["path"].name != "index.qmd", fi["path"].name))
-                for file_info in root_files:
-                    href = get_clean_href(file_info)
-                    if file_info.get("title"):
-                        contents.append({"text": file_info["title"], "href": href})
+                # Root index.qmd is always first; all other root files and subdir
+                # sections are sorted together so numeric prefixes control the order
+                # regardless of whether an item is a file or a directory.
+                root_index_file = next(
+                    (fi for fi in root_files if fi["path"].name == "index.qmd"), None
+                )
+                other_root_files = [fi for fi in root_files if fi["path"].name != "index.qmd"]
+
+                if root_index_file:
+                    href = get_clean_href(root_index_file)
+                    if root_index_file.get("title"):
+                        contents.append({"text": root_index_file["title"], "href": href})
                     else:
                         contents.append(href)  # pragma: no cover
 
-                # Then add subdirectory groups, sorted by directory name
-                for subdir in sorted(subdirs):
-                    dir_files = subdirs[subdir]
-                    # Use the index.qmd title as the section title if present,
-                    # otherwise derive from the directory name
-                    clean_subdir = self._strip_numeric_prefix(subdir)
-                    section_title = clean_subdir.replace("-", " ").replace("_", " ").title()
-                    section_contents = []
-                    for file_info in dir_files:
-                        if file_info["path"].name == "index.qmd":
-                            section_title = file_info["title"]
-                        else:
-                            href = get_clean_href(file_info)
-                            if file_info.get("title"):
-                                section_contents.append({"text": file_info["title"], "href": href})
-                            else:
-                                section_contents.append(href)
+                # Build a combined list keyed by each item's leading name component
+                # so that files and directory sections sort together.
+                nav_items: list = []
+                for file_info in other_root_files:
+                    nav_items.append(("file", file_info["path"].name, file_info))
+                for subdir, dir_files in subdirs.items():
+                    sort_key = Path(subdir).parts[0]
+                    nav_items.append(("section", sort_key, subdir, dir_files))
+                nav_items.sort(key=lambda x: x[1])
 
-                    contents.append({"section": section_title, "contents": section_contents})
+                for item in nav_items:
+                    if item[0] == "file":
+                        file_info = item[2]
+                        href = get_clean_href(file_info)
+                        if file_info.get("title"):
+                            contents.append({"text": file_info["title"], "href": href})
+                        else:
+                            contents.append(href)  # pragma: no cover
+                    else:
+                        _, _, subdir, dir_files = item
+                        # Use the index.qmd title as the section title if present,
+                        # otherwise derive from the directory name
+                        clean_subdir = self._strip_numeric_prefix(subdir)
+                        section_title = clean_subdir.replace("-", " ").replace("_", " ").title()
+                        section_contents = []
+                        for file_info in dir_files:
+                            if file_info["path"].name == "index.qmd":
+                                section_title = file_info["title"]
+                            else:
+                                href = get_clean_href(file_info)
+                                if file_info.get("title"):
+                                    section_contents.append(
+                                        {"text": file_info["title"], "href": href}
+                                    )
+                                else:
+                                    section_contents.append(href)
+
+                        contents.append({"section": section_title, "contents": section_contents})
             else:
                 # All files at the root level — list in order
                 for file_info in files_info:
