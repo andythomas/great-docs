@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
 """Regenerate ADOPTERS.md from a GitHub code search.
 
-Finds public repositories that build their docs with Great Docs by searching
-for the marker file ``great-docs.yml``, then writes a Markdown log linking each
-project to its documentation homepage.
-
-Requires the GitHub CLI (``gh``) to be installed and authenticated.
-
-Usage:
-    python scripts/update_adopters.py
+Finds public repositories that build their docs with Great Docs by searching for the marker file
+`great-docs.yml`, then writes a Markdown log linking each project to its documentation homepage.
 """
 
 from __future__ import annotations
@@ -30,7 +24,7 @@ SEARCH_URL = "https://github.com/search?q=filename%3Agreat-docs.yml&type=code"
 
 
 def _gh(*args: str) -> str:
-    """Run a ``gh`` command and return its stdout, exiting on failure."""
+    """Run a `gh` command and return its stdout, exiting on failure."""
     try:
         result = subprocess.run(["gh", *args], capture_output=True, text=True, check=True)
     except FileNotFoundError:
@@ -41,11 +35,10 @@ def _gh(*args: str) -> str:
 
 
 def find_repos() -> list[str]:
-    """Return sorted, de-duplicated ``owner/repo`` names matching the search.
+    """Return sorted, de-duplicated `owner/repo` names matching the search.
 
-    Uses the code-search REST endpoint with ``--paginate`` so results beyond the
-    first 100 are followed via the response ``Link`` headers (the API caps at
-    1000 results total, 100 per page).
+    Uses the code-search REST endpoint with `--paginate` so results beyond the first 100 are
+    followed via the response `Link` headers (the API caps at 1000 results total, 100 per page).
     """
     out = _gh(
         "api",
@@ -64,7 +57,7 @@ def find_repos() -> list[str]:
 
 
 def repo_meta(full_name: str) -> dict[str, str]:
-    """Return ``{full_name, homepage, description}`` for one repository."""
+    """Return `{full_name, homepage, description}` for one repository."""
     out = _gh(
         "api",
         f"repos/{full_name}",
@@ -127,8 +120,8 @@ def main() -> None:
     kept: list[dict[str, str]] = []
     for name in names:
         meta = repo_meta(name)
-        # Keep only live sites that are genuine adopters: a published homepage,
-        # and not a great-docs demo/example.
+        # Keep only live sites that are genuine adopters: a published homepage, and not a
+        # great-docs demo/example.
         if not meta["homepage"]:
             continue
         if is_demo(meta["full_name"], meta["description"]):
