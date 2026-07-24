@@ -341,3 +341,15 @@ def test_empty_docstring_value_has_no_subject():
     renderer = RenderDocFunction(content.Doc.from_griffe(obj.name, obj))
 
     assert renderer.docstring_subject is None
+
+
+def test_directive_only_seealso_renders_every_reference_without_a_subject():
+    obj = _obj("%seealso first : First reference, second : Second reference")
+    add_seealso(obj)
+    renderer = RenderDocFunction(content.Doc.from_griffe(obj.name, obj))
+
+    body = str(renderer.render_body())
+
+    assert renderer.docstring_subject is None
+    assert "first" in body
+    assert "second" in body

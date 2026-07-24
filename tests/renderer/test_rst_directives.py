@@ -189,6 +189,10 @@ def test_add_rst_directives_ignores_non_sphinx_docstrings(parser: str):
             ".. math:: x^2",
             "$$\nx^2\n$$",
         ),
+        (
+            ".. seealso:: first : First reference, second : Second reference",
+            "first",
+        ),
     ],
 )
 def test_first_line_rst_directive_is_rendered_in_the_docstring_body(
@@ -206,4 +210,7 @@ def test_first_line_rst_directive_is_rendered_in_the_docstring_body(
     renderer = RenderDocFunction(content.Doc.from_griffe(function.name, function))
 
     assert renderer.docstring_subject is None
-    assert expected in str(renderer.render_body())
+    body = str(renderer.render_body())
+    assert expected in body
+    if source.startswith(".. seealso::"):
+        assert "second" in body

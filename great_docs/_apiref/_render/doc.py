@@ -361,22 +361,33 @@ class __RenderDoc(RenderBase):
         return Inlines0(items)
 
     @cached_property
+    def _docstring_sections(self) -> list[gf.DocstringSection]:
+        """
+        Transform the parsed sections used to render the docstring
+        """
+        if not self.obj.docstring:
+            return []
+        return cast(
+            "list[gf.DocstringSection]",
+            transform(self.obj.docstring.parsed),
+        )
+
+    @cached_property
     def docstring_subject(self) -> str | None:
         """
-        The first line of docstring
+        Select the leading prose line used as the docstring subject
         """
-        if (
-            self.obj.docstring
-            and (sections := self.obj.docstring.parsed)
-            and isinstance(sections[0], gf.DocstringSectionText)
-        ):
-            lines = self.obj.docstring.value.splitlines()
-            if not lines:
-                return None
-            first_line = lines[0]
-            if first_line == "$$" or first_line.startswith(":::"):
-                return None
-            return first_line
+        sections = self._docstring_sections
+        if not sections or not isinstance(sections[0], gf.DocstringSectionText):
+            return None
+
+        lines = sections[0].value.splitlines()
+        if not lines:
+            return None
+        first_line = lines[0]
+        if first_line == "$$" or first_line.startswith(":::"):
+            return None
+        return first_line
 
     def render_docstring_subject(self) -> BlockContent:
         """
@@ -402,10 +413,7 @@ class __RenderDoc(RenderBase):
         if not self.obj.docstring:
             return []
 
-        sections = cast(
-            "list[gf.DocstringSection]",
-            transform(self.obj.docstring.parsed),
-        )
+        sections = list(self._docstring_sections)
 
         # Remove the docstring subject from the top of the docstring
         if self.docstring_subject:
