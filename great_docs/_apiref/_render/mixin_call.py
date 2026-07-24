@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from functools import cached_property
 from typing import TYPE_CHECKING, TypeAlias, cast
 
@@ -8,7 +7,6 @@ import griffe as gf
 
 from great_docs.pandoc.blocks import (
     BlockContent,
-    Blocks,
     CodeBlock,
     DefinitionItem,
     DefinitionList,
@@ -22,7 +20,6 @@ from .._docstring_sections import (
     DCDocstringSectionParameterAttributes,
 )
 from .._format import formatted_signature, repr_obj
-from .._rst_converters import convert_rst_text
 from .doc import RenderDoc
 
 if TYPE_CHECKING:
@@ -70,12 +67,6 @@ class __RenderDocCallMixin(RenderDoc):
         e.g. Parameters, Other Parameters, Returns, Yields, Receives,
              Warns, Attributes
         """
-        _RST_DIRECTIVE_RE = re.compile(r"^\.\.\s+\w+::")
-
-        def _is_rst_directive_item(item: DocstringDefinitionType) -> bool:
-            """Whether a definition item is actually a misinterpreted RST directive"""
-            ann = getattr(item, "annotation", None)
-            return bool(ann and isinstance(ann, str) and _RST_DIRECTIVE_RE.match(ann.strip()))
 
         def render_section_item(el: DocstringDefinitionType) -> DefinitionItem:
             """
@@ -95,11 +86,8 @@ class __RenderDocCallMixin(RenderDoc):
             # references can be processed. Pandoc does not process any markup
             # within backquotes `...`, but it does if the markup is within
             # html code tags.
-            desc = convert_rst_text(el.description) if el.description else ""
+            desc = el.description or ""
             return Code(str(term)).html, desc
-
-        normal_items: list[DefinitionItem] = []
-        directive_parts: list[str] = []
 
         # For Returns/Yields/Receives, merge consecutive unnamed items that
         # share the same annotation (griffe splits continuation paragraphs
@@ -133,30 +121,10 @@ class __RenderDocCallMixin(RenderDoc):
                     merged.append(item)
             items_to_render = merged
 
-        for item in items_to_render:
-            if _is_rst_directive_item(item):  # pragma: no cover
-                # Reconstruct the RST directive text and convert it
-                # (griffe's numpy parser rejects RST directives at parse time,
-                # so this branch is only reachable with manually constructed objects)
-                ann = str(item.annotation).strip() if item.annotation else ""
-                desc = getattr(item, "description", "") or ""
-                if desc:
-                    lines = desc.splitlines()
-                    directive_text = ann + "\n" + "\n".join("    " + ln for ln in lines)
-                else:
-                    directive_text = ann
-                directive_parts.append(convert_rst_text(directive_text))
-            else:
-                normal_items.append(render_section_item(item))
-
-        parts: list[BlockContent] = []
-        if normal_items:
-            parts.append(Div(DefinitionList(normal_items), Attr(classes=["doc-definition-items"])))
-        parts.extend(directive_parts)
-
-        if len(parts) == 1:
-            return parts[0]
-        return Blocks(parts) if parts else None  # pragma: no cover
+        items = [render_section_item(item) for item in items_to_render]
+        if not items:
+            return None  # pragma: no cover
+        return Div(DefinitionList(items), Attr(classes=["doc-definition-items"]))
 
     @cached_property
     def parameters(self) -> gf.Parameters:

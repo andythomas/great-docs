@@ -44,7 +44,6 @@ from .._format import (
     repr_obj,
 )
 from .._globals import package_info
-from .._rst_converters import convert_docstring_text, convert_rst_text
 from .base import RenderBase
 
 if TYPE_CHECKING:
@@ -488,15 +487,12 @@ class __RenderDoc(RenderBase):
         if isinstance(new_el, ExampleCode):
             return CodeBlock(el.value, Attr(classes=["python"]))
         if isinstance(new_el, ExampleText):
-            # Interleaved Examples-section prose gets the same full conversion
-            # as a text section (doctest fencing is part of that), so RST
-            # markup here is not left raw.
-            return convert_docstring_text(el.value, heading_level=self.level + 1)
-        return convert_rst_text(el.value)
+            return el.value
+        return str(el.value)
 
     @render_docstring_section.register
     def _(self, el: gf.DocstringSectionText):
-        return convert_docstring_text(el.value, heading_level=self.level + 1)
+        return el.value
 
     @render_docstring_section.register
     def _(self, el: gf.DocstringSectionExamples):
@@ -523,15 +519,15 @@ class __RenderDoc(RenderBase):
         """
         Render an unofficial numpydoc section
         """
-        return convert_rst_text(el.value.description)
+        return el.value.description
 
     @render_docstring_section.register
     def _(self, el: DocstringSectionWarnings):
-        return convert_rst_text(el.value)
+        return el.value
 
     @render_docstring_section.register
     def _(self, el: DocstringSectionNotes):
-        return convert_rst_text(el.value)
+        return el.value
 
     @render_docstring_section.register
     def _(self, el: DocstringSectionSeeAlso):

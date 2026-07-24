@@ -2,9 +2,6 @@ import griffe as gf
 import pytest
 
 from great_docs._apiref import RenderDocFunction, content
-from great_docs._apiref._rst_converters import (
-    convert_docstring_text,
-)
 from great_docs._builtin.directives import _callouts
 from great_docs._builtin.directives._callouts import add_callouts, convert_directives
 from great_docs._builtin.directives._rst_directives import convert_rst_directives
@@ -114,7 +111,7 @@ def test_great_docs_directives_are_parser_independent(parser: str):
     add_callouts(function)
 
     rendered = "\n".join(
-        convert_docstring_text(section.value, heading_level=2)
+        section.value
         for section in function.docstring.parsed
         if isinstance(section, gf.DocstringSectionText)
     )
