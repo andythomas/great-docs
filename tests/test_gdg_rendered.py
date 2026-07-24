@@ -3302,20 +3302,22 @@ def test_ug_mixed_subdir_order_sidebar_interleaving():
     contents = ug_sidebar[0].get("contents", [])
     assert len(contents) == 4, f"Sidebar should have 4 entries, got {len(contents)}"
 
-    # Position 0: Overview (root file 01-)
+    # Position 0: Overview (plain page link for root file 01-)
     entry0 = contents[0]
-    assert isinstance(entry0, dict) and "section" not in entry0, "First entry should be a page"
-    assert "overview" in str(entry0).lower(), "First entry should be Overview"
+    assert isinstance(entry0, dict) and "text" in entry0, "First entry should be a plain page link"
+    assert entry0["text"] == "Overview", f"First entry should be Overview, got {entry0.get('text')!r}"
+    assert entry0.get("href"), "First entry should have an href"
 
     # Position 1: Setup section (subdir 02-)
     entry1 = contents[1]
     assert isinstance(entry1, dict) and "section" in entry1, "Second entry should be a section"
     assert entry1["section"] == "Setup", f"Second entry should be Setup, got {entry1['section']!r}"
 
-    # Position 2: Usage (root file 03-)
+    # Position 2: Usage (plain page link for root file 03-)
     entry2 = contents[2]
-    assert isinstance(entry2, dict) and "section" not in entry2, "Third entry should be a page"
-    assert "usage" in str(entry2).lower(), "Third entry should be Usage"
+    assert isinstance(entry2, dict) and "text" in entry2, "Third entry should be a plain page link"
+    assert entry2["text"] == "Usage", f"Third entry should be Usage, got {entry2.get('text')!r}"
+    assert entry2.get("href"), "Third entry should have an href"
 
     # Position 3: Advanced Topics section (subdir 04-)
     entry3 = contents[3]
