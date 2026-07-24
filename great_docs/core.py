@@ -13128,6 +13128,7 @@ anchor-sections: true
             ann_dismissable = "true" if announcement.get("dismissable", True) else "false"
             ann_url = html_mod.escape(announcement.get("url") or "")
             ann_style = html_mod.escape(announcement.get("style") or "")
+            ann_position = html_mod.escape(announcement.get("position", "above-navbar"))
 
             ann_meta_tag = (
                 f'<meta name="gd-announcement"'
@@ -13135,7 +13136,8 @@ anchor-sections: true
                 f' data-type="{ann_type}"'
                 f' data-dismissable="{ann_dismissable}"'
                 f' data-url="{ann_url}"'
-                f' data-style="{ann_style}">'
+                f' data-style="{ann_style}"'
+                f' data-position="{ann_position}">'
             )
 
             # Add meta tag to header (replace any existing announcement meta)

@@ -42038,3 +42038,52 @@ def test_build_metadata_margin_no_package_info_link_when_missing():
         result = docs._build_metadata_margin()
 
         assert "package-info.html" not in result
+
+
+def test_announcement_position_in_meta_tag():
+    """_update_quarto_config emits data-position on the gd-announcement meta tag."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.1.0"'
+        )
+        (project_path / "great-docs.yml").write_text(
+            "announcement:\n  content: Hi\n  position: below-navbar\n",
+            encoding="utf-8",
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._update_quarto_config()
+
+        with open(docs.project_path / "_quarto.yml", "r") as f:
+            config = read_yaml(f)
+
+        header = config["format"]["html"]["include-in-header"]
+        meta_texts = [item.get("text", "") for item in header if isinstance(item, dict)]
+        ann = next(t for t in meta_texts if "gd-announcement" in t)
+        assert 'data-position="below-navbar"' in ann
+
+
+def test_announcement_position_defaults_above_in_meta_tag():
+    """Default announcement position is above-navbar in the meta tag."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.1.0"'
+        )
+        (project_path / "great-docs.yml").write_text(
+            "announcement: Hi\n", encoding="utf-8"
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._update_quarto_config()
+
+        with open(docs.project_path / "_quarto.yml", "r") as f:
+            config = read_yaml(f)
+
+        header = config["format"]["html"]["include-in-header"]
+        meta_texts = [item.get("text", "") for item in header if isinstance(item, dict)]
+        ann = next(t for t in meta_texts if "gd-announcement" in t)
+        assert 'data-position="above-navbar"' in ann
