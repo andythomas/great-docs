@@ -143,7 +143,11 @@ def test_handler_replaces_value_without_touching_cached_parsed_docstring(
     monkeypatch: pytest.MonkeyPatch,
 ):
     function = gf.Function("process")
-    function.docstring = gf.Docstring("Summary.\n\n.. note:: Be careful.", parent=function)
+    function.docstring = gf.Docstring(
+        "Summary.\n\n.. note:: Be careful.",
+        parent=function,
+        parser="sphinx",
+    )
     sentinel = object()
     function.docstring.__dict__["parsed"] = sentinel
 
@@ -177,6 +181,17 @@ def test_add_rst_directives_passes_through_an_irrelevant_docstring():
     assert function.docstring.value == "Summary."
 
 
+@pytest.mark.parametrize("parser", ["numpy", "google"])
+def test_add_rst_directives_ignores_non_sphinx_docstrings(parser: str):
+    source = "Summary.\n\n.. note:: Be careful."
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(source, parent=function, parser=parser)
+
+    add_rst_directives(function)
+
+    assert function.docstring.value == source
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
@@ -202,7 +217,7 @@ def test_first_line_rst_directive_is_rendered_in_the_docstring_body(
     function.docstring = gf.Docstring(
         source,
         parent=function,
-        parser="numpy",
+        parser="sphinx",
     )
     add_rst_directives(function)
 

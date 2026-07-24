@@ -43,7 +43,7 @@ def add_rst_directives(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     The object with supported RST directives replaced in its docstring value.
     """
     docstring = obj.docstring
-    if docstring is None:
+    if docstring is None or docstring.parser != gf.Parser.sphinx:
         return obj
 
     converted = convert_rst_directives(docstring.value)
