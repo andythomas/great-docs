@@ -42041,7 +42041,7 @@ def test_build_metadata_margin_no_package_info_link_when_missing():
 
 
 def test_announcement_position_in_meta_tag():
-    """_update_quarto_config emits data-position on the gd-announcement meta tag."""
+    """_update_quarto_config emits data-position on the gd-announcement meta tag"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
         (project_path / "pyproject.toml").write_text(
@@ -42061,12 +42061,13 @@ def test_announcement_position_in_meta_tag():
 
         header = config["format"]["html"]["include-in-header"]
         meta_texts = [item.get("text", "") for item in header if isinstance(item, dict)]
-        ann = next(t for t in meta_texts if "gd-announcement" in t)
+        ann = next((t for t in meta_texts if "gd-announcement" in t), None)
+        assert ann is not None, "gd-announcement meta tag not found"
         assert 'data-position="below-navbar"' in ann
 
 
 def test_announcement_position_defaults_above_in_meta_tag():
-    """Default announcement position is above-navbar in the meta tag."""
+    """Default announcement position is above-navbar in the meta tag"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
         (project_path / "pyproject.toml").write_text(
@@ -42085,5 +42086,6 @@ def test_announcement_position_defaults_above_in_meta_tag():
 
         header = config["format"]["html"]["include-in-header"]
         meta_texts = [item.get("text", "") for item in header if isinstance(item, dict)]
-        ann = next(t for t in meta_texts if "gd-announcement" in t)
+        ann = next((t for t in meta_texts if "gd-announcement" in t), None)
+        assert ann is not None, "gd-announcement meta tag not found"
         assert 'data-position="above-navbar"' in ann

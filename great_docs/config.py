@@ -1249,8 +1249,8 @@ class Config:
         Returns
         -------
         dict | None
-            Normalized dict with keys: content, type, dismissable, url. Returns `None` if no
-            announcement is configured.
+            Normalized dict with keys: `content`, `type`, `dismissable`, `url`, `style`,
+            `position`. Returns `None` if no announcement is configured.
         """
         raw = self.get("announcement")
         if raw is None or raw is False:
