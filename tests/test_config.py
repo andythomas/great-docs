@@ -526,6 +526,7 @@ class TestAnnouncement:
             "dismissable": True,
             "url": None,
             "style": None,
+            "position": "above-navbar",
         }
 
     def test_dict_full(self, tmp_project: Path):
@@ -539,6 +540,7 @@ class TestAnnouncement:
                 "  dismissable: false\n"
                 "  url: https://example.com\n"
                 "  style: custom\n"
+                "  position: below-navbar\n"
             ),
         )
         assert cfg.announcement == {
@@ -547,7 +549,28 @@ class TestAnnouncement:
             "dismissable": False,
             "url": "https://example.com",
             "style": "custom",
+            "position": "below-navbar",
         }
+
+    def test_position_defaults_above_navbar_for_string(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "announcement: Hi\n")
+        assert cfg.announcement["position"] == "above-navbar"
+
+    def test_position_defaults_above_navbar_for_dict(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "announcement:\n  content: Hi\n")
+        assert cfg.announcement["position"] == "above-navbar"
+
+    def test_position_below_navbar(self, tmp_project: Path):
+        cfg = _make_config(
+            tmp_project, "announcement:\n  content: Hi\n  position: below-navbar\n"
+        )
+        assert cfg.announcement["position"] == "below-navbar"
+
+    def test_position_invalid_falls_back_to_above(self, tmp_project: Path):
+        cfg = _make_config(
+            tmp_project, "announcement:\n  content: Hi\n  position: sideways\n"
+        )
+        assert cfg.announcement["position"] == "above-navbar"
 
     def test_dict_empty_content_returns_none(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "announcement:\n  type: info\n")
