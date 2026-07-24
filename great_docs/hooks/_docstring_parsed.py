@@ -8,7 +8,7 @@ without docstrings do not receive this event.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, cast
 
 from ._registry import HookRegistry
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 DocstringParsedHook = Callable[
     ["gf.Object | gf.Alias", "list[gf.DocstringSection]"],
-    "list[gf.DocstringSection] | None",
+    "list[gf.DocstringSection]",
 ]
 """A handler that customizes the parsed sections of a resolved object"""
 
@@ -67,7 +67,7 @@ def emit_docstring_parsed(
 
     sections = docstring.parsed
     for hook in REGISTRY:
-        result = hook(obj, sections)
+        result = cast("list[gf.DocstringSection] | None", hook(obj, sections))
         if result is None:
             raise TypeError(
                 f"`docstring_parsed` handler {hook.__module__}.{hook.__name__} returned None"

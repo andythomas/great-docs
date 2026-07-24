@@ -360,6 +360,18 @@ class TestCheckDirectiveConsistency:
         assert result.issues[0].check == "unknown-directive"
         assert "%internal" in result.issues[0].message
 
+    @pytest.mark.parametrize("directive", ["WARNING", "SeeAlso", "NODOC"])
+    def test_mixed_case_directive_is_unknown(self, directive: str):
+        doc = f"Short.\n\n%{directive}"
+        pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
+        result = LintResult()
+
+        _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
+
+        assert len(result.issues) == 1
+        assert result.issues[0].check == "unknown-directive"
+        assert f"%{directive}" in result.issues[0].message
+
     def test_no_docstring_skipped(self):
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=None)})
         result = LintResult()

@@ -451,7 +451,7 @@ def _check_directive_consistency(
     def _check_one(symbol: str, docstring: str) -> None:
         # Find all %-prefixed tokens in the docstring
         for match in _MALFORMED_DIRECTIVE.finditer(docstring):
-            directive_name = match.group(1).lower()
+            directive_name = match.group(1)
             if directive_name not in DIRECTIVES:
                 result.issues.append(
                     LintIssue(
