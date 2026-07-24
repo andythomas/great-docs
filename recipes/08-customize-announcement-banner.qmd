@@ -6,7 +6,7 @@ tags: [Theming, Customization]
 
 # The Announcement Banner
 
-The announcement banner appears above the navbar on every page of your site. It is useful for highlighting new releases, deprecation notices, migration information, or any other message you want every visitor to see.
+The announcement banner appears in the fixed header on every page of your site — above the navbar by default, or below it if you prefer. It is useful for highlighting new releases, deprecation notices, migration information, or any other message you want every visitor to see.
 
 ## Simple Banner
 
@@ -51,6 +51,22 @@ announcement:
 ```
 
 When `style` is set, the gradient overrides the `type` background color.
+
+## Position
+
+By default the banner sits above the navbar. Set `position` to `below-navbar` to place it after the navbar instead. Either way the banner stays in the fixed header at the top of the page:
+
+```{.yaml filename="great-docs.yml"}
+announcement:
+  content: "Scheduled maintenance this weekend."
+  type: warning
+  position: below-navbar
+```
+
+| Position | Placement |
+|----------|-----------|
+| `above-navbar` | Above the navbar (default) |
+| `below-navbar` | Below the navbar |
 
 ## Persistent vs. Dismissable
 
