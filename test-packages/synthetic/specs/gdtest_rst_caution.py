@@ -20,6 +20,7 @@ SPEC = {
             "build-backend": "setuptools.build_meta",
         },
     },
+    "config": {"parser": "sphinx"},
     "files": {
         "gdtest_rst_caution/__init__.py": '''\
             """Package testing caution RST directives."""

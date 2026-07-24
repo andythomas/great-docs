@@ -783,19 +783,6 @@ def test_rst_directives_render_as_callouts(pkg_name: str, expected_items):
     label = directive_labels.get(pkg_name, "Note")
     found_callouts = 0
 
-    # Map directive to the RST marker that appears in the q renderer output
-    rst_markers = {
-        "Note": ".. note::",
-        "Warning": ".. warning::",
-        "Tip": ".. tip::",
-        "Deprecated": ".. deprecated::",
-        "Added": ".. versionadded::",
-        "Caution": ".. caution::",
-        "Danger": ".. danger::",
-        "Important": ".. important::",
-    }
-    rst_marker = rst_markers.get(label, "")
-
     for html_file in ref.glob("*.html"):
         if html_file.name == "index.html":
             continue
@@ -827,14 +814,6 @@ def test_rst_directives_render_as_callouts(pkg_name: str, expected_items):
             callout_cls = callout_class_map.get(label, "callout-note")
             quarto_callouts = soup.find_all("div", class_=lambda c: c and callout_cls in c)
             found_callouts += len(quarto_callouts)
-
-        # Q renderer fallback: RST directive appears as raw text in page content
-        if found_callouts == 0:
-            page_text = soup.get_text()
-            if rst_marker and rst_marker in page_text:
-                found_callouts += 1
-            elif label.lower() in page_text.lower() and "version" in page_text.lower():
-                found_callouts += 1
 
     assert found_callouts > 0, f"No callout content with label {label!r} found in {pkg_name}"
 
@@ -1900,6 +1879,8 @@ def test_math_blocks_render():
 
     assert html_cfg["html-math-method"] == "katex"
     assert "katex" in rendered_html.lower()
+    assert "\\sqrt" in rendered_html
+    assert "\\sigma" in rendered_html
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

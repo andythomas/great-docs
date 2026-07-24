@@ -370,7 +370,10 @@ class __RenderDoc(RenderBase):
             and (sections := self.obj.docstring.parsed)
             and isinstance(sections[0], gf.DocstringSectionText)
         ):
-            first_line = self.obj.docstring.value.splitlines()[0]
+            lines = self.obj.docstring.value.splitlines()
+            if not lines:
+                return None
+            first_line = lines[0]
             if first_line == "$$" or first_line.startswith(":::"):
                 return None
             return first_line

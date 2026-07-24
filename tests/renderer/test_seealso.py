@@ -3,7 +3,7 @@ import textwrap
 import griffe as gf
 import pytest
 
-from great_docs._apiref import content
+from great_docs._apiref import RenderDocFunction, content
 from great_docs._apiref._docstring_sections import DocstringSectionSeeAlso, transform
 from great_docs._apiref.api_reference import Settings
 from great_docs._apiref.resolve import _Resolver
@@ -332,3 +332,12 @@ def test_alias_and_target_share_idempotent_seealso_source():
 
     assert target.docstring.value == first
     assert first.endswith("See Also\n--------\nrelated")
+
+
+def test_empty_docstring_value_has_no_subject():
+    obj = _obj("")
+    assert obj.docstring is not None
+    obj.docstring.__dict__["parsed"] = [gf.DocstringSectionText("")]
+    renderer = RenderDocFunction(content.Doc.from_griffe(obj.name, obj))
+
+    assert renderer.docstring_subject is None

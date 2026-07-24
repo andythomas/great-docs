@@ -53,9 +53,9 @@ SPEC = {
                 -----
                 Computes the L2 norm:
 
-                .. math::
-
-                    \\|x\\| = \\sqrt{\\sum_{i=1}^{n} x_i^2}
+                $$
+                \\|x\\| = \\sqrt{\\sum_{i=1}^{n} x_i^2}
+                $$
 
                 For a zero vector, the norm is 0.0. The computation uses
                 floating-point arithmetic, so results may have small
@@ -96,16 +96,16 @@ SPEC = {
                 -----
                 Applies the softmax function:
 
-                .. math::
-
-                    \\sigma(z)_i = \\frac{e^{z_i}}{\\sum_{j=1}^{K} e^{z_j}}
+                $$
+                \\sigma(z)_i = \\frac{e^{z_i}}{\\sum_{j=1}^{K} e^{z_j}}
+                $$
 
                 For numerical stability, the implementation subtracts the
                 maximum logit value before exponentiation:
 
-                .. math::
-
-                    \\sigma(z)_i = \\frac{e^{z_i - \\max(z)}}{\\sum_{j=1}^{K} e^{z_j - \\max(z)}}
+                $$
+                \\sigma(z)_i = \\frac{e^{z_i - \\max(z)}}{\\sum_{j=1}^{K} e^{z_j - \\max(z)}}
+                $$
 
                 This prevents overflow when logit values are large.
 
