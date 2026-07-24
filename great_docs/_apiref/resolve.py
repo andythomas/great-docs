@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 import griffe as gf
 from yaml12 import format_yaml
 
+from great_docs.hooks._docstring_parsed import emit_docstring_parsed
 from great_docs.hooks._object_resolved import emit_object_resolved
 
 from ._walkable import MISSING, MissingType, Walkable
@@ -307,6 +308,8 @@ class _Resolver:
         obj = emit_object_resolved(obj)
         if obj is None:
             return None
+        if obj.docstring is not None:
+            _ = emit_docstring_parsed(obj)
         children = self._resolve_members(el, obj, path=path, dynamic=dynamic)
 
         return Doc.from_griffe(
