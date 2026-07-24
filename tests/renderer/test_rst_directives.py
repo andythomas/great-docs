@@ -147,11 +147,36 @@ def test_add_rst_directives_passes_through_an_irrelevant_docstring():
     assert function.docstring.value == "Summary."
 
 
-@pytest.mark.parametrize("parser", ["numpy", "google"])
-def test_add_rst_directives_ignores_non_sphinx_docstrings(parser: str):
+def test_add_rst_directives_converts_callouts_in_numpy_docstrings():
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(
+        "Summary.\n\n.. note:: Be careful.",
+        parent=function,
+        parser="numpy",
+    )
+
+    add_rst_directives(function)
+
+    assert function.docstring.value == "Summary.\n\n::: {.callout-note}\nBe careful.\n:::"
+
+
+@pytest.mark.parametrize("directive", ["math", "seealso", "todo"])
+def test_add_rst_directives_leaves_sphinx_only_directives_in_numpy_docstrings(
+    directive: str,
+):
+    source = f"Summary.\n\n.. {directive}:: content"
+    function = gf.Function("process")
+    function.docstring = gf.Docstring(source, parent=function, parser="numpy")
+
+    add_rst_directives(function)
+
+    assert function.docstring.value == source
+
+
+def test_add_rst_directives_ignores_google_docstrings():
     source = "Summary.\n\n.. note:: Be careful."
     function = gf.Function("process")
-    function.docstring = gf.Docstring(source, parent=function, parser=parser)
+    function.docstring = gf.Docstring(source, parent=function, parser="google")
 
     add_rst_directives(function)
 

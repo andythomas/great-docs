@@ -43,16 +43,23 @@ def add_rst_directives(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     The object with supported RST directives replaced in its docstring value.
     """
     docstring = obj.docstring
-    if docstring is None or docstring.parser != gf.Parser.sphinx:
+    if docstring is None:
         return obj
 
-    converted = convert_rst_directives(docstring.value)
+    if docstring.parser == gf.Parser.sphinx:
+        directives = _RST_DIRECTIVES
+    elif docstring.parser == gf.Parser.numpy:
+        directives = CALLOUT_DIRECTIVES
+    else:
+        return obj
+
+    converted = convert_rst_directives(docstring.value, directives)
     if converted != docstring.value:
         docstring.value = converted
     return obj
 
 
-def convert_rst_directives(text: str) -> str:
+def convert_rst_directives(text: str, directives: frozenset[str] = _RST_DIRECTIVES) -> str:
     """
     Render recognized RST directives in docstring text as Quarto markup
 
@@ -60,6 +67,8 @@ def convert_rst_directives(text: str) -> str:
     ----------
     text
         Docstring text containing RST directives.
+    directives
+        Directive names eligible for conversion.
 
     Returns
     -------
@@ -76,7 +85,7 @@ def convert_rst_directives(text: str) -> str:
         line = lines[index]
         candidate = line.lstrip().startswith("..")
         match = _DIRECTIVE_RE.match(line) if candidate else None
-        if match is None:
+        if match is None or match.group("name") not in directives:
             converted.append(line)
             index += 1
             continue
