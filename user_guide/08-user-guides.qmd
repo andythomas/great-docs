@@ -192,6 +192,39 @@ The subdirectory approach works well for larger user guides where the directory 
 communicates the organization, while `guide-section` frontmatter is better suited for flat file
 layouts.
 
+### Mixing Root Files and Subdirectories
+
+You can mix root-level files with subdirectory sections in the same user guide. Numeric prefixes
+sort them together so the nav order follows the prefix regardless of whether an item is a file or a
+directory:
+
+```{.default filename="user_guide/"}
+user_guide/
+├── 01-overview.qmd              # Page: Overview
+├── 02-concepts/
+│   ├── index.qmd                # Section title: "Concepts"
+│   └── details.qmd
+└── 03-quickstart.qmd            # Page: Quickstart
+```
+
+This produces a sidebar that interleaves files and sections in prefix order:
+
+```{.default filename="Sidebar navigation"}
+User Guide
+├── Overview
+├── Concepts
+│   └── Details
+└── Quickstart
+```
+
+A root-level `index.qmd` always appears first regardless of its prefix.
+
+::: {.callout-warning}
+Avoid giving a root file and a subdirectory the same base name (e.g., `02-concepts.qmd` alongside
+`02-concepts/`). After numeric prefixes are stripped from URLs, both would map to the same
+`concepts` path, which causes duplicate entries in the sidebar.
+:::
+
 ## Writing Pages
 
 User Guide pages are standard Quarto Markdown files, which means you have access to all of Quarto's

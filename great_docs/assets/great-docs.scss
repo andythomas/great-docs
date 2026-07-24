@@ -1263,6 +1263,20 @@ div.sidebar-item-container {
     cursor: default !important;
 }
 
+/* In mixed sidebar layouts (root-level pages interleaved with section headers),
+   add top breathing room at transitions between plain page links and section headers.
+   Both rules are scoped to #quarto-sidebar to beat the high-specificity gd-sidebar-float
+   rule that otherwise collapses all sidebar-item margins to 0.1rem.
+   The plain→section direction uses more space so section headers feel anchored;
+   the section→plain direction uses less since the section's indented children
+   already provide visual separation. */
+#quarto-sidebar li.sidebar-item:not(.sidebar-item-section) + li.sidebar-item-section {
+    margin-top: 0.5rem;
+}
+#quarto-sidebar li.sidebar-item-section + li.sidebar-item:not(.sidebar-item-section) {
+    margin-top: 0.3rem;
+}
+
 /* Hover effect for clickable sidebar links (not section headers).
    Uses a ::before pseudo-element so hover never shifts layout. */
 #quarto-sidebar .sidebar-link[href] {

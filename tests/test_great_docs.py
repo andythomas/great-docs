@@ -36202,6 +36202,23 @@ class TestDiscoverUserGuide:
             assert info is not None
             assert info["has_index"] is True
 
+    def test_auto_discover_has_index_false_for_subdir_only(self):
+        """Subdir index.qmd files do not set has_index; only a root-level one does."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            docs = self._make_project(
+                tmp_dir,
+                {
+                    "01-overview.qmd": "---\ntitle: Overview\n---\nContent\n",
+                    "02-setup/index.qmd": "---\ntitle: Setup\n---\nSection intro\n",
+                    "02-setup/install.qmd": "---\ntitle: Installation\n---\nContent\n",
+                },
+            )
+            info = docs._discover_user_guide()
+            assert info is not None
+            assert info["has_index"] is False, (
+                "has_index should be False when only subdir index.qmd files exist"
+            )
+
 
 class TestDiscoverUserGuideExplicit:
     """Tests for _discover_user_guide_explicit."""
@@ -36362,6 +36379,37 @@ class TestGenerateUserGuideSidebarAuto:
             assert len(sidebar["contents"]) == 2
             # Second item should be a section
             assert "section" in sidebar["contents"][1]
+
+    def test_mixed_files_and_subdirs_sorted_by_prefix(self):
+        """Numeric prefixes interleave root files and subdir sections in the correct order."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+            ug_dir = tmp / "user_guide"
+            ug_dir.mkdir()
+            (ug_dir / "02_concepts").mkdir()
+            docs = GreatDocs(project_path=tmp_dir)
+            file01 = {"path": ug_dir / "01_overview.qmd", "title": "Overview", "section": None}
+            file02 = {
+                "path": ug_dir / "02_concepts" / "details.qmd",
+                "title": "Details",
+                "section": None,
+            }
+            file03 = {"path": ug_dir / "03_quickstart.qmd", "title": "Quickstart", "section": None}
+            user_guide_info = {
+                "files": [file01, file02, file03],
+                "sections": {},
+                "has_index": False,
+                "source_dir": ug_dir,
+            }
+            sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
+            contents = sidebar["contents"]
+            # Expected order: 01_overview (plain link), 02_concepts (section), 03_quickstart (plain link)
+            assert len(contents) == 3
+            assert contents[0] == {"text": "Overview", "href": "user-guide/overview.qmd"}
+            assert "section" in contents[1]
+            assert contents[1]["section"] == "Concepts"
+            assert contents[2] == {"text": "Quickstart", "href": "user-guide/quickstart.qmd"}
 
 
 class TestCopyUserGuideToDocs:
@@ -37992,8 +38040,9 @@ class TestGenerateUserGuideSidebarAutoBatch9:
             }
             sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
             # Subdirectory section should use the index.qmd title
+            # ("contents" key distinguishes a real section from a virtual-section page link)
             section_entry = next(
-                (c for c in sidebar["contents"] if isinstance(c, dict) and "section" in c),
+                (c for c in sidebar["contents"] if isinstance(c, dict) and "contents" in c),
                 None,
             )
             assert section_entry is not None
