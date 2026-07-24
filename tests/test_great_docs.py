@@ -36363,6 +36363,37 @@ class TestGenerateUserGuideSidebarAuto:
             # Second item should be a section
             assert "section" in sidebar["contents"][1]
 
+    def test_mixed_files_and_subdirs_sorted_by_prefix(self):
+        """Numeric prefixes interleave root files and subdir sections in the correct order."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+            ug_dir = tmp / "user_guide"
+            ug_dir.mkdir()
+            (ug_dir / "02_concepts").mkdir()
+            docs = GreatDocs(project_path=tmp_dir)
+            file01 = {"path": ug_dir / "01_overview.qmd", "title": "Overview", "section": None}
+            file02 = {
+                "path": ug_dir / "02_concepts" / "details.qmd",
+                "title": "Details",
+                "section": None,
+            }
+            file03 = {"path": ug_dir / "03_quickstart.qmd", "title": "Quickstart", "section": None}
+            user_guide_info = {
+                "files": [file01, file02, file03],
+                "sections": {},
+                "has_index": False,
+                "source_dir": ug_dir,
+            }
+            sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
+            contents = sidebar["contents"]
+            # Expected order: 01_overview (file), 02_concepts (section), 03_quickstart (file)
+            assert len(contents) == 3
+            assert contents[0] == {"text": "Overview", "href": "user-guide/overview.qmd"}
+            assert "section" in contents[1]
+            assert contents[1]["section"] == "Concepts"
+            assert contents[2] == {"text": "Quickstart", "href": "user-guide/quickstart.qmd"}
+
 
 class TestCopyUserGuideToDocs:
     """Tests for _copy_user_guide_to_docs."""
