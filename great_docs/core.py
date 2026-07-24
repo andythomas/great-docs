@@ -11992,6 +11992,9 @@ anchor-sections: true
         config["format"]["html"]["theme"] = site_settings.get("theme", "flatly")
         config["format"]["html"]["toc"] = site_settings.get("toc", True)
         config["format"]["html"]["toc-depth"] = site_settings.get("toc-depth", 2)
+        config["format"]["html"]["html-math-method"] = site_settings.get(
+            "html-math-method", "katex"
+        )
 
         # Use translated toc-title unless the user explicitly overrode it
         if "toc-title" in site_settings:

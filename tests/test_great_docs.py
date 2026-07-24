@@ -27521,6 +27521,31 @@ def _make_uqc_docs(tmp_dir, gd_yml_content="", pyproject_content=None, quarto_co
     return docs, quarto_yml
 
 
+def test_update_quarto_config_math_method_defaults_to_katex():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(tmp_dir)
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            config = read_yaml(f)
+
+        assert config["format"]["html"]["html-math-method"] == "katex"
+
+
+def test_update_quarto_config_forwards_math_method_override():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(
+            tmp_dir,
+            gd_yml_content="site:\n  html-math-method: mathjax\n",
+        )
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            config = read_yaml(f)
+
+        assert config["format"]["html"]["html-math-method"] == "mathjax"
+
+
 def test_update_quarto_config_resources_string():
     """Test _update_quarto_config converts string resources to list."""
 
