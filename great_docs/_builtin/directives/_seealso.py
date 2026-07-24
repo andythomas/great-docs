@@ -7,17 +7,22 @@ import re
 import griffe as gf
 
 from great_docs._utils import parse_seealso
-from great_docs.hooks import on_object_resolved
+from great_docs.hooks import on_docstring_parsed
 
 _SEEALSO_LINE_RE = re.compile(
     r"^[^\S\r\n]*%seealso(?:[^\S\r\n]+[^\r\n]*)?[^\S\r\n]*\r?$\n?",
     re.MULTILINE,
 )
+_EXCESS_GAP_RE = re.compile(r"\n{3,}")
+_SEEALSO_ENTRY_NAME_RE = re.compile(r"\s*([\w.]+)")
 _SEEALSO_TITLE = "see also"
 
 
-@on_object_resolved(priority=100)  # pyright: ignore[reportArgumentType]
-def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
+@on_docstring_parsed
+def add_seealso(
+    obj: gf.Object | gf.Alias,
+    sections: list[gf.DocstringSection],
+) -> list[gf.DocstringSection]:
     """
     Merge an object's `%seealso` entries into its See Also section
 
@@ -25,29 +30,32 @@ def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     ----------
     obj
         The resolved object.
+    sections
+        The object's parsed docstring sections.
 
     Returns
     -------
-    The object with directive lines removed and their unique entries merged
-    into its See Also section.
+    The sections with directive lines removed and their unique entries merged
+    into the See Also section.
     """
     docstring = obj.docstring
     if docstring is None or "%seealso" not in docstring.value:
-        return obj
+        return sections
 
     value = docstring.value
     cleaned = _strip_seealso(value)
     if cleaned == value:
-        return obj
+        return sections
 
     docstring.value = cleaned
-    docstring.__dict__.pop("parsed", None)
+    for section in sections:
+        if isinstance(section, gf.DocstringSectionText):
+            section.value = _strip_seealso(section.value)
 
     entries = parse_seealso(value)
     if not entries:
-        return obj
+        return sections
 
-    sections = docstring.parsed
     existing = _find_see_also(sections)
     seen: set[str] = _existing_names(existing.value.contents) if existing is not None else set()
     added: list[str] = []
@@ -64,7 +72,7 @@ def add_seealso(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
         body = "\n".join(added)
         sections.append(gf.DocstringSectionAdmonition(kind="see-also", text=body, title="See Also"))
 
-    return obj
+    return sections
 
 
 def _strip_seealso(text: str) -> str:
@@ -81,7 +89,7 @@ def _strip_seealso(text: str) -> str:
     The text with directive lines removed and excess blank lines collapsed.
     """
     cleaned = _SEEALSO_LINE_RE.sub("", text)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = _EXCESS_GAP_RE.sub("\n\n", cleaned)
     return cleaned.strip()
 
 
@@ -144,6 +152,6 @@ def _existing_names(contents: str) -> set[str]:
     for line in contents.splitlines():
         name_part = line.split(":", 1)[0]
         for part in name_part.split(","):
-            if match := re.match(r"\s*([\w.]+)", part):
+            if match := _SEEALSO_ENTRY_NAME_RE.match(part):
                 names.add(match.group(1))
     return names

@@ -12,9 +12,11 @@ def _obj(doc: str) -> gf.Function:
     return fn
 
 
-def _see_also(obj: gf.Function) -> gf.DocstringSectionAdmonition | None:
-    """Return the object's See Also admonition, or `None`"""
-    for section in obj.docstring.parsed:
+def _see_also(
+    sections: list[gf.DocstringSection],
+) -> gf.DocstringSectionAdmonition | None:
+    """Return the See Also admonition from a parsed section list"""
+    for section in sections:
         if isinstance(section, gf.DocstringSectionAdmonition) and (
             (section.title or "").lower() == "see also"
         ):
@@ -30,10 +32,12 @@ def test_seealso_only_injects_section():
         %seealso foo : does foo, bar
         """
     )
-    result = add_seealso(obj)
-    assert result is obj
+    sections = list(obj.docstring.parsed)
+    result = add_seealso(obj, sections)
+
+    assert result is sections
     assert "%seealso" not in obj.docstring.value
-    section = _see_also(obj)
+    section = _see_also(result)
     assert section is not None
     assert section.value.contents == "foo : does foo\nbar"
 
@@ -47,10 +51,10 @@ def test_multiple_seealso_directives_are_combined():
         %seealso bar, baz : does baz
         """
     )
-    add_seealso(obj)
+    sections = add_seealso(obj, list(obj.docstring.parsed))
 
     assert "%seealso" not in obj.docstring.value
-    section = _see_also(obj)
+    section = _see_also(sections)
     assert section is not None
     assert section.value.contents == "foo : does foo\nbar\nbaz : does baz"
 
@@ -64,10 +68,11 @@ def test_bare_seealso_does_not_consume_following_content():
         Important prose.
         """
     )
-    add_seealso(obj)
+    sections = add_seealso(obj, list(obj.docstring.parsed))
 
     assert "%seealso" not in obj.docstring.value
     assert "Important prose." in obj.docstring.value
+    assert all("%seealso" not in str(section.value) for section in sections)
 
 
 def test_seealso_deduplicates_repeated_new_entries():
@@ -79,9 +84,9 @@ def test_seealso_deduplicates_repeated_new_entries():
         %seealso bar, bar
         """
     )
-    add_seealso(obj)
+    sections = add_seealso(obj, list(obj.docstring.parsed))
 
-    section = _see_also(obj)
+    section = _see_also(sections)
     assert section is not None
     assert section.value.contents == "foo : first\nbar"
 
@@ -98,15 +103,15 @@ def test_seealso_merges_into_native_and_dedups():
         foo : native desc
         """
     )
-    add_seealso(obj)
-    sections = [
+    sections = add_seealso(obj, list(obj.docstring.parsed))
+    see_also_sections = [
         s
-        for s in obj.docstring.parsed
+        for s in sections
         if isinstance(s, gf.DocstringSectionAdmonition) and (s.title or "").lower() == "see also"
     ]
     # A single merged section, native entry kept, `foo` not duplicated.
-    assert len(sections) == 1
-    contents = sections[0].value.contents
+    assert len(see_also_sections) == 1
+    contents = see_also_sections[0].value.contents
     assert "foo : native desc" in contents
     assert "bar : new bar" in contents
     assert contents.count("foo") == 1
@@ -123,32 +128,18 @@ def test_no_seealso_leaves_docstring_untouched():
         """
     )
     before = obj.docstring.value
-    result = add_seealso(obj)
-    assert result is obj
+    sections = list(obj.docstring.parsed)
+    result = add_seealso(obj, sections)
+
+    assert result is sections
     assert obj.docstring.value == before
-    assert _see_also(obj) is None
-
-
-def test_object_without_docstring_passes_through():
-    fn = gf.Function("f")
-    fn.docstring = None
-    assert add_seealso(fn) is fn
+    assert _see_also(result) is None
 
 
 def test_add_seealso_registers_on_import():
-    from great_docs.hooks import _object_resolved
+    from great_docs.hooks import _docstring_parsed
 
-    assert add_seealso in _object_resolved.REGISTRY
-
-
-def test_nodoc_runs_before_seealso():
-    # nodoc must short-circuit before seealso runs — enforced by priority,
-    # not import order. Assert run order, not the priority numbers.
-    from great_docs._builtin.directives._nodoc import exclude_nodoc
-    from great_docs.hooks import _object_resolved
-
-    order = list(_object_resolved.REGISTRY)
-    assert order.index(exclude_nodoc) < order.index(add_seealso)
+    assert add_seealso in _docstring_parsed.REGISTRY
 
 
 def test_nodoc_and_seealso_object_is_dropped():
@@ -162,6 +153,40 @@ def test_nodoc_and_seealso_object_is_dropped():
         %seealso foo
         """
     )
-    # exclude_nodoc is registered before add_seealso, so the object is skipped
-    # before the seealso hook runs.
     assert emit_object_resolved(obj) is None
+
+
+def test_seealso_preserves_unknown_sections_and_order():
+    obj = _obj(
+        """
+        Summary.
+
+        %seealso target
+        """
+    )
+    first = gf.DocstringSectionText("Summary.\n\n%seealso target")
+    unknown = gf.DocstringSectionAdmonition(kind="custom", text="Keep.", title="Custom")
+    sections: list[gf.DocstringSection] = [first, unknown]
+
+    result = add_seealso(obj, sections)
+
+    assert result[0] is first
+    assert result[1] is unknown
+    assert _see_also(result) is result[2]
+
+
+def test_seealso_is_idempotent():
+    obj = _obj(
+        """
+        Summary.
+
+        %seealso target : Related.
+        """
+    )
+    sections = add_seealso(obj, list(obj.docstring.parsed))
+
+    result = add_seealso(obj, sections)
+
+    section = _see_also(result)
+    assert section is not None
+    assert section.value.contents == "target : Related."
