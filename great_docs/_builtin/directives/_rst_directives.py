@@ -48,7 +48,7 @@ def add_rst_directives(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
 
     if docstring.parser == gf.Parser.sphinx:
         directives = _RST_DIRECTIVES
-    elif docstring.parser == gf.Parser.numpy:
+    elif docstring.parser in (gf.Parser.numpy, gf.Parser.google):
         directives = CALLOUT_DIRECTIVES
     else:
         return obj

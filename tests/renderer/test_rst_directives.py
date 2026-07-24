@@ -160,27 +160,32 @@ def test_add_rst_directives_converts_callouts_in_numpy_docstrings():
     assert function.docstring.value == "Summary.\n\n::: {.callout-note}\nBe careful.\n:::"
 
 
+@pytest.mark.parametrize("parser", ["numpy", "google"])
 @pytest.mark.parametrize("directive", ["math", "seealso", "todo"])
-def test_add_rst_directives_leaves_sphinx_only_directives_in_numpy_docstrings(
+def test_add_rst_directives_leaves_sphinx_only_directives_in_compatible_docstrings(
+    parser: str,
     directive: str,
 ):
     source = f"Summary.\n\n.. {directive}:: content"
     function = gf.Function("process")
-    function.docstring = gf.Docstring(source, parent=function, parser="numpy")
+    function.docstring = gf.Docstring(source, parent=function, parser=parser)
 
     add_rst_directives(function)
 
     assert function.docstring.value == source
 
 
-def test_add_rst_directives_ignores_google_docstrings():
-    source = "Summary.\n\n.. note:: Be careful."
+def test_add_rst_directives_converts_callouts_in_google_docstrings():
     function = gf.Function("process")
-    function.docstring = gf.Docstring(source, parent=function, parser="google")
+    function.docstring = gf.Docstring(
+        "Summary.\n\n.. note:: Be careful.",
+        parent=function,
+        parser="google",
+    )
 
     add_rst_directives(function)
 
-    assert function.docstring.value == source
+    assert function.docstring.value == "Summary.\n\n::: {.callout-note}\nBe careful.\n:::"
 
 
 @pytest.mark.parametrize(
