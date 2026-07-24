@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from great_docs._builtin.directives import DIRECTIVES
 from great_docs._lint import (
     LintIssue,
     LintResult,
@@ -340,22 +341,9 @@ class TestCheckDocstringStyle:
 
 
 class TestCheckDirectiveConsistency:
-    def test_known_directives_ok(self):
-        names = (
-            "seealso",
-            "nodoc",
-            "versionadded",
-            "versionchanged",
-            "deprecated",
-            "note",
-            "warning",
-            "caution",
-            "danger",
-            "important",
-            "tip",
-            "hint",
-        )
-        doc = "Short.\n\n" + "\n".join(f"%{name}" for name in names)
+    @pytest.mark.parametrize("directive", sorted(DIRECTIVES))
+    def test_registered_directive_is_known(self, directive: str):
+        doc = f"Short.\n\n%{directive}"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
@@ -363,14 +351,14 @@ class TestCheckDirectiveConsistency:
         assert result.issues == []
 
     def test_unknown_directive(self):
-        doc = "Short.\n\n%versionremoved 2.0\n"
+        doc = "Short.\n\n%internal\n"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
         assert len(result.issues) == 1
         assert result.issues[0].check == "unknown-directive"
-        assert "%versionremoved" in result.issues[0].message
+        assert "%internal" in result.issues[0].message
 
     def test_no_docstring_skipped(self):
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=None)})
