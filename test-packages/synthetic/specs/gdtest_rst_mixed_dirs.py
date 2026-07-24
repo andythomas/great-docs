@@ -21,6 +21,7 @@ SPEC = {
             "build-backend": "setuptools.build_meta",
         },
     },
+    "config": {"parser": "sphinx"},
     "files": {
         "gdtest_rst_mixed_dirs/__init__.py": '''\
             """Package testing mixed RST directives in docstrings."""

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from great_docs._builtin.directives import DIRECTIVES
 from great_docs._lint import (
     LintIssue,
     LintResult,
@@ -340,23 +341,36 @@ class TestCheckDocstringStyle:
 
 
 class TestCheckDirectiveConsistency:
-    def test_known_directives_ok(self):
-        doc = "Short.\n\n%seealso func_b\n%nodoc\n"
+    @pytest.mark.parametrize("directive", sorted(DIRECTIVES))
+    def test_registered_directive_is_known(self, directive: str):
+        doc = f"Short.\n\n%{directive}"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
-        assert len(result.issues) == 0
+        assert result.issues == []
 
     def test_unknown_directive(self):
-        doc = "Short.\n\n%deprecated since v2.0\n"
+        doc = "Short.\n\n%internal\n"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
         assert len(result.issues) == 1
         assert result.issues[0].check == "unknown-directive"
-        assert "%deprecated" in result.issues[0].message
+        assert "%internal" in result.issues[0].message
+
+    @pytest.mark.parametrize("directive", ["WARNING", "SeeAlso", "NODOC"])
+    def test_mixed_case_directive_is_unknown(self, directive: str):
+        doc = f"Short.\n\n%{directive}"
+        pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
+        result = LintResult()
+
+        _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
+
+        assert len(result.issues) == 1
+        assert result.issues[0].check == "unknown-directive"
+        assert f"%{directive}" in result.issues[0].message
 
     def test_no_docstring_skipped(self):
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=None)})
@@ -895,7 +909,7 @@ class TestCheckDirectiveConsistencyEdgeCases:
         """Unknown directive in a class method docstring."""
         method = _make_griffe_obj(
             kind="function",
-            docstring="Method.\n\n%deprecated since v2\n",
+            docstring="Method.\n\n%versionremoved 2.0\n",
         )
         cls = _make_griffe_obj(
             kind="class",

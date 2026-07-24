@@ -4,6 +4,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from ._builtin.directives import DIRECTIVES
 from ._utils import parse_seealso
 
 
@@ -438,8 +439,6 @@ _MALFORMED_DIRECTIVE = re.compile(
     re.MULTILINE,
 )
 
-_KNOWN_DIRECTIVES = {"seealso", "nodoc"}
-
 
 def _check_directive_consistency(
     pkg,
@@ -452,8 +451,8 @@ def _check_directive_consistency(
     def _check_one(symbol: str, docstring: str) -> None:
         # Find all %-prefixed tokens in the docstring
         for match in _MALFORMED_DIRECTIVE.finditer(docstring):
-            directive_name = match.group(1).lower()
-            if directive_name not in _KNOWN_DIRECTIVES:
+            directive_name = match.group(1)
+            if directive_name not in DIRECTIVES:
                 result.issues.append(
                     LintIssue(
                         check="unknown-directive",
@@ -461,7 +460,7 @@ def _check_directive_consistency(
                         symbol=symbol,
                         message=(
                             f"Unknown directive '%{match.group(1)}'. "
-                            f"Known directives: {', '.join(sorted('%' + d for d in _KNOWN_DIRECTIVES))}."
+                            f"Known directives: {', '.join(sorted('%' + d for d in DIRECTIVES))}."
                         ),
                     )
                 )

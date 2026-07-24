@@ -464,13 +464,71 @@ symbols.
 
 See [Cross-Referencing](cross-referencing.qmd) for the full guide to all linking features.
 
-## Sphinx & RST Cleanup
+## Docstring Directives
 
-Docstrings sometimes contain Sphinx cross-reference roles (like `` :py:exc:`ValueError` ``) or RST
-directives (like `.. versionadded:: 2.0`). These constructs are designed for Sphinx but appear as
-literal text in non-Sphinx renderers.
+Great Docs directives add document structure and control API-reference behavior. Write directives
+as `%<directive>` in NumPy-, Google-, or Sphinx-style docstrings.
 
-Great Docs automatically translates these into clean, styled HTML during the post-render step.
+Great Docs supports two kinds of directives:
+
+- `%nodoc` excludes an object, and `%seealso` adds cross-references.
+- Callout directives add version annotations and admonitions.
+
+### Callout Directives
+
+Short callouts can put their content on the directive line:
+
+```python
+%warning This operation modifies the input.
+%versionadded 2.0
+%deprecated 3.0 Use `new_function` instead.
+```
+
+For longer content, indent the body below the directive:
+
+```python
+%versionchanged 2.1
+    Now returns a copy.
+
+%warning
+    This operation modifies the input.
+
+    Make a copy first if mutation is undesirable.
+```
+
+An inline body may also continue on indented lines. Great Docs preserves Markdown and paragraph
+breaks within the body. Version directives use the first argument as the version and the remaining
+content as the optional description.
+
+| Directive | Appearance |
+| --- | --- |
+| `%versionadded 2.0` | Quarto `note` callout titled "Added in version 2.0" |
+| `%versionchanged 3.1` | Quarto `note` callout titled "Changed in version 3.1" |
+| `%deprecated 2.6` | Quarto `warning` callout titled "Deprecated since version 2.6" |
+| `%note ...` | Quarto `note` callout |
+| `%warning ...` | Quarto `warning` callout |
+| `%caution ...` | Quarto `caution` callout |
+| `%danger ...` | Quarto `important` callout |
+| `%important ...` | Quarto `important` callout |
+| `%tip ...` | Quarto `tip` callout |
+| `%hint ...` | Quarto `tip` callout |
+
+### Sphinx Compatibility
+
+Great Docs also accepts the equivalent Sphinx/RST forms:
+
+```rst
+.. versionadded:: 2.0
+
+.. versionchanged:: 2.1
+
+    Now returns a copy.
+
+.. warning:: This operation modifies the input.
+```
+
+Both syntaxes produce the same callouts. Use Sphinx syntax when the same docstrings must work with
+both Great Docs and Sphinx; otherwise, prefer Great Docs `%` directives.
 
 ### Sphinx Cross-Reference Roles
 
@@ -479,27 +537,6 @@ formatting. For example, `` :py:exc:`ValueError` `` becomes `ValueError`, and
 `` :py:class:`datetime.datetime` `` becomes `datetime.datetime`. Function and method roles
 automatically receive trailing `()` to indicate they are callable, so `` :func:`my_function` ``
 renders as `my_function()` and `` :meth:`MyClass.run` `` renders as `MyClass.run()`.
-
-### RST Admonition & Version Directives
-
-RST directives are converted into styled callout boxes with appropriate icons and colors:
-
-| Directive | Appearance |
-| --- | --- |
-| `.. versionadded:: 2.0` | 🆕 Green callout: "Added in version 2.0" |
-| `.. versionchanged:: 3.1` | 🔄 Blue callout: "Changed in version 3.1" |
-| `.. deprecated:: 2.6` | ⚠️ Red callout: "Deprecated since version 2.6" |
-| `.. note:: ...` | ℹ️ Blue callout |
-| `.. warning:: ...` | ⚠️ Amber callout |
-| `.. tip:: ...` | 💡 Green callout |
-| `.. danger:: ...` | 🚨 Red callout |
-| `.. important:: ...` | ❗ Orange callout |
-
-Optional description text after the version number is preserved in the callout body.
-
-This cleanup happens automatically during every build, so you don't need to strip Sphinx syntax from
-your docstrings. If your package also publishes Sphinx-based docs, the same docstrings work in both
-systems without modification.
 
 ## Visual Enhancements
 

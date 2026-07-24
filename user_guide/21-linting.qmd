@@ -144,13 +144,19 @@ otherwise be silently ignored.
 |---------|----------|-------------|
 | `unknown-directive` | Warning | A `%`-prefixed directive is not recognized |
 
-Great Docs recognizes these directives:
+Great Docs recognizes these parser-independent directives:
 
-- `%seealso`: cross-reference related items (see [Cross-Referencing](cross-referencing.qmd))
-- `%nodoc`: exclude an item from documentation (see [Writing Docstrings](writing-docstrings.qmd#nodoc-exclude-an-item-from-documentation))
+- Cross-reference and exclusion: `%seealso` (see
+  [Cross-Referencing](cross-referencing.qmd)) and `%nodoc` (see
+  [Writing Docstrings](writing-docstrings.qmd#nodoc-exclude-an-item-from-documentation))
+- Callouts: `%note`, `%warning`, `%caution`, `%danger`, `%important`, `%tip`, and `%hint`
+- Version notices: `%versionadded`, `%versionchanged`, and `%deprecated`
 
-Any other `%`-prefixed token (e.g., `%deprecated`, `%internal`) is flagged as unknown. If you see a
-false positive, check for typos in the directive name.
+Sphinx-style `.. name::` directives are a separate compatibility syntax. Great Docs normalizes them
+only when the configured docstring parser is Sphinx.
+
+Any other `%`-prefixed token, such as `%internal`, is flagged as unknown. If you see a false
+positive, check for typos in the directive name.
 
 ## Running Specific Checks
 

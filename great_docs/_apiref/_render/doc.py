@@ -10,6 +10,19 @@ from typing import TYPE_CHECKING, cast
 import griffe as gf
 
 from great_docs._apiref._render._label import get_label
+from great_docs.pandoc.blocks import (
+    Block,
+    BlockContent,
+    Blocks,
+    CodeBlock,
+    DefinitionList,
+    Div,
+    Header,
+    InlineContent,
+    Para,
+)
+from great_docs.pandoc.components import Attr
+from great_docs.pandoc.inlines import Inline, Inlines, Inlines0, Link, Span
 
 from .. import content
 from .._docstring_sections import (
@@ -31,27 +44,14 @@ from .._format import (
     repr_obj,
 )
 from .._globals import package_info
-from .._rst_converters import convert_docstring_text, convert_rst_text
-from ..pandoc.blocks import (
-    Block,
-    BlockContent,
-    Blocks,
-    CodeBlock,
-    DefinitionList,
-    Div,
-    Header,
-    InlineContent,
-    Para,
-)
-from ..pandoc.components import Attr
-from ..pandoc.inlines import Inline, Inlines, Inlines0, Link, Span
 from .base import RenderBase
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from ..pandoc.blocks import DefinitionItem
-    from ..pandoc.inlines import InlineContentItem
+    from great_docs.pandoc.blocks import DefinitionItem
+    from great_docs.pandoc.inlines import InlineContentItem
+
     from ..typing import (
         Annotation,
         AnyDocstringSection,
@@ -361,16 +361,33 @@ class __RenderDoc(RenderBase):
         return Inlines0(items)
 
     @cached_property
+    def _docstring_sections(self) -> list[gf.DocstringSection]:
+        """
+        Transform the parsed sections used to render the docstring
+        """
+        if not self.obj.docstring:
+            return []
+        return cast(
+            "list[gf.DocstringSection]",
+            transform(self.obj.docstring.parsed),
+        )
+
+    @cached_property
     def docstring_subject(self) -> str | None:
         """
-        The first line of docstring
+        Select the leading prose line used as the docstring subject
         """
-        if (
-            self.obj.docstring
-            and (sections := self.obj.docstring.parsed)
-            and isinstance(sections[0], gf.DocstringSectionText)
-        ):
-            return self.obj.docstring.value.splitlines()[0]
+        sections = self._docstring_sections
+        if not sections or not isinstance(sections[0], gf.DocstringSectionText):
+            return None
+
+        lines = sections[0].value.splitlines()
+        if not lines:
+            return None
+        first_line = lines[0]
+        if first_line == "$$" or first_line.startswith(":::"):
+            return None
+        return first_line
 
     def render_docstring_subject(self) -> BlockContent:
         """
@@ -396,10 +413,7 @@ class __RenderDoc(RenderBase):
         if not self.obj.docstring:
             return []
 
-        sections = cast(
-            "list[gf.DocstringSection]",
-            transform(self.obj.docstring.parsed),
-        )
+        sections = list(self._docstring_sections)
 
         # Remove the docstring subject from the top of the docstring
         if self.docstring_subject:
@@ -484,15 +498,12 @@ class __RenderDoc(RenderBase):
         if isinstance(new_el, ExampleCode):
             return CodeBlock(el.value, Attr(classes=["python"]))
         if isinstance(new_el, ExampleText):
-            # Interleaved Examples-section prose gets the same full conversion
-            # as a text section (doctest fencing is part of that), so RST
-            # markup here is not left raw.
-            return convert_docstring_text(el.value, heading_level=self.level + 1)
-        return convert_rst_text(el.value)
+            return el.value
+        return str(el.value)
 
     @render_docstring_section.register
     def _(self, el: gf.DocstringSectionText):
-        return convert_docstring_text(el.value, heading_level=self.level + 1)
+        return el.value
 
     @render_docstring_section.register
     def _(self, el: gf.DocstringSectionExamples):
@@ -519,15 +530,15 @@ class __RenderDoc(RenderBase):
         """
         Render an unofficial numpydoc section
         """
-        return convert_rst_text(el.value.description)
+        return el.value.description
 
     @render_docstring_section.register
     def _(self, el: DocstringSectionWarnings):
-        return convert_rst_text(el.value)
+        return el.value
 
     @render_docstring_section.register
     def _(self, el: DocstringSectionNotes):
-        return convert_rst_text(el.value)
+        return el.value
 
     @render_docstring_section.register
     def _(self, el: DocstringSectionSeeAlso):

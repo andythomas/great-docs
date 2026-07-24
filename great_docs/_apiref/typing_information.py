@@ -5,17 +5,18 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import inventory
-from ._render import get_render_type
-from ._type_checks import griffe_to_doc, is_protocol, is_typealias, is_typevar
-from .introspect import get_object
-from .pandoc.blocks import (
+from great_docs.pandoc.blocks import (
     Block,
     BlockContent,
     Blocks,
     Header,
     Meta,
 )
+
+from . import inventory
+from ._render import get_render_type
+from ._type_checks import griffe_to_doc, is_protocol, is_typealias, is_typevar
+from .introspect import get_object
 
 if TYPE_CHECKING:
     import griffe as gf

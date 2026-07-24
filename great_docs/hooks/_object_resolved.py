@@ -22,7 +22,16 @@ REGISTRY: HookRegistry[ObjectResolvedHook] = HookRegistry()
 """The object_resolved handlers, ordered by priority"""
 
 on_object_resolved = REGISTRY.register
-"""Register a handler for the `object_resolved` event (bare or `priority=`-parameterized)"""
+"""
+Register a handler that customizes an object after resolution
+
+Great Docs emits `object_resolved` before it parses the object's final
+docstring or builds its API-reference document. A handler may inspect, mutate,
+or replace the resolved object, or return `None` to exclude it.
+
+After all handlers run, Great Docs invalidates the resulting object's
+parsed-docstring cache so later parsing reflects the final `docstring.value`.
+"""
 
 
 def emit_object_resolved(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias | None:
@@ -46,4 +55,8 @@ def emit_object_resolved(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias | No
         if result is None:
             return None
         obj = result
+
+    docstring = getattr(obj, "docstring", None)
+    if docstring is not None:
+        docstring.__dict__.pop("parsed", None)
     return obj

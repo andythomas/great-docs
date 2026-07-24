@@ -87,6 +87,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "theme": "flatly",
         "toc": True,
         "toc-depth": 2,
+        "html-math-method": "katex",
         # Language for UI text (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans")
         # Translates navbar labels, widget text, tooltips, and accessibility labels
         "language": "en",
@@ -2029,6 +2030,7 @@ def create_default_config() -> str:
 #   theme: flatly              # Quarto theme (default: flatly)
 #   toc: true                  # Show table of contents (default: true)
 #   toc-depth: 2               # TOC heading depth (default: 2)
+#   html-math-method: katex    # HTML math renderer (default: katex; e.g., mathjax)
 #   toc-title: On this page    # TOC title (default: "On this page")
 #   show_dates: false          # Show page timestamps in footer
 #   date_format: "%B %d, %Y"   # Date format (Python strftime)

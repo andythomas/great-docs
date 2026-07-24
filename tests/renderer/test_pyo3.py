@@ -81,32 +81,9 @@ def test_dynamic_alias_does_not_self_reference_pyo3_function(monkeypatch, tmp_pa
     assert canonical == "builtins:abs"
 
 
-def testconvert_rst_text_tolerates_non_string():
-    """Issue 5: a list-valued docstring section value must not crash rendering."""
-    from great_docs._apiref._rst_converters import convert_rst_text
-
-    # A plain list (as produced by some docstring section kinds) should be
-    # coerced to a string instead of raising AttributeError.
-    out = convert_rst_text(["a", "b"])
-    assert isinstance(out, str)
-    # And a normal string still passes through transformations.
-    assert convert_rst_text("hello") == "hello"
-
-
 def test_lineno_none_does_not_crash_method_sort():
     """Issue 3: methods with `lineno=None` must sort without TypeError."""
     method_entries = [("foo", float("inf")), ("bar", float("inf"))]
     # The fix coerces None -> inf so this comparison is valid.
     method_entries.sort(key=lambda x: x[1])
     assert method_entries == [("foo", float("inf")), ("bar", float("inf"))]
-
-
-@pytest.mark.parametrize(
-    "value",
-    [None, 42, ["a"], {"k": "v"}, ("t",)],
-)
-def testconvert_rst_text_handles_various_non_strings(value):
-    from great_docs._apiref._rst_converters import convert_rst_text
-
-    out = convert_rst_text(value)
-    assert isinstance(out, str)

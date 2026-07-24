@@ -4,15 +4,16 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, cast
 
-from .._type_checks import griffe_to_doc, is_doc_attribute, is_doc_class, is_doc_function
-from ..content import Doc, DocClass, MemberPage
-from ..pandoc.blocks import (
+from great_docs.pandoc.blocks import (
     Block,
     BlockContent,
     Blocks,
     Header,
 )
-from ..pandoc.components import Attr
+from great_docs.pandoc.components import Attr
+
+from .._type_checks import griffe_to_doc, is_doc_attribute, is_doc_class, is_doc_function
+from ..content import Doc, DocClass, MemberPage
 from .doc import RenderDoc
 from .html_table import html_table
 

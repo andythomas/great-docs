@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from great_docs._builtin._directives import exclude_nodoc
+from great_docs._builtin.directives._nodoc import exclude_nodoc
 
 
 def _obj(doc: str | None) -> SimpleNamespace:
@@ -111,7 +111,7 @@ def test_importing_great_docs_registers_builtin_handlers():
         from great_docs.hooks import _object_resolved
 
         modules = {h.__module__ for h in _object_resolved.REGISTRY}
-        assert "great_docs._builtin._directives" in modules, modules
+        assert "great_docs._builtin.directives._nodoc" in modules, modules
         """
     )
     subprocess.run([sys.executable, "-c", code], check=True)

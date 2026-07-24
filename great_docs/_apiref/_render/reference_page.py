@@ -3,19 +3,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from great_docs._apiref._render.mixin_page import RenderPageMixin
-
-from ..pandoc.blocks import (
+from great_docs.pandoc.blocks import (
     Blocks,
     Div,
     Meta,
 )
-from ..pandoc.components import Attr
+from great_docs.pandoc.components import Attr
+
 from .base import RenderBase
 
 if TYPE_CHECKING:
+    from great_docs.pandoc.blocks import BlockContent
+
     from ..api_reference import APIReference
     from ..content import Section
-    from ..pandoc.blocks import BlockContent
 
 
 class __RenderReferencePage(RenderPageMixin, RenderBase):

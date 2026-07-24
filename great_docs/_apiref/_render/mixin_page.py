@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from great_docs._apiref._render.base import RenderBase
 
 if TYPE_CHECKING:
-    from ..pandoc.blocks import BlockContent
+    from great_docs.pandoc.blocks import BlockContent
 
 
 class __RenderPageMixin(RenderBase):

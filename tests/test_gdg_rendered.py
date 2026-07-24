@@ -718,50 +718,6 @@ def test_examples_section_renders(pkg_name: str):
     assert found_examples > 0, f"No Examples sections found in {pkg_name}"
 
 
-@pytest.mark.dedicated
-@requires_bs4
-def test_examples_prose_converts_rst():
-    """Prose interleaved in an Examples section gets the same RST conversion as the body.
-
-    `gdtest_examples_rst_repro` places identical inline RST markup (a `:math:`
-    role) both in the description body and in the prose between the doctest
-    blocks of a numpy Examples section. The body is converted by
-    `convert_docstring_text`; the interleaved Examples prose must be too. If
-    the `ExampleText` branch routes through doctest fencing only, the role is
-    left as a raw `:math:` marker instead of a MathJax span.
-
-    `:math:` is used as the probe deliberately: unlike `:func:`, Quarto's own
-    interlinks filter does not rescue it, so a leaked role is observable in the
-    final HTML and attributable to great-docs.
-    """
-    pkg = "gdtest_examples_rst_repro"
-    if not _has_rendered_site(pkg):
-        pytest.skip(f"{pkg} not rendered")
-
-    page = _ref_dir(pkg) / "compute.html"
-    if not page.exists():
-        pytest.skip("compute.html not found")
-
-    soup = _load_html(page)
-
-    # Guard: the body proves the markup is convertible on this page.
-    body = soup.select_one("div.doc-text")
-    assert body is not None, "compute.html has no doc-text body"
-    assert ":math:" not in body.get_text(), "body left the :math: role unconverted"
-    assert body.select_one("span.math") is not None, "body did not render math"
-
-    # Regression: the Examples-section prose must be converted the same way.
-    examples = soup.select_one("section.doc-examples")
-    assert examples is not None, "compute.html has no Examples section"
-    assert ":math:" not in examples.get_text(), (
-        "Examples-section prose left the :math: role as raw text — interleaved "
-        "ExampleText is not going through convert_docstring_text"
-    )
-    assert examples.select_one("span.math") is not None, (
-        "Examples-section prose did not render math"
-    )
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # R3: Special Features — overloads, callouts, constants, dunders, enums
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -827,19 +783,6 @@ def test_rst_directives_render_as_callouts(pkg_name: str, expected_items):
     label = directive_labels.get(pkg_name, "Note")
     found_callouts = 0
 
-    # Map directive to the RST marker that appears in the q renderer output
-    rst_markers = {
-        "Note": ".. note::",
-        "Warning": ".. warning::",
-        "Tip": ".. tip::",
-        "Deprecated": ".. deprecated::",
-        "Added": ".. versionadded::",
-        "Caution": ".. caution::",
-        "Danger": ".. danger::",
-        "Important": ".. important::",
-    }
-    rst_marker = rst_markers.get(label, "")
-
     for html_file in ref.glob("*.html"):
         if html_file.name == "index.html":
             continue
@@ -872,15 +815,58 @@ def test_rst_directives_render_as_callouts(pkg_name: str, expected_items):
             quarto_callouts = soup.find_all("div", class_=lambda c: c and callout_cls in c)
             found_callouts += len(quarto_callouts)
 
-        # Q renderer fallback: RST directive appears as raw text in page content
-        if found_callouts == 0:
-            page_text = soup.get_text()
-            if rst_marker and rst_marker in page_text:
-                found_callouts += 1
-            elif label.lower() in page_text.lower() and "version" in page_text.lower():
-                found_callouts += 1
-
     assert found_callouts > 0, f"No callout content with label {label!r} found in {pkg_name}"
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_gdtest_directives_renders_every_callout():
+    """All canonical directives appear as callouts without raw directive text"""
+    pkg = "gdtest_directives"
+    if not _has_rendered_site(pkg):
+        pytest.skip(f"{pkg} not rendered")
+
+    page = _ref_dir(pkg) / "process.html"
+    assert page.exists(), "process.html missing"
+    soup = _load_html(page)
+
+    expected_callouts = {
+        "callout-note": 3,
+        "callout-warning": 2,
+        "callout-caution": 1,
+        "callout-important": 2,
+        "callout-tip": 2,
+    }
+    for class_name, count in expected_callouts.items():
+        assert len(soup.select(f"div.{class_name}")) == count
+
+    main = soup.select_one("main.content")
+    assert main is not None
+    text = main.get_text(" ", strip=True)
+    for expected in (
+        "Added in version 2.0",
+        "Changed in version 2.1",
+        "Deprecated since version 3.0",
+        "Inline note.",
+        "Multiline warning.",
+        "Preserve this paragraph.",
+        "Inline hint.",
+    ):
+        assert expected in text
+
+    for name in (
+        "versionadded",
+        "versionchanged",
+        "deprecated",
+        "note",
+        "warning",
+        "caution",
+        "danger",
+        "important",
+        "tip",
+        "hint",
+    ):
+        assert f"%{name}" not in text
 
 
 @pytest.mark.dedicated
@@ -1877,40 +1863,24 @@ def test_cli_sidebar_no_raw_qmd_paths_in_nested():
 
 
 @pytest.mark.dedicated
-@requires_bs4
 def test_math_blocks_render():
-    """RST math directives or LaTeX should render (KaTeX or display math)."""
+    """Verify docstring display math renders with the configured KaTeX engine"""
     pkg = "gdtest_docstring_math"
     if not _has_rendered_site(pkg):
-        pkg = "gdtest_math_docs"
-        if not _has_rendered_site(pkg):
-            pytest.skip("No math package rendered")
+        pytest.skip(f"{pkg} not rendered")
 
+    html_cfg = _load_quarto_yml(pkg).get("format", {}).get("html", {})
     ref = _ref_dir(pkg)
-    found_math = False
-    for html_file in ref.glob("*.html"):
-        if html_file.name == "index.html":
-            continue
+    rendered_html = "\n".join(
+        html_file.read_text(encoding="utf-8")
+        for html_file in ref.glob("*.html")
+        if html_file.name != "index.html"
+    )
 
-        soup = _load_html(html_file)
-        html_str = str(soup)
-        if any(
-            marker in html_str
-            for marker in (
-                "\\[",
-                "\\(",
-                "katex",
-                "mathjax",
-                "math-display",
-                "display-math",
-                "MathJax",
-                "KaTeX",
-            )
-        ):
-            found_math = True
-            break
-
-    assert found_math, f"No rendered math found in {pkg}"
+    assert html_cfg["html-math-method"] == "katex"
+    assert "katex" in rendered_html.lower()
+    assert "\\sqrt" in rendered_html
+    assert "\\sigma" in rendered_html
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

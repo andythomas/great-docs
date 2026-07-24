@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from ..pandoc.blocks import (
+from great_docs.pandoc.blocks import (
     BlockContent,
     DefinitionList,
     Div,
     Header,
 )
-from ..pandoc.components import Attr
+from great_docs.pandoc.components import Attr
+
 from .base import RenderBase
 from .html_table import html_table
 

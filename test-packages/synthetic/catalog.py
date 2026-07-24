@@ -167,6 +167,7 @@ ALL_PACKAGES: list[str] = [
     "gdtest_rst_danger",  # 32
     "gdtest_rst_important",  # 33
     "gdtest_rst_mixed_dirs",  # 34
+    "gdtest_directives",  # 34b
     "gdtest_sphinx_func_role",  # 35
     "gdtest_sphinx_class_role",  # 36
     "gdtest_sphinx_exc_role",  # 37
@@ -1385,45 +1386,48 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
     ),
     # ── 26–50: Docstring richness ─────────────────────────────────────────
     "gdtest_rst_versionadded": (
-        "Docstrings contain '.. versionadded:: 2.0' RST directive. Post-render "
-        "should translate this into a styled callout div with version info. "
+        "Docstrings contain '.. versionadded:: 2.0' RST directives. The built-in "
+        "handler should convert them into Quarto note callouts with version info. "
         "Two functions with versionadded in their docstrings."
     ),
     "gdtest_rst_deprecated": (
         "Docstrings contain '.. deprecated:: 1.5' with deprecation message. "
-        "Post-render should show a deprecation warning callout. Two functions "
-        "with deprecated directives."
+        "The built-in handler should produce Quarto warning callouts. Two "
+        "functions have deprecated directives."
     ),
     "gdtest_rst_note": (
-        "Docstrings contain '.. note::' with body text. Post-render should "
-        "translate into a note callout. Three functions with note blocks."
+        "Docstrings contain '.. note::' with body text. The built-in handler "
+        "should produce Quarto note callouts. Three functions have note blocks."
     ),
     "gdtest_rst_warning": (
-        "Docstrings contain '.. warning::' directive. Post-render should "
-        "translate into a warning callout (yellow/orange). Two functions "
-        "with warning blocks."
+        "Docstrings contain '.. warning::' directives. The built-in handler "
+        "should produce Quarto warning callouts. Two functions have warning blocks."
     ),
     "gdtest_rst_tip": (
-        "Docstrings contain '.. tip::' directive. Post-render should "
-        "translate into a tip callout. Two functions with helpful tips."
+        "Docstrings contain '.. tip::' directives. The built-in handler should "
+        "produce Quarto tip callouts. Two functions have helpful tips."
     ),
     "gdtest_rst_caution": (
-        "Docstrings contain '.. caution::' directive. Post-render should "
-        "translate into a caution callout (orange). Two functions."
+        "Docstrings contain '.. caution::' directives. The built-in handler "
+        "should produce Quarto caution callouts. Two functions exercise them."
     ),
     "gdtest_rst_danger": (
-        "Docstrings contain '.. danger::' directive. Post-render should "
-        "translate into a danger callout (red). Two functions with hazard "
-        "warnings."
+        "Docstrings contain '.. danger::' directives. The built-in handler "
+        "should produce Quarto important callouts. Two functions have hazard warnings."
     ),
     "gdtest_rst_important": (
-        "Docstrings contain '.. important::' directive. Post-render should "
-        "translate into an important callout. Two functions."
+        "Docstrings contain '.. important::' directives. The built-in handler "
+        "should produce Quarto important callouts. Two functions exercise them."
     ),
     "gdtest_rst_mixed_dirs": (
         "Docstrings mix multiple RST directives: versionadded, deprecated, "
         "note, warning, tip in the same module and sometimes SAME docstring. "
         "All should render as distinct callouts."
+    ),
+    "gdtest_directives": (
+        "One docstring contains all ten canonical Great Docs '%' callout "
+        "directives. Inline, multiline, versioned, and aliased callouts should "
+        "render without leaving raw directive text."
     ),
     "gdtest_sphinx_func_role": (
         "Docstrings contain :py:func:`other_func` cross-reference roles. "
