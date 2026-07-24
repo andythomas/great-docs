@@ -406,6 +406,8 @@ ALL_PACKAGES: list[str] = [
     "gdtest_ug_dark_assets",  # 201
     # 202: Code-include shortcode in user guide pages
     "gdtest_code_include",  # 202
+    # 203: Mixed root files and subdirectories with numeric prefix interleaving
+    "gdtest_ug_mixed_subdir_order",  # 203
 ]
 
 
