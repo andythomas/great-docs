@@ -1928,40 +1928,22 @@ def test_cli_sidebar_no_raw_qmd_paths_in_nested():
 
 
 @pytest.mark.dedicated
-@requires_bs4
 def test_math_blocks_render():
-    """RST math directives or LaTeX should render (KaTeX or display math)."""
+    """Verify docstring display math renders with the configured KaTeX engine"""
     pkg = "gdtest_docstring_math"
     if not _has_rendered_site(pkg):
-        pkg = "gdtest_math_docs"
-        if not _has_rendered_site(pkg):
-            pytest.skip("No math package rendered")
+        pytest.skip(f"{pkg} not rendered")
 
+    html_cfg = _load_quarto_yml(pkg).get("format", {}).get("html", {})
     ref = _ref_dir(pkg)
-    found_math = False
-    for html_file in ref.glob("*.html"):
-        if html_file.name == "index.html":
-            continue
+    rendered_html = "\n".join(
+        html_file.read_text(encoding="utf-8")
+        for html_file in ref.glob("*.html")
+        if html_file.name != "index.html"
+    )
 
-        soup = _load_html(html_file)
-        html_str = str(soup)
-        if any(
-            marker in html_str
-            for marker in (
-                "\\[",
-                "\\(",
-                "katex",
-                "mathjax",
-                "math-display",
-                "display-math",
-                "MathJax",
-                "KaTeX",
-            )
-        ):
-            found_math = True
-            break
-
-    assert found_math, f"No rendered math found in {pkg}"
+    assert html_cfg["html-math-method"] == "katex"
+    assert "katex" in rendered_html.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
