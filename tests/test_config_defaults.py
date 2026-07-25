@@ -212,3 +212,33 @@ def test_emitted_template_comments_out_exactly_the_source():
             assert emt == src
         else:
             assert emt == f"# {src}"
+
+
+def test_create_default_config_override_replaces_scalar():
+    output = create_default_config({"parser": "parser: google"})
+    assert "\nparser: google\n" in output
+    # the default line is gone, other keys stay commented
+    assert "# parser: numpy" not in output
+    assert "# dynamic: true" in output
+
+
+def test_create_default_config_override_multiline_block():
+    ref = "reference:\n  - title: Classes\n    contents:\n      - Foo"
+    output = create_default_config({"reference": ref})
+    assert ref + "\n" in output
+    assert "# reference: []" not in output
+
+
+def test_create_default_config_override_swallows_block_body():
+    # site: has an indented body in the template; overriding it must drop
+    # the old body lines, not leave them stranded.
+    output = create_default_config({"site": "site:\n  theme: cosmo"})
+    assert "\nsite:\n  theme: cosmo\n" in output
+    assert "theme: flatly" not in output
+    assert "toc-depth: 2" not in output
+
+
+def test_create_default_config_no_args_still_fully_commented():
+    output = create_default_config()
+    for line in output.splitlines():
+        assert not re.match(r"^[A-Za-z0-9_-]+:", line), f"uncommented: {line!r}"

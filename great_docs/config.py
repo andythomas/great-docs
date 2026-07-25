@@ -1,4 +1,5 @@
 import io
+import re
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -1513,44 +1514,65 @@ def load_config(project_root: Path | str) -> Config:
     return Config(Path(project_root))
 
 
-def _comment_out_values(text: str) -> str:
-    """Comment out every live YAML value line in `text`
+_TOP_LEVEL_KEY = re.compile(r"^([A-Za-z_][\w-]*):")
 
-    Lines already starting with `#` (prose, examples) and blank lines pass
-    through unchanged; any other non-blank line gets a `# ` prefix.
+
+def create_default_config(overrides: dict[str, str] | None = None) -> str:
+    """
+    Generate great-docs.yml content from the shipped default template
+
+    The `great-docs.default.yml` template is emitted with every live value line
+    commented out, so a fresh file documents every option without overriding
+    the packaged defaults. Any top-level key named in `overrides` is instead
+    emitted live, with its default (and any indented block body) replaced by
+    the supplied text.
 
     Parameters
     ----------
-    text
-        The raw `great-docs.default.yml` text.
+    overrides
+        Maps a top-level key to pre-rendered YAML text that replaces the
+        commented default for that key. Used by `great-docs init` to splice in
+        detected values (`parser`, `dynamic`, `module`, `authors`, `reference`).
 
     Returns
     -------
     str
-        The text with all live value lines commented out.
-    """
-    out: list[str] = []
-    for line in text.splitlines(keepends=True):
-        if not line.strip() or line.lstrip().startswith("#"):
-            out.append(line)
-        else:
-            out.append(f"# {line}")
-    return "".join(out)
-
-
-def create_default_config() -> str:
-    """Generate default great-docs.yml content
-
-    Returns
-    -------
-    str
-        The shipped `great-docs.default.yml` with all defaults commented out,
-        so a fresh `great-docs.yml` documents every option without overriding
-        the packaged defaults.
+        The rendered great-docs.yml content.
     """
     text = (
         resources.files("great_docs")
         .joinpath("assets", "great-docs.default.yml")
         .read_text(encoding="utf-8")
     )
-    return _comment_out_values(text)
+    overrides = overrides or {}
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if not line.strip() or line.lstrip().startswith("#"):
+            out.append(line)
+            continue
+        match = _TOP_LEVEL_KEY.match(line)
+        key = match.group(1) if match else None
+        if key is not None and key in overrides:
+            # Remove preceding comment example block for this key from output
+            while out:
+                if not out[-1].strip():  # Blank line
+                    out.pop()
+                elif out[-1].lstrip().startswith(f"# {key}:"):  # Example header
+                    out.pop()
+                    break
+                elif out[-1].lstrip().startswith("#  "):  # Indented comment
+                    out.pop()
+                else:
+                    break
+
+            out.append(overrides[key] + "\n")
+            # Drop the replaced key's old block body (indented lines).
+            while i < len(lines) and lines[i].strip() and lines[i][:1] in (" ", "\t"):
+                i += 1
+        else:
+            out.append(f"# {line}")
+    return "".join(out)
