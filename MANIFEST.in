@@ -2,4 +2,3 @@ include LICENSE
 include README.md
 recursive-include great_docs/assets *
 include great_docs/assets/.gitignore
-include great_docs/default-config.yml

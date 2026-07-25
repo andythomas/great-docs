@@ -85,7 +85,7 @@ where = ["."]
 include = ["great_docs*"]
 
 [tool.setuptools.package-data]
-great_docs = ["assets/*", "assets/.*", "default-config.yml"]
+great_docs = ["assets/*", "assets/.*"]
 
 [tool.setuptools]
 include-package-data = true

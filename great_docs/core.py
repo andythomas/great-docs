@@ -12016,7 +12016,7 @@ anchor-sections: true
 
         # Site settings are a pure Quarto passthrough: the whole subtree
         # (theme, toc, toc-depth, html-math-method defaults from
-        # default-config.yml, plus any user format.html keys) merges into
+        # great-docs.default.yml, plus any user format.html keys) merges into
         # format.html. Legacy great-docs keys were normalized to the top level
         # at load, and css is applied separately below.
         config["format"]["html"] = Config._merge(

@@ -12,12 +12,12 @@ def _load_default_config() -> dict[str, Any]:
     Returns
     -------
     dict
-        The parsed contents of `default-config.yml`, i.e. every config field
-        at its default value.
+        The parsed contents of `great-docs.default.yml`, i.e. every config
+        field at its default value.
     """
     text = (
         resources.files("great_docs")
-        .joinpath("default-config.yml")
+        .joinpath("assets", "great-docs.default.yml")
         .read_text(encoding="utf-8")
     )
     return read_yaml(io.StringIO(text)) or {}
@@ -1522,7 +1522,7 @@ def _comment_out_values(text: str) -> str:
     Parameters
     ----------
     text
-        The raw `default-config.yml` text.
+        The raw `great-docs.default.yml` text.
 
     Returns
     -------
@@ -1544,13 +1544,13 @@ def create_default_config() -> str:
     Returns
     -------
     str
-        The shipped `default-config.yml` with all defaults commented out, so a
-        fresh `great-docs.yml` documents every option without overriding the
-        packaged defaults.
+        The shipped `great-docs.default.yml` with all defaults commented out,
+        so a fresh `great-docs.yml` documents every option without overriding
+        the packaged defaults.
     """
     text = (
         resources.files("great_docs")
-        .joinpath("default-config.yml")
+        .joinpath("assets", "great-docs.default.yml")
         .read_text(encoding="utf-8")
     )
     return _comment_out_values(text)

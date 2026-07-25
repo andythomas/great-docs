@@ -1,4 +1,4 @@
-"""Tests for the shipped `default-config.yml` single source of truth."""
+"""Tests for the shipped `great-docs.default.yml` single source of truth."""
 
 import io
 import re
@@ -9,8 +9,8 @@ from great_docs.config import DEFAULT_CONFIG, create_default_config
 
 # Verbatim snapshot of DEFAULT_CONFIG captured at the start of the config
 # single-source migration. Guards faithful transcription of VALUES into
-# default-config.yml. Do NOT import DEFAULT_CONFIG for this constant -- that
-# would defeat the check.
+# great-docs.default.yml. Do NOT import DEFAULT_CONFIG for this constant --
+# that would defeat the check.
 FROZEN_DEFAULT_CONFIG: dict[str, Any] = {'module': None,
  'display_name': None,
  'project_type': 'python',
@@ -153,7 +153,7 @@ FROZEN_DEFAULT_CONFIG: dict[str, Any] = {'module': None,
 def _default_config_text() -> str:
     return (
         resources.files("great_docs")
-        .joinpath("default-config.yml")
+        .joinpath("assets", "great-docs.default.yml")
         .read_text(encoding="utf-8")
     )
 
@@ -163,7 +163,9 @@ def test_config_defaults_yaml_matches_frozen_defaults():
 
 
 def test_config_defaults_yaml_is_packaged():
-    resource = resources.files("great_docs").joinpath("default-config.yml")
+    resource = resources.files("great_docs").joinpath(
+        "assets", "great-docs.default.yml"
+    )
     assert resource.is_file()
     assert resource.read_text(encoding="utf-8").strip()
 
@@ -191,11 +193,12 @@ def test_create_default_config_lists_every_top_level_key():
 
 
 def test_emitted_template_comments_out_exactly_the_source():
-    # The template is default-config.yml with every live value line commented
-    # out and prose/blank lines untouched. Verifying this line-by-line (rather
-    # than trying to invert the transform, which is lossy for prose) confirms
-    # nothing is dropped or altered: the live content the template would
-    # restore is exactly default-config.yml, which parses to DEFAULT_CONFIG.
+    # The template is great-docs.default.yml with every live value line
+    # commented out and prose/blank lines untouched. Verifying this
+    # line-by-line (rather than trying to invert the transform, which is
+    # lossy for prose) confirms nothing is dropped or altered: the live
+    # content the template would restore is exactly great-docs.default.yml,
+    # which parses to DEFAULT_CONFIG.
     from yaml12 import read_yaml
 
     source = _default_config_text()
