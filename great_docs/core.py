@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 
@@ -42,6 +43,32 @@ def _ensure_quarto_installed() -> None:
         "  https://posit-dev.github.io/great-docs/recipes/fix-common-build-errors.html\n\n"
         "Or fetch the binary programmatically by using your OS package (brew, yum, winget)."
     )
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge `overlay` into `base`, mutating `base`
+
+    Nested dicts merge key-by-key; every other value in `overlay` replaces the
+    one in `base`.
+
+    Parameters
+    ----------
+    base
+        The mapping to merge into (mutated in place).
+    overlay
+        The mapping whose values take precedence.
+
+    Returns
+    -------
+    dict
+        `base`, after the merge.
+    """
+    for key, value in overlay.items():
+        if isinstance(base.get(key), dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
 
 
 class GreatDocs:
@@ -12013,19 +12040,16 @@ anchor-sections: true
                 if "!.well-known/**" not in config["project"]["render"]:
                     config["project"]["render"].append("!.well-known/**")
 
-        # Apply site settings from great-docs.yml (forwarded to format.html)
-        site_settings = self._config.site
-        config["format"]["html"]["theme"] = site_settings.get("theme", "flatly")
-        config["format"]["html"]["toc"] = site_settings.get("toc", True)
-        config["format"]["html"]["toc-depth"] = site_settings.get("toc-depth", 2)
-        config["format"]["html"]["html-math-method"] = site_settings.get(
-            "html-math-method", "katex"
-        )
+        # Site settings are a pure Quarto passthrough: the whole subtree
+        # (theme, toc, toc-depth, html-math-method defaults from
+        # default-config.yml, plus any user format.html keys) merges into
+        # format.html. Legacy great-docs keys were normalized to the top level
+        # at load, and css is applied separately below.
+        _deep_merge(config["format"]["html"], self._config.site_quarto)
 
-        # Use translated toc-title unless the user explicitly overrode it
-        if "toc-title" in site_settings:
-            config["format"]["html"]["toc-title"] = site_settings["toc-title"]  # pragma: no cover
-        else:
+        # toc-title: use the translated label unless the user overrode it via
+        # site.toc-title (already merged above).
+        if "toc-title" not in config["format"]["html"]:
             from ._translations import get_translation
 
             config["format"]["html"]["toc-title"] = get_translation(

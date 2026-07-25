@@ -1136,3 +1136,33 @@ def test_site_quarto_excludes_css_and_legacy_keys(tmp_path: Path):
     assert sq["grid"] == {"sidebar-width": "250px"}
     assert "css" not in sq
     assert "show_dates" not in sq
+
+
+def _quarto_config_for(tmp_path: Path, gd_yaml: str) -> dict:
+    """Build _quarto.yml via GreatDocs._update_quarto_config and return it parsed."""
+    from yaml12 import read_yaml
+
+    from great_docs import GreatDocs
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "test"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "great-docs.yml").write_text(gd_yaml, encoding="utf-8")
+    docs = GreatDocs(project_path=str(tmp_path))
+    docs.project_path.mkdir(parents=True, exist_ok=True)
+    docs._update_quarto_config()
+    with open(docs.project_path / "_quarto.yml") as f:
+        return read_yaml(f)
+
+
+def test_arbitrary_site_key_reaches_format_html(tmp_path: Path):
+    cfg = _quarto_config_for(tmp_path, "site:\n  grid:\n    sidebar-width: 250px\n")
+    html = cfg["format"]["html"]
+    assert html["grid"] == {"sidebar-width": "250px"}
+    theme = html["theme"]
+    assert (theme[0] if isinstance(theme, list) else theme) == "flatly"
+
+
+def test_legacy_site_key_does_not_leak_into_format_html(tmp_path: Path):
+    cfg = _quarto_config_for(tmp_path, "site:\n  show_dates: true\n")
+    assert "show_dates" not in cfg["format"]["html"]
