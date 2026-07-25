@@ -1557,18 +1557,6 @@ def create_default_config(overrides: dict[str, str] | None = None) -> str:
         match = _TOP_LEVEL_KEY.match(line)
         key = match.group(1) if match else None
         if key is not None and key in overrides:
-            # Remove preceding comment example block for this key from output
-            while out:
-                if not out[-1].strip():  # Blank line
-                    out.pop()
-                elif out[-1].lstrip().startswith(f"# {key}:"):  # Example header
-                    out.pop()
-                    break
-                elif out[-1].lstrip().startswith("#  "):  # Indented comment
-                    out.pop()
-                else:
-                    break
-
             out.append(overrides[key] + "\n")
             # Drop the replaced key's old block body (indented lines).
             while i < len(lines) and lines[i].strip() and lines[i][:1] in (" ", "\t"):

@@ -230,12 +230,16 @@ def test_create_default_config_override_multiline_block():
 
 
 def test_create_default_config_override_swallows_block_body():
-    # site: has an indented body in the template; overriding it must drop
-    # the old body lines, not leave them stranded.
+    # Overriding a block-valued key drops the old live body lines, so the
+    # result parses with only the override's values under that key.
+    import io
+
+    from yaml12 import read_yaml
+
     output = create_default_config({"site": "site:\n  theme: cosmo"})
     assert "\nsite:\n  theme: cosmo\n" in output
-    assert "theme: flatly" not in output
-    assert "toc-depth: 2" not in output
+    cfg = read_yaml(io.StringIO(output))
+    assert cfg["site"] == {"theme": "cosmo"}
 
 
 def test_create_default_config_no_args_still_fully_commented():
