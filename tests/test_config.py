@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from great_docs.config import Config, DEFAULT_CONFIG, create_default_config, load_config
+from great_docs.config import DEFAULT_CONFIG, Config, create_default_config, load_config
 
 
 @pytest.fixture
@@ -221,16 +221,13 @@ class TestScalarProperties:
         assert Config(tmp_project).funding is None
 
     def test_site_default(self, tmp_project: Path):
+        # `site` is now a pure Quarto passthrough; great-docs-owned keys
+        # (language, show_dates, ...) are top-level, not under `site`.
         assert Config(tmp_project).site == {
             "theme": "flatly",
             "toc": True,
             "toc-depth": 2,
             "html-math-method": "katex",
-            "language": "en",
-            "show_dates": False,
-            "date_format": "%B %d, %Y",
-            "show_author": True,
-            "show_security": True,
         }
 
     def test_jupyter_default(self, tmp_project: Path):
@@ -1115,3 +1112,27 @@ class TestShouldSplitMethods:
         from great_docs.config import DEFAULT_CONFIG
 
         assert DEFAULT_CONFIG["inline_methods"] == 5
+
+
+def test_legacy_site_keys_lift_to_top_level(tmp_path: Path):
+    cfg = _make_config(tmp_path, "site:\n  show_dates: true\n  language: fr\n")
+    assert cfg.show_dates is True
+    assert cfg.language == "fr"
+    assert "show_dates" not in cfg.site
+    assert "language" not in cfg.site
+
+
+def test_explicit_top_level_wins_over_legacy_site(tmp_path: Path):
+    cfg = _make_config(tmp_path, "site:\n  show_dates: false\nshow_dates: true\n")
+    assert cfg.show_dates is True
+
+
+def test_site_quarto_excludes_css_and_legacy_keys(tmp_path: Path):
+    cfg = _make_config(
+        tmp_path,
+        "site:\n  grid: {sidebar-width: 250px}\n  css: custom.css\n  show_dates: true\n",
+    )
+    sq = cfg.site_quarto
+    assert sq["grid"] == {"sidebar-width": "250px"}
+    assert "css" not in sq
+    assert "show_dates" not in sq

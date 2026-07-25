@@ -176,33 +176,42 @@ funding: null
 # Site Settings
 # These settings are forwarded to _quarto.yml (format.html section)
 # Site settings (forwarded to _quarto.yml format.html)
+#
+# `site` is a pure Quarto passthrough: its entire subtree is merged into
+# _quarto.yml `format.html`, so any valid `format.html` key works here with no
+# great-docs change. `css` is the one exception (great-docs copies the file and
+# references it by basename). The great-docs-specific page/UI settings that used
+# to live here (language, show_dates, date_format, show_author, show_security)
+# are top-level keys below; setting them under `site` still works and is lifted
+# automatically.
 # site:
 #   theme: flatly              # Quarto theme (default: flatly)
 #   toc: true                  # Show table of contents (default: true)
 #   toc-depth: 2               # TOC heading depth (default: 2)
 #   html-math-method: katex    # HTML math renderer (default: katex; e.g., mathjax)
 #   toc-title: On this page    # TOC title (default: "On this page")
-#   show_dates: false          # Show page timestamps in footer
-#   date_format: "%B %d, %Y"   # Date format (Python strftime)
-#   show_author: true          # Show author attribution with dates
-#   show_security: true        # Show security policy page (from SECURITY.md)
 site:
   theme: flatly
   toc: true
   toc-depth: 2
   html-math-method: katex
-  # Language for UI text (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans")
-  # Translates navbar labels, widget text, tooltips, and accessibility labels
-  language: en
-  # Page metadata timestamps
-  # Display creation/modification dates in footer
-  show_dates: false
-  # Python strftime format (e.g., "March 24, 2026")
-  date_format: "%B %d, %Y"
-  # Show author attribution when show_dates is enabled
-  show_author: true
-  # Show security policy page when SECURITY.md exists
-  show_security: true
+
+# Language for UI text (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans")
+# Translates navbar labels, widget text, tooltips, and accessibility labels
+language: en
+
+# Page metadata timestamps
+# Display creation/modification dates in footer
+show_dates: false
+
+# Python strftime format (e.g., "March 24, 2026")
+date_format: "%B %d, %Y"
+
+# Show author attribution when show_dates is enabled
+show_author: true
+
+# Show security policy page when SECURITY.md exists
+show_security: true
 
 # Team Author
 # Optional catch-all author for auto-generated pages (reference, changelog, etc.)

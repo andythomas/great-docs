@@ -25,6 +25,17 @@ def _load_default_config() -> dict[str, Any]:
 
 DEFAULT_CONFIG: dict[str, Any] = _load_default_config()
 
+# great-docs-owned keys that older configs placed under `site`. They are
+# top-level keys now; any found under `site` at load are lifted out so `site`
+# stays a clean Quarto passthrough.
+_LEGACY_SITE_KEYS: tuple[str, ...] = (
+    "language",
+    "show_dates",
+    "date_format",
+    "show_author",
+    "show_security",
+)
+
 
 class Config:
     """
@@ -72,6 +83,37 @@ class Config:
             except Exception as e:
                 print(f"Warning: Could not read great-docs.yml: {e}")
 
+        config = self._lift_legacy_site_keys(config)
+        return config
+
+    def _lift_legacy_site_keys(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Move legacy great-docs keys out of `site` to the top level
+
+        Older configs placed language/date settings under `site`; those are
+        great-docs-owned, not Quarto `format.html` keys, so they now live at
+        the top level. Any that still appear under `site` are lifted out so
+        `site` stays a clean Quarto passthrough. An explicit top-level value
+        wins over a legacy `site` value on conflict.
+
+        Parameters
+        ----------
+        config
+            The merged configuration.
+
+        Returns
+        -------
+        dict
+            The configuration with the legacy keys normalized to the top level.
+        """
+        site = config.get("site")
+        if not isinstance(site, dict):
+            return config
+
+        for key in _LEGACY_SITE_KEYS:
+            if key in site:
+                value = site.pop(key)
+                if key not in self._user_config:
+                    config[key] = value
         return config
 
     def _merge_config(self, defaults: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
@@ -635,33 +677,50 @@ class Config:
 
     @property
     def site(self) -> dict[str, Any]:
-        """Get the site settings (forwarded to _quarto.yml format.html)."""
+        """Get the site settings — a pure Quarto passthrough into format.html."""
         return self.get("site", {})
+
+    @property
+    def site_quarto(self) -> dict[str, Any]:
+        """Get the `site` subtree destined for `_quarto.yml` `format.html`
+
+        Legacy great-docs keys are already normalized out of `site` at load;
+        `css` is removed here because great-docs copies the file and references
+        it by basename separately.
+
+        Returns
+        -------
+        dict
+            The site settings safe to merge blindly into `format.html`.
+        """
+        site = dict(self.site)
+        site.pop("css", None)
+        return site
 
     @property
     def show_dates(self) -> bool:
         """Whether to show page metadata timestamps in the footer."""
-        return bool(self.site.get("show_dates", False))
+        return bool(self.get("show_dates", False))
 
     @property
     def date_format(self) -> str:
         """Get the date format string (Python strftime format)."""
-        return self.site.get("date_format", "%B %d, %Y")
+        return self.get("date_format", "%B %d, %Y")
 
     @property
     def show_author(self) -> bool:
         """Whether to show author attribution when dates are enabled."""
-        return bool(self.site.get("show_author", True))
+        return bool(self.get("show_author", True))
 
     @property
     def show_security(self) -> bool:
         """Whether to show the security policy page when SECURITY.md exists."""
-        return bool(self.site.get("show_security", True))
+        return bool(self.get("show_security", True))
 
     @property
     def language(self) -> str:
-        """Get the site UI language (BCP 47 code, default: 'en')."""
-        return self.site.get("language", "en")
+        """Get the site UI language (BCP 47 code, default 'en')."""
+        return self.get("language", "en")
 
     @property
     def team_author(self) -> dict[str, Any] | None:
