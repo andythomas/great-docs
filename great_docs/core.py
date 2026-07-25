@@ -15535,6 +15535,11 @@ anchor-sections: true
                 else:
                     shutil.copy2(item, dest)
 
+        for js_file in freeze_dst.rglob("*.js"):
+            data = js_file.read_bytes()
+            if data and not data.endswith(b"\n"):
+                js_file.write_bytes(data + b"\n")
+
         return sum(1 for _ in freeze_dst.rglob("*") if _.is_file())
 
     def _prepare_for_freeze(self) -> None:
