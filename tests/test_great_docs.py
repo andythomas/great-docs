@@ -8647,68 +8647,6 @@ def test_find_index_source_file_none_empty_dir():
         assert source is None
 
 
-def test_format_preserved_extras_yaml_with_values_simple_funding():
-    """_format_preserved_extras_yaml generates active YAML when values set."""
-    dn, site, funding = GreatDocs._format_preserved_extras_yaml(
-        display_name="My Package",
-        site={"theme": "flatly", "toc": True},
-        funding={"name": "ACME Corp", "roles": ["funder"], "homepage": "https://acme.com"},
-    )
-
-    assert 'display_name: "My Package"' in dn
-    assert "site:" in site
-    assert "theme: flatly" in site
-    assert "toc: true" in site
-    assert 'name: "ACME Corp"' in funding
-    assert "- funder" in funding
-    assert "homepage: https://acme.com" in funding
-
-
-def test_format_preserved_extras_yaml_defaults_commented():
-    """_format_preserved_extras_yaml generates commented templates when no values."""
-    dn, site, funding = GreatDocs._format_preserved_extras_yaml()
-
-    assert dn == ""
-    assert "# site:" in site
-    assert "# funding:" in funding
-
-
-def test_format_preserved_extras_yaml_funding_ror_output():
-    """_format_preserved_extras_yaml includes ROR when provided."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "Posit", "ror": "https://ror.org/123"}
-    )
-
-    assert "ror: https://ror.org/123" in funding
-
-
-def test_format_cli_yaml_enabled_all_keys():
-    """_format_cli_yaml generates active YAML when CLI is enabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": True, "module": "pkg.cli", "name": "mycli"})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module: pkg.cli" in result
-    assert "name: mycli" in result
-
-
-def test_format_cli_yaml_disabled_commented():
-    """_format_cli_yaml generates commented template when disabled."""
-    result = GreatDocs._format_cli_yaml(None)
-
-    assert "# cli:" in result
-    assert "#   enabled: true" in result
-
-
-def test_format_cli_yaml_enabled_minimal_only_flag():
-    """_format_cli_yaml with only enabled flag set."""
-    result = GreatDocs._format_cli_yaml({"enabled": True})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module:" not in result
-
-
 def test_get_package_metadata_from_setup_cfg():
     """_get_package_metadata reads metadata from setup.cfg fallback."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -10868,109 +10806,6 @@ def test_update_sidebar_with_cli_adds_api_link():
         )
 
         assert ref["contents"][0]["text"] == "API Index"
-
-
-def test_format_preserved_extras_yaml_display_name():
-    """_format_preserved_extras_yaml returns active display_name YAML when given."""
-    dn, _, _ = GreatDocs._format_preserved_extras_yaml(display_name="My Package")
-
-    assert 'display_name: "My Package"' in dn
-
-
-def test_format_preserved_extras_yaml_no_display_name():
-    """_format_preserved_extras_yaml returns empty string for no display_name."""
-    dn, _, _ = GreatDocs._format_preserved_extras_yaml(display_name=None)
-
-    assert dn == ""
-
-
-def test_format_preserved_extras_yaml_site_active():
-    """_format_preserved_extras_yaml returns active site YAML with key-value pairs."""
-    _, site, _ = GreatDocs._format_preserved_extras_yaml(
-        site={"theme": "flatly", "toc": True, "toc-depth": 3}
-    )
-
-    assert "site:" in site
-    assert "theme: flatly" in site
-    assert "toc: true" in site
-    assert "toc-depth: 3" in site
-
-
-def test_format_preserved_extras_yaml_site_commented():
-    """_format_preserved_extras_yaml returns commented template when no site."""
-    _, site, _ = GreatDocs._format_preserved_extras_yaml(site=None)
-
-    assert "# site:" in site
-    assert "#   theme:" in site
-
-
-def test_format_preserved_extras_yaml_funding_active():
-    """_format_preserved_extras_yaml returns active funding YAML."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "Acme Corp", "roles": ["funder", "sponsor"], "homepage": "https://acme.co"}
-    )
-
-    assert "funding:" in funding
-    assert 'name: "Acme Corp"' in funding
-    assert "- funder" in funding
-    assert "homepage: https://acme.co" in funding
-
-
-def test_format_preserved_extras_yaml_funding_with_ror():
-    """_format_preserved_extras_yaml includes ror when provided."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "Lab", "ror": "https://ror.org/abc123"}
-    )
-
-    assert "ror: https://ror.org/abc123" in funding
-
-
-def test_format_preserved_extras_yaml_funding_commented():
-    """_format_preserved_extras_yaml returns commented template for no funding."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(funding=None)
-
-    assert "# funding:" in funding
-
-
-def test_format_preserved_extras_yaml_funding_no_name():
-    """_format_preserved_extras_yaml returns template when funding has no name."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(funding={"homepage": "https://x.co"})
-
-    assert "# funding:" in funding
-
-
-def test_format_cli_yaml_enabled_v2():
-    """_format_cli_yaml returns active config when enabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": True, "module": "pkg.cli", "name": "main"})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module: pkg.cli" in result
-    assert "name: main" in result
-
-
-def test_format_cli_yaml_enabled_minimal_v2():
-    """_format_cli_yaml with only enabled=True omits optional keys."""
-    result = GreatDocs._format_cli_yaml({"enabled": True})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module:" not in result
-    assert "name:" not in result
-
-
-def test_format_cli_yaml_disabled_v2():
-    """_format_cli_yaml returns commented template when disabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": False})
-
-    assert "# cli:" in result
-
-
-def test_format_cli_yaml_none():
-    """_format_cli_yaml returns commented template for None."""
-    result = GreatDocs._format_cli_yaml(None)
-
-    assert "# cli:" in result
 
 
 def test_find_index_source_file_readme_v2():
@@ -17455,66 +17290,6 @@ def test_format_authors_yaml_empty():
         assert docs._format_authors_yaml([]) == ""
 
 
-def test_format_preserved_extras_yaml_defaults():
-    """Test _format_preserved_extras_yaml returns commented templates by default."""
-    dn_yaml, site_yaml, funding_yaml = GreatDocs._format_preserved_extras_yaml()
-    assert dn_yaml == ""
-    assert "# site:" in site_yaml
-    assert "# funding:" in funding_yaml
-
-
-def test_format_preserved_extras_yaml_with_values():
-    """Test _format_preserved_extras_yaml with actual values."""
-    dn_yaml, site_yaml, funding_yaml = GreatDocs._format_preserved_extras_yaml(
-        display_name="My Library",
-        site={"theme": "cosmo", "toc": True},
-        funding={"name": "ACME Corp", "homepage": "https://acme.org", "ror": "https://ror.org/123"},
-    )
-    assert 'display_name: "My Library"' in dn_yaml
-    assert "site:" in site_yaml
-    assert "theme: cosmo" in site_yaml
-    assert "toc: true" in site_yaml
-    assert 'name: "ACME Corp"' in funding_yaml
-    assert "homepage: https://acme.org" in funding_yaml
-    assert "ror: https://ror.org/123" in funding_yaml
-
-
-def test_format_preserved_extras_yaml_funding_with_roles():
-    """Test _format_preserved_extras_yaml with funding roles."""
-    _, _, funding_yaml = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "NSF", "roles": ["funder", "sponsor"]},
-    )
-    assert 'name: "NSF"' in funding_yaml
-    assert "roles:" in funding_yaml
-    assert "- funder" in funding_yaml
-    assert "- sponsor" in funding_yaml
-
-
-def test_format_cli_yaml_disabled():
-    """Test _format_cli_yaml returns commented template when disabled."""
-    result = GreatDocs._format_cli_yaml()
-    assert "# cli:" in result
-    assert "#   enabled: true" in result
-
-
-def test_format_cli_yaml_enabled():
-    """Test _format_cli_yaml returns active config when enabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": True, "module": "pkg.cli", "name": "main"})
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module: pkg.cli" in result
-    assert "name: main" in result
-
-
-def test_format_cli_yaml_enabled_minimal():
-    """Test _format_cli_yaml with only enabled flag."""
-    result = GreatDocs._format_cli_yaml({"enabled": True})
-    assert "cli:" in result
-    assert "enabled: true" in result
-    # module and name are optional
-    assert "module:" not in result
-
-
 def test_write_object_types_json_basic():
     """Test _write_object_types_json writes correct type metadata."""
 
@@ -23427,30 +23202,6 @@ def test_format_authors_yaml_empty():
         assert result == ""
 
 
-def test_format_preserved_extras_yaml_with_values():
-    """Test _format_preserved_extras_yaml with display_name and site."""
-    result = GreatDocs._format_preserved_extras_yaml(
-        display_name="My Package",
-        site={"url": "https://example.com"},
-        funding={"name": "NSF"},
-    )
-    dn_yaml, site_yaml, funding_yaml = result
-
-    assert "My Package" in dn_yaml
-    assert "url" in site_yaml
-    assert "NSF" in funding_yaml
-
-
-def test_format_preserved_extras_yaml_defaults():
-    """Test _format_preserved_extras_yaml with no values."""
-    dn_yaml, site_yaml, funding_yaml = GreatDocs._format_preserved_extras_yaml()
-
-    assert dn_yaml == ""
-
-    # site_yaml should have commented template
-    assert isinstance(site_yaml, str)
-
-
 def test_generate_changelog_page_no_repo():
     """Test _generate_changelog_page returns None without repo info."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -23624,18 +23375,6 @@ def test_discover_user_guide_with_subdirs():
 
         assert result is not None
         assert len(result["files"]) >= 1
-
-
-def test_format_cli_yaml():
-    """Test _format_cli_yaml produces commented CLI template."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._format_cli_yaml()
-
-        assert isinstance(result, str)
-
-        # Should contain CLI-related content
-        assert "cli" in result.lower() or "CLI" in result
 
 
 def test_inject_section_body_class_with_existing_classes():
