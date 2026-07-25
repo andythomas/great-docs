@@ -9269,13 +9269,7 @@ class GreatDocs:
         if not authors:
             return ""
 
-        lines = [
-            "# Author Information",
-            "# ------------------",
-            "# Author metadata for display in the landing page sidebar",
-            "# You can add additional fields: github, orcid, affiliation, homepage",
-            "authors:",
-        ]
+        lines = ["authors:"]
 
         for author in authors:
             lines.append(f"  - name: {author['name']}")

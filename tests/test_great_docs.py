@@ -2525,7 +2525,7 @@ def test_format_authors_yaml_basic_single_with_comments():
         authors = [{"name": "Test Author", "role": "Maintainer", "email": "test@example.com"}]
         yaml_output = docs._format_authors_yaml(authors)
 
-        assert "# Author Information" in yaml_output
+        assert yaml_output.startswith("authors:")
         assert "authors:" in yaml_output
         assert "- name: Test Author" in yaml_output
         assert "role: Maintainer" in yaml_output
