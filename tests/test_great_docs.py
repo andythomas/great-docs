@@ -13393,172 +13393,6 @@ def test_build_metadata_margin_citation_link():
         assert isinstance(result, str)
 
 
-def test_generate_config_with_reference_basic_categories():
-    """_generate_config_with_reference generates YAML with class and function sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "classes": ["MyClass"],
-            "functions": ["my_func"],
-            "class_methods": {"MyClass": 2},
-            "class_method_names": {"MyClass": ["method_a", "method_b"]},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "reference:" in result
-        assert "MyClass" in result
-        assert "my_func" in result
-        assert "title: Classes" in result
-        assert "title: Functions" in result
-
-
-def test_generate_config_with_reference_large_class_splitting():
-    """_generate_config_with_reference splits large classes into separate method sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        methods = [f"method_{i}" for i in range(10)]
-        categories = {
-            "classes": ["BigClass"],
-            "class_methods": {"BigClass": 10},
-            "class_method_names": {"BigClass": methods},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "members: false" in result
-        assert "BigClass Methods" in result
-
-        for m in methods:
-            assert f"BigClass.{m}" in result
-
-
-def test_generate_config_with_reference_enums_and_exceptions():
-    """_generate_config_with_reference includes enum and exception sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "enums": ["Color", "Size"],
-            "exceptions": ["MyError"],
-            "class_methods": {},
-            "class_method_names": {},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="google", dynamic=False
-        )
-
-        assert "title: Enumerations" in result
-        assert "Color" in result
-        assert "title: Exceptions" in result
-        assert "MyError" in result
-        assert "dynamic: false" in result
-        assert "parser: google" in result
-
-
-def test_generate_config_with_reference_empty_categories():
-    """_generate_config_with_reference handles empty categories."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {"class_methods": {}, "class_method_names": {}}
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "reference:" in result
-
-        # Should still have the reference: key but no section titles
-        assert "title: Classes" not in result
-        assert "title: Functions" not in result
-
-
-def test_generate_config_with_reference_dataclasses_and_protocols():
-    """_generate_config_with_reference handles dataclasses and protocols."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "dataclasses": ["MyData"],
-            "protocols": ["MyProto"],
-            "class_methods": {"MyData": 1, "MyProto": 0},
-            "class_method_names": {"MyData": ["__init__"], "MyProto": []},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "title: Dataclasses" in result
-        assert "title: Protocols" in result
-        assert "MyData  # 1 method(s)" in result
-        assert "MyProto" in result
-
-
-def test_generate_config_with_reference_has_authors():
-    """_generate_config_with_reference includes authors section from pyproject.toml."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "pkg"\n[[project.authors]]\nname = "Alice"\n',
-            encoding="utf-8",
-        )
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {"functions": ["f"], "class_methods": {}, "class_method_names": {}}
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "authors:" in result or "Alice" in result
-
-
-def test_generate_config_with_reference_async_functions():
-    """_generate_config_with_reference handles async functions."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "async_functions": ["async_fetch"],
-            "class_methods": {},
-            "class_method_names": {},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "title: Async Functions" in result
-        assert "async_fetch" in result
-
-
-def test_generate_config_with_reference_type_aliases():
-    """_generate_config_with_reference handles type aliases and constants."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "type_aliases": ["MyType"],
-            "constants": ["VERSION"],
-            "class_methods": {},
-            "class_method_names": {},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "title: Type Aliases" in result
-        assert "title: Constants" in result
-
-
 def test_generate_llms_full_txt_creates_file():
     """_generate_llms_full_txt creates llms-full.txt in project dir."""
 
@@ -14007,45 +13841,6 @@ def test_write_quarto_yml_v2():
         assert "great-docs.yml" in content
         assert "website:" in content
         assert "title: Test" in content
-
-
-def test_generate_minimal_config_defaults():
-    """_generate_minimal_config generates config with numpy parser and dynamic true."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config()
-
-        assert "parser: numpy" in result
-        assert "dynamic: true" in result
-        assert "jupyter: python3" in result
-
-
-def test_generate_minimal_config_google_parser():
-    """_generate_minimal_config respects parser argument."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config(parser="google", dynamic=False)
-
-        assert "parser: google" in result
-        assert "dynamic: false" in result
-
-
-def test_generate_minimal_config_with_authors():
-    """_generate_minimal_config includes authors from pyproject.toml."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "pkg"\n[[project.authors]]\nname = "Alice"\n',
-            encoding="utf-8",
-        )
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config()
-
-        assert "Alice" in result
 
 
 def test_build_sections_from_reference_config_basic_functions():
@@ -15101,40 +14896,6 @@ def test_get_source_location_no_griffe():
             result = docs._get_source_location("nonexistent_package", "SomeClass")
 
             assert result is None
-
-
-def test_generate_minimal_config_default():
-    """Test _generate_minimal_config with default parameters."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        result = docs._generate_minimal_config()
-
-        assert "parser: numpy" in result
-        assert "dynamic: true" in result
-        assert "Great Docs Configuration" in result
-
-
-def test_generate_minimal_config_google_no_dynamic():
-    """Test _generate_minimal_config with google parser and dynamic=False."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        result = docs._generate_minimal_config(parser="google", dynamic=False)
-
-        assert "parser: google" in result
-        assert "dynamic: false" in result
-
-
-def test_generate_minimal_config_sphinx():
-    """Test _generate_minimal_config with sphinx parser."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        result = docs._generate_minimal_config(parser="sphinx", dynamic=True)
-
-        assert "parser: sphinx" in result
-        assert "dynamic: true" in result
 
 
 def test_strip_frontmatter_with_yaml():
@@ -18257,6 +18018,51 @@ def test_generate_initial_config_with_package():
         assert config_path.exists()
         content = config_path.read_text()
         assert "parser: numpy" in content
+
+
+def test_generate_initial_config_is_template_with_detected_values(monkeypatch):
+    import io
+
+    from yaml12 import read_yaml
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        )
+        docs = GreatDocs(project_path=tmp_dir)
+
+        monkeypatch.setattr(docs, "_detect_package_name", lambda: "demo")
+        monkeypatch.setattr(docs, "_detect_module_name", lambda: None)
+        monkeypatch.setattr(docs, "_detect_docstring_style", lambda name: "google")
+        monkeypatch.setattr(docs, "_detect_dynamic_mode", lambda name: False)
+        monkeypatch.setattr(docs, "_get_package_exports", lambda name: ["Thing"])
+        monkeypatch.setattr(
+            docs,
+            "_categorize_api_objects",
+            lambda name, exports: {
+                "classes": ["Thing"],
+                "class_methods": {"Thing": 0},
+                "class_method_names": {},
+                "cyclic_alias_count": 0,
+            },
+        )
+
+        assert docs._generate_initial_config(force=True) is True
+
+        text = (project_path / "great-docs.yml").read_text()
+        # Detected values are live:
+        assert "\nparser: google\n" in text
+        assert "\ndynamic: false\n" in text
+        assert "  - title: Classes" in text
+        assert "      - Thing" in text
+        # Full template is present (a key init never used to emit) but commented:
+        assert "# seo:" in text
+        # Parses and round-trips through the config loader:
+        cfg = read_yaml(io.StringIO(text))
+        assert cfg["parser"] == "google"
+        assert cfg["dynamic"] is False
+        assert cfg["reference"][0]["title"] == "Classes"
 
 
 def test_generate_initial_config_existing_no_force():
@@ -23559,55 +23365,6 @@ def test_extract_click_command_group():
 
         assert result["name"] == "cli"
         assert len(result.get("commands", [])) >= 1
-
-
-def test_generate_minimal_config():
-    """Test _generate_minimal_config produces valid YAML config."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config(parser="google", dynamic=False)
-
-        assert "parser: google" in result
-        assert "dynamic: false" in result
-
-
-def test_generate_config_with_reference():
-    """Test _generate_config_with_reference generates YAML with reference sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        (Path(tmp_dir) / "pyproject.toml").write_text(
-            '[project]\nname = "mypkg"\nauthors = [{name = "Author"}]\n',
-            encoding="utf-8",
-        )
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = docs._empty_categories()
-        categories["functions"] = ["func_a", "func_b"]
-        categories["classes"] = ["MyClass"]
-        categories["class_methods"] = {"MyClass": 3}
-        categories["class_method_names"] = {"MyClass": ["method1", "method2", "method3"]}
-        result = docs._generate_config_with_reference(
-            categories, "mypkg", parser="numpy", dynamic=True
-        )
-
-        assert "parser: numpy" in result
-        assert "func_a" in result
-        assert "func_b" in result
-        assert "MyClass" in result
-
-
-def test_generate_config_with_reference_large_class():
-    """Test _generate_config_with_reference splits large classes into method sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = docs._empty_categories()
-        categories["classes"] = ["BigClass"]
-        categories["class_methods"] = {"BigClass": 10}
-        categories["class_method_names"] = {"BigClass": [f"method_{i}" for i in range(10)]}
-        result = docs._generate_config_with_reference(
-            categories, "pkg", parser="google", dynamic=False
-        )
-
-        assert "BigClass Methods" in result
-        assert "dynamic: false" in result
 
 
 def test_extract_authors_from_pyproject():
