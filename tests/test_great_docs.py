@@ -42089,3 +42089,40 @@ def test_announcement_position_defaults_above_in_meta_tag():
         ann = next((t for t in meta_texts if "gd-announcement" in t), None)
         assert ann is not None, "gd-announcement meta tag not found"
         assert 'data-position="above-navbar"' in ann
+
+
+def test_build_reference_yaml_classes_and_functions():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        categories = {
+            "classes": ["Beta", "Alpha"],
+            "functions": ["helper"],
+            "class_methods": {"Alpha": 0, "Beta": 0},
+            "class_method_names": {},
+        }
+        result = docs._build_reference_yaml(categories)
+        assert result.startswith("reference:")
+        assert "  - title: Classes" in result
+        assert "      - Alpha" in result  # sorted
+        assert "  - title: Functions" in result
+        assert "      - helper" in result
+
+
+def test_build_reference_yaml_large_class_split():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        categories = {
+            "classes": ["Big"],
+            "class_methods": {"Big": 42},
+            "class_method_names": {"Big": ["a", "b"]},
+        }
+        result = docs._build_reference_yaml(categories)
+        assert "members: false" in result
+        assert "  - title: Big Methods" in result
+        assert "      - Big.a" in result
+
+
+def test_build_reference_yaml_empty():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        assert docs._build_reference_yaml({}) == "reference:"
