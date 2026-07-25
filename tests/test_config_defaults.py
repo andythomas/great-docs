@@ -7,7 +7,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from great_docs.config import DEFAULT_CONFIG
+from great_docs.config import DEFAULT_CONFIG, create_default_config
 
 _FIXTURES = Path(__file__).parent / "data"
 
@@ -230,3 +230,37 @@ def test_every_legacy_comment_survives():
     new = _yaml_comment_bodies(_default_config_text())
     missing = legacy_prose - new
     assert not missing, f"legacy comment lines dropped: {sorted(missing)}"
+
+
+def test_create_default_config_is_fully_commented():
+    output = create_default_config()
+    for line in output.splitlines():
+        # No live mapping key at column 0 -- every real key must be commented.
+        assert not re.match(r"^[A-Za-z0-9_-]+:", line), f"uncommented key: {line!r}"
+
+
+def test_create_default_config_lists_every_top_level_key():
+    output = create_default_config()
+    for key in DEFAULT_CONFIG:
+        assert f"# {key}:" in output, f"missing key in template: {key}"
+
+
+def test_emitted_template_comments_out_exactly_the_source():
+    # The template is default-config.yml with every live value line commented
+    # out and prose/blank lines untouched. Verifying this line-by-line (rather
+    # than trying to invert the transform, which is lossy for prose) confirms
+    # nothing is dropped or altered: the live content the template would
+    # restore is exactly default-config.yml, which parses to DEFAULT_CONFIG.
+    from yaml12 import read_yaml
+
+    source = _default_config_text()
+    assert read_yaml(io.StringIO(source)) == DEFAULT_CONFIG
+
+    src_lines = source.splitlines()
+    emt_lines = create_default_config().splitlines()
+    assert len(src_lines) == len(emt_lines)
+    for src, emt in zip(src_lines, emt_lines):
+        if not src.strip() or src.lstrip().startswith("#"):
+            assert emt == src
+        else:
+            assert emt == f"# {src}"

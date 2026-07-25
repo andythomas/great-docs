@@ -1779,10 +1779,10 @@ def test_create_default_config():
 
     assert isinstance(content, str)
     assert "Great Docs Configuration" in content
-    assert "sidebar_filter" in content
-    assert "cli:" in content
-    assert "authors:" in content
-    assert "parser:" in content
+    assert "# sidebar_filter:" in content
+    assert "# cli:" in content
+    assert "# authors:" in content
+    assert "# parser:" in content
 
 
 def test_detect_docstring_style_numpy_from_files():
