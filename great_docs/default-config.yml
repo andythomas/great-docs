@@ -6,51 +6,52 @@
 # in-memory DEFAULT_CONFIG is parsed from this file, and the commented template
 # written by `great-docs init` is this file with the value lines commented out.
 
-# Module name (importable name, if different from project name)
-# e.g., project 'py-yaml12' might have module 'yaml12'
+# Module Name
+# -----------
+# Importable module name, when it differs from the project name
+# (e.g. project 'py-yaml12' imports as 'yaml12'). Auto-detected when null.
 module: null
 
 # Display Name
-# Display name for the site (used in navbar/title)
-# If not provided, uses the package name as-is
+# ------------
 # Custom display name for your package in the site navbar/title.
 # If not provided, uses the actual package name (e.g., 'my_package' or 'my-package').
 # Use this to provide a marketing/presentation name (e.g., 'My Package').
 display_name: null
 
-# Project type — describes the primary ecosystem(s) the project belongs to.
-# Controls which ecosystem-specific links and features are active by default.
+# Project Type
+# ------------
+# Primary ecosystem(s) the project belongs to. Controls which
+# ecosystem-specific links and features are active by default.
 #   "python"          — Python package (default); enables PyPI link
 #   "go"              — Go CLI/library; disables PyPI link by default
-#   ["python", "go"]  — mixed project (e.g., Python package that ships a Go sidecar)
+#   ["python", "go"]  — mixed project (e.g. a Python package with a Go sidecar)
 project_type: python
 
 # Docstring Parser
+# ----------------
 # The docstring format used in your package (numpy, google, or sphinx)
-# This is auto-detected during initialization, but can be overridden here.
-# Docstring parser format
-# "numpy" (default), "google", or "sphinx"
+# This value was auto-detected during initialization, but can be overridden here.
 parser: numpy
 
 # Dynamic Introspection
+# ---------------------
 # When true, the renderer uses runtime introspection (more accurate for complex packages).
 # When false, uses static analysis only (better for packages with cyclic aliases).
-# This is auto-detected during initialization based on what works for your package.
-# Dynamic introspection mode for API reference generation
-# True (default) or False for packages with cyclic aliases
+# This value was auto-detected during initialization based on what works for your
+# package, but can be overridden here.
 dynamic: true
 
 # Jupyter Kernel
+# --------------
 # Jupyter kernel to use for executing code cells in .qmd files.
 # This is set at the project level so it applies to all pages, including
 # auto-generated API reference pages. Can be overridden in individual .qmd
 # file frontmatter if needed for special cases.
-# Jupyter kernel for executing code cells
-# Default kernel for Quarto computations
 jupyter: python3
 
 # Exclusions
-# API discovery settings
+# ----------
 # Items to exclude from auto-documentation (affects 'init' and 'scan')
 # exclude:
 #   - InternalClass
@@ -63,53 +64,44 @@ auto_include: []
 # Bypass the built-in AUTO_EXCLUDE list entirely
 no_auto_exclude: false
 
-# PyPI link
-# True (default): auto-detect package name and link to pypi.org
-# False: disable the PyPI link entirely
-# str: custom package index URL (e.g., "https://artifactory.example.com/packages/my-pkg")
+# PyPI Link
+# ---------
+# true (default): auto-detect the package name and link to pypi.org
+# false: disable the PyPI link
+# str: custom package index URL (e.g. "https://artifactory.example.com/pkg")
 pypi: true
 
-# GitHub repository URL override (e.g., "https://github.com/owner/repo")
+# GitHub Integration
+# ------------------
+# GitHub repository URL override (e.g. "https://github.com/owner/repo").
 repo: null
 
-# Site URL: the canonical address of the deployed documentation site.
-# Used for skills page install commands, .well-known/ discovery, sitemaps,
-# and subdirectory deployments. Also sets website.site-url in _quarto.yml.
-site_url: null
-
-# GitHub integration
-# GitHub Integration
 # GitHub link style: "widget" (shows stars count) or "icon" (simple icon)
-# "widget" (shows stars) or "icon"
 github_style: widget
 
+# Site URL
+# --------
+# Canonical address of the deployed docs site. Used for skills-page install
+# commands, .well-known/ discovery, sitemaps, and subdirectory deployments;
+# also sets website.site-url in _quarto.yml.
+site_url: null
+
 # Source Link Configuration
-# Source link configuration
-# source:
-#   enabled: true              # Enable/disable source links (default: true)
-#   branch: main               # Git branch/tag to link to (default: auto-detect)
-#   path: src/package          # Custom source path for monorepos (default: auto-detect)
-#   placement: usage           # Where to place the link: "usage" (default) or "title"
+# -------------------------
 source:
-  enabled: true
-  # Auto-detect from git
-  branch: null
-  # Auto-detect
-  path: null
-  # "usage" (default) or "title"
-  placement: usage
+  enabled: true              # Enable/disable source links (default: true)
+  branch: null               # Git branch/tag to link to (default: auto-detect)
+  path: null                 # Custom source path for monorepos (default: auto-detect)
+  placement: usage           # Where to place the link: "usage" (default) or "title"
 
 # Sidebar Filter
-# Sidebar filter configuration
-# sidebar_filter:
-#   enabled: true              # Enable/disable filter (default: true)
-#   min_items: 20              # Minimum items before showing filter (default: 20)
+# --------------
 sidebar_filter:
-  enabled: true
-  min_items: 20
+  enabled: true              # Enable/disable filter (default: true)
+  min_items: 20              # Minimum items before showing filter (default: 20)
 
 # CLI Documentation
-# CLI documentation configuration
+# -----------------
 # cli:
 #   enabled: false             # Enable CLI documentation (default: false)
 #   module: my_package.cli     # Module containing Click commands (auto-detected)
@@ -128,36 +120,36 @@ cli:
   module: null
   name: null
 
-# Go CLI documentation configuration
-# Builds the Go binary and extracts the command tree via --help to generate
-# a CLI reference section.  Works with any Go CLI (Cobra, urfave/cli, etc.)
-# as long as the binary supports --help on subcommands.
+# Go CLI Documentation
+# --------------------
+# Builds the Go binary and extracts its command tree via --help. Works with any
+# Go CLI (Cobra, urfave/cli, ...) whose subcommands support --help.
 go_cli:
   enabled: false
 
-# MCP server documentation configuration
-# Auto-generates reference pages from MCP server tool/resource/prompt definitions.
-# None/False: disabled (default)
-# dict: {"enabled": True, "module": "package.mcp", ...}
+# MCP Server Documentation
+# ------------------------
+# Auto-generates reference pages from an MCP server's tool/resource/prompt
+# definitions.
 mcp:
   enabled: true
-  # Importable module path containing the MCP server (e.g., "sweet.mcp")
+  # Importable module path containing the MCP server (e.g. "sweet.mcp").
   module: null
-  # Variable name of the Server instance (auto-detected if None)
+  # Variable name of the Server instance; auto-detected when null.
   server_var: null
-  # Display name override (defaults to server name)
+  # Display name override; defaults to the server name.
   name: null
-  # Manual tool categories: {"Category Name": ["tool_a", "tool_b"]}
+  # Manual tool categories: {"Category Name": ["tool_a", "tool_b"]}.
   categories: {}
 
 # Dark Mode Toggle
-# Dark mode toggle
+# ----------------
 # Enable/disable the dark mode toggle in navbar (default: true)
 dark_mode_toggle: true
 
 # Author Information
+# ------------------
 # Author metadata for display in the landing page sidebar and page attribution
-# Authors (rich author metadata)
 # authors:
 #   - name: Your Name
 #     email: you@example.com
@@ -169,21 +161,22 @@ dark_mode_toggle: true
 #     image: https://github.com/yourusername.png  # Avatar (GitHub URL or local path)
 authors: []
 
-# Funding organization (copyright holder, funder)
+# Funding
+# -------
+# Funding organization (copyright holder / funder).
 # Example: {"name": "Posit Software, PBC", "roles": ["Copyright holder", "funder"], "ror": "https://ror.org/03wc8by49"}
 funding: null
 
 # Site Settings
+# -------------
 # These settings are forwarded to _quarto.yml (format.html section)
-# Site settings (forwarded to _quarto.yml format.html)
 #
 # `site` is a pure Quarto passthrough: its entire subtree is merged into
-# _quarto.yml `format.html`, so any valid `format.html` key works here with no
-# great-docs change. `css` is the one exception (great-docs copies the file and
-# references it by basename). The great-docs-specific page/UI settings that used
-# to live here (language, show_dates, date_format, show_author, show_security)
-# are top-level keys below; setting them under `site` still works and is lifted
-# automatically.
+# `format.html`, so any valid `format.html` key works here with no great-docs
+# change. `css` is the one exception (great-docs copies the file and references
+# it by basename). The great-docs page/UI settings that used to live here
+# (language, show_dates, date_format, show_author, show_security) are top-level
+# keys below; setting them under `site` still works and is lifted automatically.
 # site:
 #   theme: flatly              # Quarto theme (default: flatly)
 #   toc: true                  # Show table of contents (default: true)
@@ -196,27 +189,27 @@ site:
   toc-depth: 2
   html-math-method: katex
 
+# Page Metadata
+# -------------
 # Language for UI text (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans")
 # Translates navbar labels, widget text, tooltips, and accessibility labels
 language: en
 
-# Page metadata timestamps
-# Display creation/modification dates in footer
+# Show page timestamps in footer
 show_dates: false
 
-# Python strftime format (e.g., "March 24, 2026")
+# Date format (Python strftime)
 date_format: "%B %d, %Y"
 
-# Show author attribution when show_dates is enabled
+# Show author attribution with dates
 show_author: true
 
-# Show security policy page when SECURITY.md exists
+# Show security policy page (from SECURITY.md)
 show_security: true
 
 # Team Author
+# -----------
 # Optional catch-all author for auto-generated pages (reference, changelog, etc.)
-# Team author (catch-all for auto-generated pages when authorship is shown)
-# Example: {"name": "Great Tables Team", "image": "assets/team-avatar.png", "url": "https://..."}
 # team_author:
 #   name: "Project Team"
 #   image: "assets/team-avatar.png"
@@ -224,24 +217,19 @@ show_security: true
 team_author: null
 
 # Changelog (GitHub Releases)
+# ---------------------------
 # Auto-generate a Changelog page from GitHub Releases.
-# Changelog configuration (from GitHub Releases)
-# changelog:
-#   enabled: true              # Enable/disable changelog (default: true)
-#   max_releases: 50           # Max releases to include (default: 50)
 changelog:
-  enabled: true
-  max_releases: 50
+  enabled: true              # Enable/disable changelog (default: true)
+  max_releases: 50           # Max releases to include (default: 50)
 
 # Custom Sections
+# ---------------
 # Add custom page groups (examples, tutorials, blog, etc.) to the site.
 # Each section gets a navbar link and a sidebar. An auto-generated
 # card-based index page is created only when `index: true` is set;
 # otherwise the navbar links directly to the first page in the section.
 # If you provide your own index.qmd in the directory it is always used.
-# Custom sections (generic page groups: examples, tutorials, blog, etc.)
-# Each entry: {"title": str, "dir": str, "index": bool, "index_columns": int,
-#              "navbar_after": str | None}
 #
 # sections:
 #   - title: Examples            # Navbar link text
@@ -257,17 +245,12 @@ changelog:
 sections: []
 
 # Custom Static Pages
+# -------------------
 # Add hand-written HTML pages that Great Docs should either wrap with the site
 # shell (layout: passthrough) or copy through unchanged (layout: raw).
 #
 # Omit `custom_pages` to use the conventional `custom/` directory.
 # Set `custom_pages: false` to disable discovery.
-# Custom static HTML pages.
-# None: auto-discover from project_root/custom/
-# False: disable custom page discovery entirely
-# str: one source directory, output defaults to its basename
-# dict: {"dir": str, "output": str | None}
-# list[str | dict]: multiple source directories
 #
 # custom_pages:
 #   - dir: marketing             # Source directory (relative to project root)
@@ -279,12 +262,14 @@ sections: []
 # custom_pages: marketing
 custom_pages: null
 
-# Homepage mode
-# "index" (default): separate homepage from README / index source
-# "user_guide": first user-guide page becomes the landing page
+# Homepage
+# --------
+# "index" (default): separate homepage from the README / index source
+# "user_guide": the first user-guide page becomes the landing page
 homepage: index
 
 # User Guide
+# ----------
 # Custom directory for User Guide .qmd files (relative to project root).
 # If not provided, looks for user_guide/ in the project root.
 # user_guide: docs/guides
@@ -304,13 +289,10 @@ homepage: index
 #
 # File paths are relative to the user guide directory (no user_guide/ prefix).
 # When using explicit ordering, numeric filename prefixes are preserved as-is.
-# User Guide configuration
-# If None, auto-discovers from user_guide/ directory
-# If a string, uses that as the directory path
-# If a list of section dicts, uses explicit ordering (overrides frontmatter sections)
 user_guide: null
 
 # Bibliography & Citations
+# ------------------------
 # Project-level bibliography for [@citation-key] syntax. Paths are relative to
 # the project root; the file(s) are copied into the build directory and wired
 # into _quarto.yml so every page can cite without per-page frontmatter.
@@ -321,6 +303,7 @@ user_guide: null
 # csl: docs/nature.csl                    # optional citation style
 
 # API Reference Structure
+# -----------------------
 # Explicit control over API reference sections. If not provided, sections are
 # auto-generated from discovered exports. Each section has a title, description,
 # and list of contents.
@@ -342,17 +325,16 @@ user_guide: null
 #     contents:
 #       - helper_func
 #       - another_func
-# API Reference configuration (explicit section ordering)
-# If not provided, auto-generates sections from discovered exports
 reference: []
 
-# Control whether class methods get their own pages or stay inline.
-# true: always inline methods on the class page (never split)
-# false: always give methods their own pages (always split)
-# int: inline up to N methods, split above N (default: 5)
+# Inline Methods
+# --------------
+# Whether class methods get their own pages or stay inline.
+# true: always inline; false: always split; int: inline up to N, split above N.
 inline_methods: 5
 
 # Logo & Favicon
+# --------------
 # Point to a single logo file (replaces the text title in the navbar):
 # logo: assets/logo.svg
 #
@@ -362,26 +344,25 @@ inline_methods: 5
 #   dark: assets/logo-dark.svg
 #
 # To show the text title alongside the logo, add: show_title: true
-# Logo configuration
-# str: path to a single logo file (used for all contexts)
-# dict: {"light": "...", "dark": "...", "alt": "...", "height": "...", "href": "...", "show_title": False}
-# None: auto-detect from conventional paths, or skip if nothing found
 logo: null
 
-# Favicon configuration
-# str: path to a single favicon file
-# dict: {"icon": "...", "apple_touch": "...", "og_image": "..."}
-# None: auto-generate from logo, or skip if no logo
+# Favicon.
+# str: a single favicon file
+# dict: {"icon", "apple_touch", "og_image"}
+# null: auto-generate from the logo, else skip
 favicon: null
 
-# Hero section configuration for the landing page
-# None: auto-enable when a logo is configured
-# True/False: force enable/disable
+# Hero Section
+# ------------
+# Landing-page hero.
+# null: auto-enable when a logo is configured
+# true/false: force enable/disable
 # dict: {"enabled": bool, "logo": str|dict|false, "logo_height": str,
 #        "name": str|false, "tagline": str|false, "badges": "auto"|list|false}
 hero: null
 
 # Markdown Pages
+# --------------
 # Generate .md companions for every HTML page and show a copy/view-as-Markdown
 # widget on each page.  Set to false to disable both (default: true).
 # markdown_pages: true
@@ -389,153 +370,145 @@ hero: null
 # To generate .md pages but hide the widget:
 # markdown_pages:
 #   widget: false
-# Markdown pages (.md generation + copy-page widget)
-# True (default): generate .md pages and show the copy/view widget.
-# False: disable both.
-# Dict form: {"widget": False} generates .md pages but hides the widget.
 markdown_pages: true
 
-# Announcement banner (site-wide banner above the navbar)
-# None/False: no banner (default)
-# str: banner message text (plain text or inline HTML)
+# Announcement Banner
+# -------------------
+# Site-wide banner above the navbar.
+# null/false: no banner
+# str: banner message (plain text or inline HTML)
 # dict: {"content": str, "type": "info"|"warning"|"success"|"danger",
 #        "dismissable": bool, "url": str|None}
 announcement: null
 
-# Multi-version documentation
-# None/[]: disabled (default — single-version site)
-# list[str | dict]: ordered list of versions (newest first)
-# Minimal: ["0.3", "0.2", "0.1"]
-# Full: [{"tag": "0.3", "label": "0.3.0", "latest": true}, ...]
+# Versioning
+# ----------
+# Multi-version documentation.
+# null/[]: disabled (single-version site)
+# list[str | dict]: ordered versions, newest first
+#   Minimal: ["0.3", "0.2", "0.1"]
+#   Full:    [{"tag": "0.3", "label": "0.3.0", "latest": true}, ...]
 versions: []
 
-# Version selector widget configuration
+# Version selector widget (enabled automatically when `versions` is non-empty).
 version_selector:
-  # Enabled automatically when versions is non-empty
   enabled: true
   # "navbar-right" | "navbar-left" | "sidebar-top"
   placement: navbar-right
-  # Include end-of-life versions in dropdown
+  # Include end-of-life versions in the dropdown.
   show_eol: true
-  # Show banner on non-latest versions
+  # Show a banner on non-latest versions.
   warning_banner: true
 
-# Floating version aliases (/v/latest/, /v/stable/, /v/dev/)
+# Floating version aliases.
 version_aliases:
   # /v/latest/ -> latest stable version
   latest: true
   # /v/stable/ -> same as latest
   stable: true
-  # /v/dev/ -> prerelease version (if any)
+  # /v/dev/ -> prerelease version, if any
   dev: true
 
-# Site-wide accent color (CSS color: hex, named, etc.)
-# Sets the --gd-accent custom property used by shortcodes (hr, etc.),
-# gradient presets, and other accent-colored elements.
-# str: same color for both light and dark mode
-# dict: {"light": str, "dark": str} for per-mode colors
+# Colors & Navbar
+# ---------------
+# Site-wide accent color (any CSS color). Sets the --gd-accent property used by
+# shortcodes, gradient presets, and other accent-colored elements.
+# str: one color for both modes; dict: {"light": str, "dark": str}.
 accent_color: null
 
-# Navbar gradient preset (e.g., "sky", "peach", "lilac", etc.)
+# Navbar gradient preset (e.g. "sky", "peach", "lilac").
 navbar_style: null
 
-# Navbar solid background color (CSS color: hex, named, etc.)
-# str: same color for both light and dark mode
-# dict: {"light": str, "dark": str} for per-mode colors
-# Text color is automatically chosen (light or dark) for contrast using APCA.
-# Overridden when navbar_style (gradient) is set.
+# Navbar solid background color (any CSS color). Text color is chosen
+# automatically for contrast (APCA). Overridden when navbar_style is set.
+# str: one color for both modes; dict: {"light": str, "dark": str}.
 navbar_color: null
 
-# Content area gradient preset (same preset names as navbar_style)
-# Adds a subtle radial glow at the top of the main content area
-# str: preset name (applies to all pages)
-# dict: {"preset": str, "pages": "all"|"homepage"}
+# Content-area gradient preset (same preset names as navbar_style); adds a
+# subtle radial glow at the top of the content area.
+# str: preset for all pages; dict: {"preset": str, "pages": "all"|"homepage"}.
 content_style: null
 
-# Scale-to-fit: auto-shrink wide HTML output to fit the content container.
-# Targets elements by CSS selector — the matched element's nearest output
-# wrapper is scaled down (never up) to fit the page width.
-# None/False: disabled (default)
-# list[str]: CSS selectors for elements to auto-scale (e.g., ["#pb_tbl"])
-# Per-page override via frontmatter: `scale-to-fit: ["#pb_tbl"]`
+# Scale to Fit
+# ------------
+# Auto-shrink wide HTML output to the content width. The matched element's
+# nearest output wrapper is scaled down (never up).
+# null/false: disabled
+# list[str]: CSS selectors to auto-scale (e.g. ["#pb_tbl"])
+# Per-page override: `scale-to-fit: ["#pb_tbl"]`
 scale_to_fit: null
 
-# Minimum scale threshold for scale-to-fit.  When scaling would shrink
-# content beyond this limit the element is shown at full size with
+# Minimum scale for scale-to-fit; below it, content is shown full size with
 # horizontal scrolling instead.
-# None/False: no minimum (scale as small as needed)
-# float (0-1): minimum scale factor, e.g. 0.4 = "don't shrink below 40%"
-# str keyword: viewport breakpoint below which scaling is disabled:
-#   "mobile"  → scroll on viewports ≤ 576px
-#   "tablet"  → scroll on viewports ≤ 768px
-#   "desktop" → scroll on viewports ≤ 992px
-# Per-page override via frontmatter: `scale-to-fit-min-scale: "tablet"`
+# null/false: no minimum
+# float (0-1): minimum scale factor (e.g. 0.4 = don't shrink below 40%)
+# str keyword: viewport breakpoint below which scaling is disabled —
+#   "mobile" (≤ 576px), "tablet" (≤ 768px), "desktop" (≤ 992px)
+# Per-page override: `scale-to-fit-min-scale: "tablet"`
 scale_to_fit_min_scale: null
 
-# Navigation icons (Lucide icon set)
-# Prepend icons to sidebar and navbar navigation entries.
-# None/False: disabled (default)
+# Navigation Icons
+# ----------------
+# Lucide icons prepended to sidebar/navbar entries.
+# null/false: disabled
 # dict: {"navbar": {"Label": "icon-name"}, "sidebar": {"Label": "icon-name"}}
 nav_icons: null
 
-# Keyboard navigation & shortcuts
-# True (default): enable keyboard shortcuts and help overlay
-# False: disable keyboard navigation
+# UI Features
+# -----------
+# Keyboard shortcuts and help overlay.
 keyboard_nav: true
 
-# Package info page (auto-generated page with dependency details)
-# True (default): generate package-info.qmd and link from homepage Meta
-# False: disable package info page generation
+# Auto-generated package-info page (dependency details), linked from homepage Meta.
 package_info_page: true
 
-# Back-to-top floating button
-# True (default): show back-to-top button on all pages
-# False: disable back-to-top button
+# Back-to-top floating button.
 back_to_top: true
 
-# Attribution text in the footer ("Site created with Great Docs")
-# True (default): show attribution
-# False: hide attribution
+# Footer attribution ("Site created with Great Docs").
 attribution: true
 
-# Custom HTML to include in the <head> of every page
-# str: inline HTML text (e.g., a <script> or <link> tag)
-# list[str | dict]: list of inline text strings or {"text": ...} / {"file": ...} entries
+# Custom Head HTML
+# ----------------
+# Injected into the <head> of every page.
+# str: inline HTML (e.g. a <script> or <link> tag)
+# list[str | dict]: inline strings or {"text": ...} / {"file": ...} entries
 include_in_header: []
 
-# Freeze configuration for Quarto code execution caching
-# Controls whether computational documents are re-executed during builds.
-# None/False: disabled — all documents are executed on every build
-# "auto": re-render only when source changes (execute: freeze: auto) [default]
-# True: never re-render during project render (execute: freeze: true)
+# Freeze (Execution Caching)
+# --------------------------
+# Whether computational documents re-run during builds.
+# null/false: disabled — execute every document on every build
+# "auto" (default): re-render only when source changes
+# true: never re-render during project render
 # dict: {"mode": "auto"|true, "pre_render": str|list[str]}
-#   mode: freeze mode ("auto" or true)
-#   pre_render: script(s) to run before Quarto render (e.g., to copy _freeze/ into build dir)
+#   pre_render: script(s) to run before render (e.g. copy _freeze/ into the build dir)
 freeze: auto
 
-# Pre-render scripts (alternative to freeze.pre_render)
-# Scripts run before Quarto's render step (Quarto's native pre-render hook).
-# str: single script path (relative to project root)
-# list[str]: multiple script paths
-# These are copied into the build directory and configured in _quarto.yml.
+# Pre-render Scripts
+# ------------------
+# Quarto's native pre-render hook (alternative to freeze.pre_render). Copied
+# into the build directory and wired into _quarto.yml.
+# str: a single script path; list[str]: several. Paths are relative to root.
 pre_render: null
 
-# Agent Skills (skill.md) generation
-# Generates a SKILL.md file conforming to the Agent Skills specification
-# (https://agentskills.io/) so coding agents can learn to use the package.
+# Agent Skills
+# ------------
+# Emits a SKILL.md conforming to the Agent Skills spec (https://agentskills.io/)
+# so coding agents can learn the package.
 skill:
   enabled: true
-  # Path to a hand-written SKILL.md (overrides auto-generation)
+  # Path to a hand-written SKILL.md (overrides auto-generation).
   file: null
-  # Also serve at /.well-known/agent-skills/{name}/SKILL.md + index.json
+  # Also serve at /.well-known/agent-skills/{name}/SKILL.md + index.json.
   well_known: true
-  # List of gotcha strings for the Gotchas section
+  # Strings for the Gotchas section.
   gotchas: []
-  # List of best-practice strings
+  # Strings for the Best Practices section.
   best_practices: []
-  # Manual rows: [{"need": "...", "use": "..."}]
+  # Manual decision-table rows: [{"need": "...", "use": "..."}].
   decision_table: []
-  # Path to extra Markdown to append to the generated body
+  # Path to extra Markdown appended to the generated body.
   extra_body: null
   # Multiple named skills (overrides 'file' when set):
   # skills:
@@ -546,6 +519,7 @@ skill:
   skills: []
 
 # Social Cards & Open Graph
+# -------------------------
 # Auto-generate <meta> tags for social media previews (LinkedIn, Discord, Slack,
 # Bluesky, Mastodon, X/Twitter, and other platforms). Enabled by default.
 # social_cards: true           # Enable with defaults (same as omitting the key)
@@ -557,155 +531,126 @@ skill:
 #   image: assets/social-card.png   # Default og:image for all pages
 #   twitter_site: "@myhandle"       # Twitter/X site @handle
 #   twitter_card: summary_large_image  # "summary" or "summary_large_image"
-# Auto-generate <meta> tags for social media previews (LinkedIn, Discord, Slack,
-# Bluesky, Mastodon, X/Twitter, etc.)
-# True: enable with defaults
-# False/None: disable
-# dict: fine-grained control
 social_cards:
-  # Master switch for social card meta tags
   enabled: true
-  # Default image for og:image / twitter:image (path relative to project root)
-  # None: no default image (individual pages can still set via frontmatter)
   image: null
-  # Twitter/X card type: "summary", "summary_large_image"
-  # "summary_large_image" is used when an image is provided, "summary" otherwise
-  # None = auto-detect based on image
   twitter_card: null
-  # Twitter/X @handle for the site (e.g., "@posaboron")
   twitter_site: null
 
 # Page Status Badges
-# Visual indicators for page lifecycle status in sidebar navigation.
-# Pages set `status: new` (or `deprecated`, etc.) in frontmatter.
-# True: enable with defaults
-# False: disable
-# dict: fine-grained control
+# ------------------
+# Lifecycle indicators in sidebar navigation. Pages opt in via frontmatter
+# (`status: new`, `deprecated`, ...).
+# Shorthand: `page_status: true`/`false`.
 page_status:
-  # Master switch for page status badges
+  # Master switch for page status badges.
   enabled: false
-  # Show status badges next to sidebar navigation links
+  # Show badges next to sidebar navigation links.
   show_in_sidebar: true
-  # Show status indicator below page titles (like tags)
+  # Show a status indicator below page titles (like tags).
   show_on_pages: true
-  # Built-in status definitions (can be extended/overridden)
-  # Each status: {label, icon, color, description}
+  # Built-in status definitions (extend or override). Each: {label, icon, color, description}.
   statuses:
     new:
       label: New
       icon: sparkles
-      # Emerald green
       color: "#10b981"
       description: Recently added
     updated:
       label: Updated
       icon: refresh-cw
-      # Blue
       color: "#3b82f6"
       description: Recently updated
     beta:
       label: Beta
       icon: flask-conical
-      # Amber
       color: "#f59e0b"
       description: Beta feature
     deprecated:
       label: Deprecated
       icon: triangle-alert
-      # Red
       color: "#ef4444"
       description: May be removed in a future release
     experimental:
       label: Experimental
       icon: beaker
-      # Purple
       color: "#8b5cf6"
       description: API may change without notice
     upcoming:
       label: Upcoming
       icon: rocket
-      # Red (Christopher Doyle palette)
       color: "#e63946"
       description: Coming in a future release
 
 # Page Tags
-# Categorize pages with tags for improved discoverability.
-# Tags are added via frontmatter (`tags: [Python, Testing, API]`).
-# True: enable with defaults
-# False: disable
-# dict: fine-grained control
+# ---------
+# Categorize pages for discoverability via frontmatter
+# (`tags: [Python, Testing, API]`).
+# Shorthand: `tags: true`/`false`.
 tags:
-  # Master switch for page tags
+  # Master switch for page tags.
   enabled: false
-  # Auto-generate a tags index page listing all tags and linked pages
+  # Auto-generate a tags index page listing all tags and their pages.
   index_page: true
-  # Render tag pills above page titles with links to the tag index
+  # Render tag pills above page titles, linked to the tag index.
   show_on_pages: true
-  # Support hierarchical tags with "/" separator (e.g., "Python/Testing")
+  # Support hierarchical tags with "/" (e.g. "Python/Testing").
   hierarchical: true
-  # Optional tag icons: dict mapping tag names to Lucide icon names
-  # e.g., {"Python": "code", "Tutorial": "book-open"}
+  # Optional tag icons: tag name -> Lucide icon name (e.g. {"Python": "code"}).
   icons: {}
-  # Shadow tags: list of tag names hidden from public view (for internal
-  # organization only). Shadow-tagged pages are indexed but tags are not
-  # rendered on the page or shown in the tag index.
+  # Shadow tags: names hidden from public view (internal organization only).
+  # Shadow-tagged pages are indexed but their tags are not rendered.
   shadow: []
-  # Scoped listings: when True, section pages (user guide, recipes, etc.)
-  # show a tag cloud scoped to that section
+  # When true, section pages show a tag cloud scoped to that section.
   scoped: false
 
-# SEO configuration for search engine optimization
-# Generates sitemap.xml, robots.txt, and adds metadata for better discoverability
+# SEO
+# ---
+# Generates sitemap.xml, robots.txt, and discoverability metadata.
 seo:
-  # Master switch for all SEO features
+  # Master switch for all SEO features.
   enabled: true
-  # Sitemap configuration
   sitemap:
-    # Generate sitemap.xml
+    # Generate sitemap.xml.
     enabled: true
+    # Change frequency by page type (always|hourly|daily|weekly|monthly|yearly|never).
     changefreq:
-      # Change frequencies by page type (always|hourly|daily|weekly|monthly|yearly|never)
       homepage: weekly
       reference: monthly
       user_guide: monthly
       changelog: weekly
       default: monthly
+    # Priority by page type (0.0-1.0).
     priority:
-      # Priority values by page type (0.0 to 1.0)
       homepage: 1.0
       reference: 0.8
       user_guide: 0.9
       changelog: 0.6
       default: 0.5
-  # Robots.txt configuration
   robots:
-    # Generate robots.txt
+    # Generate robots.txt.
     enabled: true
-    # Allow all crawlers by default
+    # Allow all crawlers by default.
     allow_all: true
-    # List of paths to disallow (e.g., ["/drafts/", "/_internal/"])
+    # Paths to disallow (e.g. ["/drafts/", "/_internal/"]).
     disallow: []
-    # Optional crawl delay in seconds
+    # Optional crawl delay in seconds.
     crawl_delay: null
-    # Additional rules as strings (e.g., ["User-agent: GPTBot", "Disallow: /"])
+    # Extra rules as raw strings (e.g. ["User-agent: GPTBot", "Disallow: /"]).
     extra_rules: []
-  # Canonical URL configuration
   canonical:
-    # Add canonical URLs to pages
+    # Add canonical URLs to pages.
     enabled: true
-    # Base URL (e.g., "https://example.github.io/pkg/")
-    # Auto-detected from GitHub Pages URL if not provided
+    # Base URL (e.g. "https://example.github.io/pkg/"); auto-detected from
+    # GitHub Pages when null.
     base_url: null
-  # Page title template
-  # Supports {page_title} and {site_name} placeholders
+  # Page title template; supports {page_title} and {site_name}.
   title_template: "{page_title} | {site_name}"
-  # JSON-LD structured data for software documentation
+  # JSON-LD structured data for software documentation.
   structured_data:
-    # Add JSON-LD to pages
+    # Add JSON-LD to pages.
     enabled: true
-    # Schema.org type
+    # Schema.org type.
     type: SoftwareSourceCode
-    # Additional fields auto-populated from package metadata
-  # Default meta description (used when page has no description)
-  # Falls back to package description
+  # Default meta description; falls back to the package description when null.
   default_description: null

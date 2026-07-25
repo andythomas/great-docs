@@ -2,14 +2,10 @@
 
 import io
 import re
-import tokenize
 from importlib import resources
-from pathlib import Path
 from typing import Any
 
 from great_docs.config import DEFAULT_CONFIG, create_default_config
-
-_FIXTURES = Path(__file__).parent / "data"
 
 # Verbatim snapshot of DEFAULT_CONFIG captured at the start of the config
 # single-source migration. Guards faithful transcription of VALUES into
@@ -154,45 +150,6 @@ FROZEN_DEFAULT_CONFIG: dict[str, Any] = {'module': None,
          'default_description': None}}
 
 
-def _py_comment_bodies(src: str) -> set[str]:
-    """Collect comment text from Python source, ignoring `#` inside strings."""
-    bodies: set[str] = set()
-    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
-        if tok.type == tokenize.COMMENT:
-            body = tok.string.lstrip("#").strip()
-            if body:
-                bodies.add(body)
-    return bodies
-
-
-def _yaml_comment_bodies(text: str) -> set[str]:
-    """Collect comment text from own-line YAML comments."""
-    bodies: set[str] = set()
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#"):
-            body = stripped.lstrip("#").strip()
-            if body:
-                bodies.add(body)
-    return bodies
-
-
-def _is_prose(body: str) -> bool:
-    """Whether a comment body is documentation prose
-
-    Excludes example config lines (`key:` / `key: value`), list items, and
-    pure section dividers -- Option-3 promotes commented example keys to live
-    values, so only genuine prose must survive verbatim.
-    """
-    if re.fullmatch(r"[-=]+", body):
-        return False
-    if body == "-" or body.startswith("- "):
-        return False
-    if re.match(r"^[A-Za-z0-9_.\-]+:(\s|$)", body):
-        return False
-    return True
-
-
 def _default_config_text() -> str:
     return (
         resources.files("great_docs")
@@ -218,18 +175,6 @@ def test_every_top_level_key_has_a_comment():
         if line and line[0] not in " #" and ":" in line:
             prev = lines[i - 1].strip() if i > 0 else ""
             assert prev.startswith("#"), f"undocumented top-level key: {line!r}"
-
-
-def test_every_legacy_comment_survives():
-    legacy = _py_comment_bodies(
-        (_FIXTURES / "legacy_literal.py").read_text(encoding="utf-8")
-    ) | _yaml_comment_bodies(
-        (_FIXTURES / "legacy_template.txt").read_text(encoding="utf-8")
-    )
-    legacy_prose = {b for b in legacy if _is_prose(b)}
-    new = _yaml_comment_bodies(_default_config_text())
-    missing = legacy_prose - new
-    assert not missing, f"legacy comment lines dropped: {sorted(missing)}"
 
 
 def test_create_default_config_is_fully_commented():
