@@ -45,32 +45,6 @@ def _ensure_quarto_installed() -> None:
     )
 
 
-def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge `overlay` into `base`, mutating `base`
-
-    Nested dicts merge key-by-key; every other value in `overlay` replaces the
-    one in `base`.
-
-    Parameters
-    ----------
-    base
-        The mapping to merge into (mutated in place).
-    overlay
-        The mapping whose values take precedence.
-
-    Returns
-    -------
-    dict
-        `base`, after the merge.
-    """
-    for key, value in overlay.items():
-        if isinstance(base.get(key), dict) and isinstance(value, dict):
-            _deep_merge(base[key], value)
-        else:
-            base[key] = value
-    return base
-
-
 class GreatDocs:
     """
     GreatDocs class for creating beautiful API documentation sites.
@@ -12045,7 +12019,9 @@ anchor-sections: true
         # default-config.yml, plus any user format.html keys) merges into
         # format.html. Legacy great-docs keys were normalized to the top level
         # at load, and css is applied separately below.
-        _deep_merge(config["format"]["html"], self._config.site_quarto)
+        config["format"]["html"] = Config._merge(
+            config["format"]["html"], self._config.site_quarto
+        )
 
         # toc-title: use the translated label unless the user overrode it via
         # site.toc-title (already merged above).

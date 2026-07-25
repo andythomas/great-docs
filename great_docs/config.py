@@ -77,7 +77,7 @@ class Config:
 
                 self._user_config = user_config
                 # Deep merge user config with defaults
-                config = self._merge_config(config, user_config)
+                config = self._merge(config, user_config)
             except ValueError as e:
                 print(f"Warning: Error parsing great-docs.yml: {e}")
             except Exception as e:
@@ -116,16 +116,21 @@ class Config:
                     config[key] = value
         return config
 
-    def _merge_config(self, defaults: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _merge(defaults: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
         """
-        Deep merge user configuration with defaults.
+        Deep merge two config-shaped mappings
+
+        Values in `user` win; dicts present in both are merged recursively.
+        `defaults` is not mutated — a new mapping is returned. Also used to
+        overlay the `site` subtree onto `_quarto.yml` `format.html`.
 
         Parameters
         ----------
         defaults
-            Default configuration values.
+            Base configuration values.
         user
-            User-provided configuration values.
+            Overriding configuration values (take precedence).
 
         Returns
         -------
@@ -136,7 +141,7 @@ class Config:
 
         for key, value in user.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = self._merge_config(result[key], value)
+                result[key] = Config._merge(result[key], value)
             else:
                 result[key] = value
 
