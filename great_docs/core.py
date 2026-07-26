@@ -9318,7 +9318,12 @@ class GreatDocs:
         package_name = self._detect_package_name()
         if not package_name:
             print("Warning: Could not detect package name, creating minimal config")
-            config_path.write_text(create_default_config(), encoding="utf-8")
+            # No importable name to detect from; fall back to the documented
+            # parser/dynamic defaults so the emitted config is never empty.
+            minimal_overrides = {"parser": "parser: numpy", "dynamic": "dynamic: true"}
+            config_path.write_text(
+                create_default_config(minimal_overrides), encoding="utf-8"
+            )
             print(f"Created {config_path}")
             return True
 

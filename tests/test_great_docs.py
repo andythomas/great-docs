@@ -17840,6 +17840,26 @@ def test_generate_initial_config_is_template_with_detected_values(monkeypatch):
         assert cfg["reference"][0]["title"] == "Classes"
 
 
+def test_generate_initial_config_no_package_is_non_empty(monkeypatch):
+    """Test the no-package-name branch still emits a non-empty config."""
+    import io
+
+    from yaml12 import read_yaml
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        docs = GreatDocs(project_path=tmp_dir)
+        monkeypatch.setattr(docs, "_detect_package_name", lambda: None)
+
+        assert docs._generate_initial_config(force=True) is True
+
+        text = (project_path / "great-docs.yml").read_text()
+        cfg = read_yaml(io.StringIO(text))
+        assert cfg is not None, "no-package init config must not be empty"
+        assert cfg["parser"] == "numpy"
+        assert cfg["dynamic"] is True
+
+
 def test_generate_initial_config_existing_no_force():
     """Test _generate_initial_config skips existing config without force."""
     with tempfile.TemporaryDirectory() as tmp_dir:
