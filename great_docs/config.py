@@ -1434,27 +1434,13 @@ class Config:
 
     @property
     def sitemap_changefreq(self) -> dict[str, str]:
-        """Get the sitemap change frequency by page type."""
-        defaults = {
-            "homepage": "weekly",
-            "reference": "monthly",
-            "user_guide": "monthly",
-            "changelog": "weekly",
-            "default": "monthly",
-        }
-        return {**defaults, **self.get("seo.sitemap.changefreq", {})}
+        """Sitemap change frequency by page type"""
+        return self["seo.sitemap.changefreq"]
 
     @property
     def sitemap_priority(self) -> dict[str, float]:
-        """Get the sitemap priority by page type."""
-        defaults = {
-            "homepage": 1.0,
-            "reference": 0.8,
-            "user_guide": 0.9,
-            "changelog": 0.6,
-            "default": 0.5,
-        }
-        return {**defaults, **self.get("seo.sitemap.priority", {})}
+        """Sitemap priority by page type"""
+        return self["seo.sitemap.priority"]
 
     @property
     def robots_enabled(self) -> bool:
