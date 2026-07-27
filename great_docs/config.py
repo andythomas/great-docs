@@ -865,7 +865,7 @@ class Config:
         """Whether the hero section is shown"""
         enabled = self["hero.enabled"]
         if enabled is None:
-            return self.logo is not None
+            return self.logo is not None or self["hero.logo"] not in (None, False)
         return bool(enabled)
 
     @property

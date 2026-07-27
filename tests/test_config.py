@@ -465,6 +465,27 @@ class TestHero:
         cfg = _make_config(tmp_project, "hero:\n  name: My Package\n")
         assert cfg.hero_enabled is False
 
+    def test_hero_logo_only_auto_enables(self, tmp_project: Path):
+        """An explicit `hero.logo`, with no top-level `logo`, still auto-enables.
+
+        The hero and navbar logos share one fallback chain (core._build_hero_section:
+        explicit hero.logo -> detected hero logo -> navbar logo -> detected navbar
+        logo), so "auto" must consider both ends of it, not just the navbar logo.
+        """
+        cfg = _make_config(tmp_project, "hero:\n  logo: x.svg\n")
+        assert cfg.hero_enabled is True
+
+    def test_empty_hero_no_logo_stays_disabled(self, tmp_project: Path):
+        """An empty hero dict/null with no logo anywhere keeps auto resolving to off.
+
+        The old "any hero dict force-enables" quirk is intentionally dropped.
+        """
+        cfg = _make_config(tmp_project, "hero: {}\n")
+        assert cfg.hero_enabled is False
+
+        cfg_null = _make_config(tmp_project, "hero: null\n")
+        assert cfg_null.hero_enabled is False
+
     def test_hero_dict_explicitly_disabled(self, tmp_project: Path):
         """Covers line 540 (hero dict with enabled: false)."""
         cfg = _make_config(tmp_project, "hero:\n  enabled: false\n")
