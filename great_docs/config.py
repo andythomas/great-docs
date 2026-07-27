@@ -1,3 +1,25 @@
+"""
+great-docs configuration.
+
+`great-docs.default.yml` is the single source of truth for every default; this
+module reads a user's merged config and exposes it as typed properties.
+
+Contract for adding an option — keep the single source intact:
+
+- Declare the option and its default in `great-docs.default.yml`, never here.
+  This module holds no default values.
+- Read through `config["dot.path"]`. The lookup is strict: a key absent from
+  the merged config raises `KeyError`.
+- Default to a typed empty container (`[]`, `{}`) rather than `null`, unless the
+  option is an optional scalar, a genuine tri-state, or a single optional record.
+- For an option whose value is a dict of sub-fields, declare those sub-fields
+  live in the YAML and expand any scalar/bool shorthand to that dict at load.
+  Accessors must not supply sub-field defaults.
+- A property is the typed view of an option: a thin one returns `self["key"]`;
+  a richer one may coerce shape or derive from other options, but adds no
+  default value.
+"""
+
 import io
 import re
 from importlib import resources
@@ -148,32 +170,39 @@ class Config:
 
         return result
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def __getitem__(self, key: str) -> Any:
         """
-        Get a configuration value.
+        Return the configuration value at a dot-separated key
 
         Parameters
         ----------
         key
-            The configuration key (supports dot notation for nested keys).
-        default
-            Default value if key is not found.
+            A dot-path such as `"seo.sitemap.enabled"`.
 
         Returns
         -------
         Any
-            The configuration value or default.
+            The value in the merged configuration at that path.
+
+        Raises
+        ------
+        KeyError
+            If any segment is absent or traversal reaches a non-mapping.
         """
-        keys = key.split(".")
-        value = self._config
-
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
+        value: Any = self._config
+        for part in key.split("."):
+            if isinstance(value, dict) and part in value:
+                value = value[part]
             else:
-                return default
-
+                raise KeyError(key)
         return value
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Return the value at a dot-path, or `default` when it is absent"""
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     @property
     def exclude(self) -> list[str]:

@@ -99,6 +99,23 @@ class TestGet:
         assert cfg.get("parser.sub", "nope") == "nope"
 
 
+class TestGetItem:
+    def test_top_level_hit(self, tmp_project: Path):
+        assert Config(tmp_project)["github_style"] == "widget"
+
+    def test_nested_hit(self, tmp_project: Path):
+        assert Config(tmp_project)["source.placement"] == "usage"
+
+    def test_missing_top_level_raises(self, tmp_project: Path):
+        with pytest.raises(KeyError):
+            Config(tmp_project)["does_not_exist"]
+
+    def test_traversal_into_scalar_raises(self, tmp_project: Path):
+        # github_style is a string; indexing into it must fail loud
+        with pytest.raises(KeyError):
+            Config(tmp_project)["github_style.nope"]
+
+
 class TestScalarProperties:
     def test_exclude_default(self, tmp_project: Path):
         assert Config(tmp_project).exclude == []
