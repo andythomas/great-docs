@@ -1713,9 +1713,10 @@ source:
 
         config = Config(Path(tmp_dir))
 
-        assert config.get("source.enabled") is False
-        assert config.get("source.branch") == "develop"
-        assert config.get("source.nonexistent", "default") == "default"
+        assert config["source.enabled"] is False
+        assert config["source.branch"] == "develop"
+        with pytest.raises(KeyError):
+            config["source.nonexistent"]
 
 
 def test_config_funding_property():

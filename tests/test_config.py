@@ -81,30 +81,16 @@ class TestMergeConfig:
 
     def test_new_key_in_user_config(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "custom_key: custom_value\n")
-        assert cfg.get("custom_key") == "custom_value"
+        assert cfg["custom_key"] == "custom_value"
 
 
-class TestGet:
-    def test_simple_key(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("parser") == "numpy"
+class TestGetRemoved:
+    def test_get_method_is_gone(self, tmp_project: Path):
+        assert not hasattr(Config, "get")
 
-    def test_dot_notation(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("source.enabled") is True
-
-    def test_missing_key_returns_default(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("nonexistent", "fallback") == "fallback"
-
-    def test_missing_nested_key_returns_default(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("source.nonexistent", 42) == 42
-
-    def test_traversal_through_non_dict_returns_default(self, tmp_project: Path):
-        cfg = _make_config(tmp_project, "parser: google\n")
-        # parser is a string, not a dict — can't traverse further
-        assert cfg.get("parser.sub", "nope") == "nope"
+    def test_lint_parser_read(self, tmp_project: Path):
+        # _lint reads the parser through subscript now
+        assert Config(tmp_project)["parser"] == "numpy"
 
 
 class TestGetItem:

@@ -4925,7 +4925,7 @@ class GreatDocs:
         if not module_path:
             # Try common MCP module locations based on the documented package
             package_name = self._normalize_package_name(
-                self._config.get("module") or self.project_path.name
+                self._config["module"] or self.project_path.name
             )
             common_mcp_modules = [
                 f"{package_name}.mcp",
@@ -5098,7 +5098,7 @@ class GreatDocs:
         package_name = self._detect_package_name()
         owner, repo, _ = self._get_github_repo_info()
         repo_url = f"https://github.com/{owner}/{repo}" if owner and repo else None
-        site_url = self._config.get("site_url")
+        site_url = self._config["site_url"]
 
         generate_mcp_manifest(
             server_info=mcp_info,
@@ -16044,7 +16044,10 @@ anchor-sections: true
                     site_url=self._config.site_url,
                     progress_callback=_progress_cb,
                     on_renders_done=_on_renders_done,
-                    badge_expiry_raw=self._config.get("new_is_old"),
+                    # `new_is_old` is documented (user_guide/30-multi-version-docs.qmd) but has
+                    # no entry in great-docs.default.yml, so it can't go through the strict
+                    # Config[...] lookup; read it from the merged dict directly.
+                    badge_expiry_raw=self._config.to_dict().get("new_is_old"),
                 )
 
                 if not vb_result["success"]:

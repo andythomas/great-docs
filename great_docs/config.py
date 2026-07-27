@@ -296,27 +296,20 @@ class Config:
                 raise KeyError(key)
         return value
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """Return the value at a dot-path, or `default` when it is absent"""
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
     @property
     def exclude(self) -> list[str]:
         """Get the list of items to exclude."""
-        return self.get("exclude", [])
+        return self["exclude"]
 
     @property
     def auto_include(self) -> list[str]:
         """Get names to force-include even if they match AUTO_EXCLUDE."""
-        return self.get("auto_include", [])
+        return self["auto_include"]
 
     @property
     def no_auto_exclude(self) -> bool:
         """Check if the built-in AUTO_EXCLUDE list should be bypassed."""
-        return self.get("no_auto_exclude", False)
+        return self["no_auto_exclude"]
 
     @property
     def project_type(self) -> list[str]:
@@ -329,7 +322,7 @@ class Config:
         list[str]
             Always a list, e.g. `["python"]`, `["go"]`, or `["python", "go"]` for mixed projects.
         """
-        val = self.get("project_type", "python")
+        val = self["project_type"]
         if isinstance(val, list):
             return [str(t).lower() for t in val]
         return [str(val).lower()]
@@ -362,62 +355,62 @@ class Config:
     @property
     def repo(self) -> str | None:
         """Get the GitHub repository URL override."""
-        return self.get("repo")
+        return self["repo"]
 
     @property
     def site_url(self) -> str | None:
         """Get the site URL for subdirectory deployments."""
-        return self.get("site_url")
+        return self["site_url"]
 
     @property
     def github_style(self) -> str:
         """Get the GitHub link style."""
-        return self.get("github_style", "widget")
+        return self["github_style"]
 
     @property
     def source_enabled(self) -> bool:
         """Check if source links are enabled."""
-        return self.get("source.enabled", True)
+        return self["source.enabled"]
 
     @property
     def source_branch(self) -> str | None:
         """Get the source link branch."""
-        return self.get("source.branch")
+        return self["source.branch"]
 
     @property
     def source_path(self) -> str | None:
         """Get the custom source path."""
-        return self.get("source.path")
+        return self["source.path"]
 
     @property
     def source_placement(self) -> str:
         """Get the source link placement."""
-        return self.get("source.placement", "usage")
+        return self["source.placement"]
 
     @property
     def sidebar_filter_enabled(self) -> bool:
         """Check if sidebar filter is enabled."""
-        return self.get("sidebar_filter.enabled", True)
+        return self["sidebar_filter.enabled"]
 
     @property
     def sidebar_filter_min_items(self) -> int:
         """Get the minimum items for sidebar filter."""
-        return self.get("sidebar_filter.min_items", 20)
+        return self["sidebar_filter.min_items"]
 
     @property
     def cli_enabled(self) -> bool:
         """Check if CLI documentation is enabled."""
-        return self.get("cli.enabled", False)
+        return self["cli.enabled"]
 
     @property
     def cli_module(self) -> str | None:
         """Get the CLI module path."""
-        return self.get("cli.module")
+        return self["cli.module"]
 
     @property
     def cli_name(self) -> str | None:
         """Get the CLI command name."""
-        return self.get("cli.name")
+        return self["cli.name"]
 
     @property
     def cli_title(self) -> str | None:
@@ -426,7 +419,7 @@ class Config:
         Supports `cli: {title: "Custom Title"}` in great-docs.yml. Returns `None` when no custom
         title is configured (the caller falls back to a translated default).
         """
-        return self.get("cli.title")
+        return self["cli.title"]
 
     @property
     def cli_desc(self) -> str | None:
@@ -435,7 +428,7 @@ class Config:
         Supports `cli: {desc: "Intro text..."}` in great-docs.yml. Returns `None` when no
         description is configured.
         """
-        return self.get("cli.desc")
+        return self["cli.desc"]
 
     @property
     def cli_sections(self) -> list[dict[str, Any]]:
@@ -452,7 +445,7 @@ class Config:
         Each `contents` entry is a top-level command name (string). Returns an empty list when no
         explicit sections are configured (triggering auto-grouping by command group).
         """
-        val = self.get("cli.sections", [])
+        val = self["cli.sections"]
         if isinstance(val, list):
             return val
         return []
@@ -464,67 +457,67 @@ class Config:
         When `True`, great-docs will detect the Go CLI project at the package root, compile it, and
         extract the command tree via `--help` to generate a CLI reference section.
         """
-        return self.get("go_cli.enabled", False)
+        return self["go_cli.enabled"]
 
     @property
     def mcp_enabled(self) -> bool:
         """Check if MCP server documentation is enabled."""
-        return self.get("mcp.enabled", False)
+        return self["mcp.enabled"]
 
     @property
     def mcp_module(self) -> str | None:
         """Get the MCP server module path."""
-        return self.get("mcp.module")
+        return self["mcp.module"]
 
     @property
     def mcp_server_var(self) -> str | None:
         """Get the MCP server variable name."""
-        return self.get("mcp.server_var")
+        return self["mcp.server_var"]
 
     @property
     def mcp_name(self) -> str | None:
         """Get the MCP server display name override."""
-        return self.get("mcp.name")
+        return self["mcp.name"]
 
     @property
     def mcp_categories(self) -> dict:
         """Get manual MCP tool categories."""
-        return self.get("mcp.categories", {})
+        return self["mcp.categories"]
 
     @property
     def skill_enabled(self) -> bool:
         """Check if skill.md generation is enabled."""
-        return self.get("skill.enabled", True)
+        return self["skill.enabled"]
 
     @property
     def skill_file(self) -> str | None:
         """Get the path to a hand-written SKILL.md override."""
-        return self.get("skill.file")
+        return self["skill.file"]
 
     @property
     def skill_well_known(self) -> bool:
         """Check if .well-known/agent-skills/ discovery files should be generated."""
-        return self.get("skill.well_known", True)
+        return self["skill.well_known"]
 
     @property
     def skill_gotchas(self) -> list[str]:
         """Get the list of gotcha strings for the SKILL.md Gotchas section."""
-        return self.get("skill.gotchas", [])
+        return self["skill.gotchas"]
 
     @property
     def skill_best_practices(self) -> list[str]:
         """Get the list of best-practice strings for the SKILL.md."""
-        return self.get("skill.best_practices", [])
+        return self["skill.best_practices"]
 
     @property
     def skill_decision_table(self) -> list[dict]:
         """Get manual decision table rows for the SKILL.md."""
-        return self.get("skill.decision_table", [])
+        return self["skill.decision_table"]
 
     @property
     def skill_extra_body(self) -> str | None:
         """Get the path to extra Markdown to append to the generated SKILL.md body."""
-        return self.get("skill.extra_body")
+        return self["skill.extra_body"]
 
     @property
     def skill_skills(self) -> list[dict]:
@@ -533,22 +526,22 @@ class Config:
         Each entry should have `name` and `file` keys. When non-empty, this overrides the single
         `skill.file` setting.
         """
-        return self.get("skill.skills", [])
+        return self["skill.skills"]
 
     @property
     def changelog_enabled(self) -> bool:
         """Check if changelog generation from GitHub Releases is enabled."""
-        return self.get("changelog.enabled", True)
+        return self["changelog.enabled"]
 
     @property
     def changelog_max_releases(self) -> int:
         """Get the maximum number of GitHub Releases to include."""
-        return self.get("changelog.max_releases", 50)
+        return self["changelog.max_releases"]
 
     @property
     def sections(self) -> list[dict]:
         """Get the custom sections configuration."""
-        return self.get("sections", [])
+        return self["sections"]
 
     @property
     def custom_pages(self) -> list[dict[str, str]]:
@@ -563,7 +556,7 @@ class Config:
         - When `custom_pages` is a dict, it may specify `dir` and optional `output`.
         - When `custom_pages` is a list, each entry may be a string or dict.
         """
-        raw = self.get("custom_pages")
+        raw = self["custom_pages"]
 
         if raw is None:
             return [{"dir": "custom", "output": "custom"}]
@@ -601,22 +594,22 @@ class Config:
     @property
     def dark_mode_toggle(self) -> bool:
         """Check if dark mode toggle is enabled."""
-        return self.get("dark_mode_toggle", True)
+        return self["dark_mode_toggle"]
 
     @property
     def keyboard_nav(self) -> bool:
         """Check if keyboard navigation shortcuts are enabled."""
-        return self.get("keyboard_nav", True)
+        return self["keyboard_nav"]
 
     @property
     def package_info_page(self) -> bool:
         """Check if package info page generation is enabled."""
-        return self.get("package_info_page", True)
+        return self["package_info_page"]
 
     @property
     def back_to_top(self) -> bool:
         """Check if back-to-top button is enabled."""
-        return self.get("back_to_top", True)
+        return self["back_to_top"]
 
     @property
     def markdown_pages(self) -> bool:
@@ -631,12 +624,12 @@ class Config:
     @property
     def parser(self) -> str:
         """Get the docstring parser format (numpy, google, or sphinx)."""
-        return self.get("parser", "numpy")
+        return self["parser"]
 
     @property
     def dynamic(self) -> bool:
         """Get the dynamic introspection mode for API reference generation."""
-        return self.get("dynamic", True)
+        return self["dynamic"]
 
     @property
     def module(self) -> str | None:
@@ -646,7 +639,7 @@ class Config:
         Use this when the importable module name differs from the project name,
         e.g., project 'py-yaml12' with module 'yaml12'.
         """
-        return self.get("module")
+        return self["module"]
 
     @property
     def display_name(self) -> str | None:
@@ -656,7 +649,7 @@ class Config:
         Use this to customize how the package name appears in the navbar/title,
         e.g., 'Great Docs' instead of 'great_docs' or 'great-docs'.
         """
-        return self.get("display_name")
+        return self["display_name"]
 
     @property
     def homepage(self) -> str:
@@ -668,7 +661,7 @@ class Config:
             The validated homepage mode. Falls back to 'index' if an
             invalid value is configured.
         """
-        value = self.get("homepage", "index")
+        value = self["homepage"]
         if value not in ("index", "user_guide"):
             print(f"Warning: Invalid homepage value '{value}', defaulting to 'index'")
             return "index"
@@ -685,17 +678,17 @@ class Config:
             - str: custom directory path for user guide files
             - list: explicit section ordering (list of section dicts)
         """
-        return self.get("user_guide")
+        return self["user_guide"]
 
     @property
     def user_guide_is_explicit(self) -> bool:
         """Check if user guide uses explicit section ordering."""
-        return isinstance(self.get("user_guide"), list)
+        return isinstance(self["user_guide"], list)
 
     @property
     def user_guide_dir(self) -> str | None:
         """Get the user guide directory path (only when it's a string)."""
-        val = self.get("user_guide")
+        val = self["user_guide"]
         return val if isinstance(val, str) else None
 
     @property
@@ -704,7 +697,7 @@ class Config:
 
         Returns `False` when the config contains `reference: false`. Defaults to `True`.
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if val is False:
             return False
         return True
@@ -733,7 +726,7 @@ class Config:
         Returns the list of section dicts, or an empty list when no
         explicit sections are configured (triggering auto-discovery).
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if isinstance(val, list):
             return val
         if isinstance(val, dict):
@@ -749,7 +742,7 @@ class Config:
         Supports `reference: {title: "Custom Title"}` in great-docs.yml. Returns `None` when no
         custom title is configured.
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if isinstance(val, dict):
             return val.get("title")
         return None
@@ -761,7 +754,7 @@ class Config:
         Supports `reference: {desc: "Description text..."}` in great-docs.yml. Returns `None` when
         no description is configured.
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if isinstance(val, dict):
             return val.get("desc")
         return None
@@ -778,7 +771,7 @@ class Config:
         """
         if method_count == 0:
             return False
-        val = self.get("inline_methods", 5)
+        val = self["inline_methods"]
         if val is True:
             return False
         if val is False:
@@ -791,7 +784,7 @@ class Config:
     @property
     def authors(self) -> list[dict[str, Any]]:
         """Get the rich author metadata."""
-        return self.get("authors", [])
+        return self["authors"]
 
     @property
     def funding(self) -> dict[str, Any] | None:
@@ -801,12 +794,12 @@ class Config:
         Returns a dict with keys: name, roles (list), ror (ROR URL).
         Example: {"name": "Posit Software, PBC", "roles": ["Copyright holder", "funder"], "ror": "https://ror.org/03wc8by49"}
         """
-        return self.get("funding")
+        return self["funding"]
 
     @property
     def site(self) -> dict[str, Any]:
         """Get the site settings — a pure Quarto passthrough into format.html."""
-        return self.get("site", {})
+        return self["site"]
 
     @property
     def site_quarto(self) -> dict[str, Any]:
@@ -828,27 +821,27 @@ class Config:
     @property
     def show_dates(self) -> bool:
         """Whether to show page metadata timestamps in the footer."""
-        return bool(self.get("show_dates", False))
+        return bool(self["show_dates"])
 
     @property
     def date_format(self) -> str:
         """Get the date format string (Python strftime format)."""
-        return self.get("date_format", "%B %d, %Y")
+        return self["date_format"]
 
     @property
     def show_author(self) -> bool:
         """Whether to show author attribution when dates are enabled."""
-        return bool(self.get("show_author", True))
+        return bool(self["show_author"])
 
     @property
     def show_security(self) -> bool:
         """Whether to show the security policy page when SECURITY.md exists."""
-        return bool(self.get("show_security", True))
+        return bool(self["show_security"])
 
     @property
     def language(self) -> str:
         """Get the site UI language (BCP 47 code, default 'en')."""
-        return self.get("language", "en")
+        return self["language"]
 
     @property
     def team_author(self) -> dict[str, Any] | None:
@@ -860,7 +853,7 @@ class Config:
             A dict with keys: name (str), image (str|None), url (str|None).
             Returns None when not configured.
         """
-        raw = self.get("team_author")
+        raw = self["team_author"]
         if raw is None:
             return None
         if isinstance(raw, dict) and raw.get("name"):
@@ -874,7 +867,7 @@ class Config:
     @property
     def jupyter(self) -> str:
         """Get the Jupyter kernel for executing code cells."""
-        return self.get("jupyter", "python3")
+        return self["jupyter"]
 
     @property
     def logo(self) -> dict[str, Any] | None:
@@ -953,7 +946,7 @@ class Config:
             Normalized favicon dict with at least `icon` key, or `None` if no favicon is explicitly
             configured (auto-generation may still produce one from the logo).
         """
-        raw = self.get("favicon")
+        raw = self["favicon"]
         if raw is None:
             return None
         if isinstance(raw, str):
@@ -979,7 +972,7 @@ class Config:
     @property
     def versions(self) -> list:
         """Get the raw versions list from config."""
-        return self.get("versions", [])
+        return self["versions"]
 
     @property
     def has_versions(self) -> bool:
@@ -991,22 +984,22 @@ class Config:
         """Whether the version selector widget is enabled."""
         if not self.has_versions:
             return False
-        return self.get("version_selector.enabled", True)
+        return self["version_selector.enabled"]
 
     @property
     def version_selector_placement(self) -> str:
         """Get the version selector placement."""
-        return self.get("version_selector.placement", "navbar-right")
+        return self["version_selector.placement"]
 
     @property
     def version_warning_banner(self) -> bool:
         """Whether to show warning banners on non-latest versions."""
-        return self.get("version_selector.warning_banner", True)
+        return self["version_selector.warning_banner"]
 
     @property
     def version_aliases(self) -> dict:
         """Get the version aliases configuration."""
-        return self.get("version_aliases", {"latest": True, "stable": True, "dev": True})
+        return self["version_aliases"]
 
     @property
     def include_in_header(self) -> list[dict[str, str]]:
@@ -1015,7 +1008,7 @@ class Config:
         Returns a list of Quarto-compatible include-in-header items (each a dict with either a
         "text" or "file" key).
         """
-        raw = self.get("include_in_header", [])
+        raw = self["include_in_header"]
         if raw is None:
             return []
         if isinstance(raw, str):
@@ -1073,7 +1066,7 @@ class Config:
         list[str]
             List of bibliography (`.bib`) file paths, or an empty list if none.
         """
-        raw = self.get("bibliography")
+        raw = self["bibliography"]
         if isinstance(raw, str):
             return [raw]
         if isinstance(raw, list):
@@ -1089,7 +1082,7 @@ class Config:
         str | None
             Path to the `.csl` file relative to the project root, or `None`.
         """
-        raw = self.get("csl")
+        raw = self["csl"]
         if isinstance(raw, str):
             return raw
         return None
@@ -1123,7 +1116,7 @@ class Config:
             A dict with optional `navbar` and `sidebar` keys, each mapping navigation label text to
             a Lucide icon name. Returns `None` when not configured.
         """
-        raw = self.get("nav_icons")
+        raw = self["nav_icons"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, dict):
@@ -1154,7 +1147,7 @@ class Config:
     @property
     def attribution(self) -> bool:
         """Whether to show Great Docs attribution in the footer."""
-        return bool(self.get("attribution", True))
+        return bool(self["attribution"])
 
     @property
     def accent_color(self) -> dict[str, str] | None:
@@ -1166,7 +1159,7 @@ class Config:
             A dict with `"light"` and/or `"dark"` keys mapping to CSS color strings. Returns `None`
             when not configured.
         """
-        raw = self.get("accent_color")
+        raw = self["accent_color"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
@@ -1183,7 +1176,7 @@ class Config:
     @property
     def navbar_style(self) -> str | None:
         """Get the navbar gradient preset name."""
-        raw = self.get("navbar_style")
+        raw = self["navbar_style"]
         if raw and isinstance(raw, str):
             return raw
         return None
@@ -1200,7 +1193,7 @@ class Config:
         """
         if self.navbar_style:
             return None
-        raw = self.get("navbar_color")
+        raw = self["navbar_color"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
@@ -1228,7 +1221,7 @@ class Config:
     @property
     def scale_to_fit(self) -> list[str] | None:
         """Get the list of CSS selectors for auto-scale-to-fit."""
-        raw = self.get("scale_to_fit")
+        raw = self["scale_to_fit"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, list):
@@ -1247,7 +1240,7 @@ class Config:
 
         Returns a float (0-1), a keyword (`"mobile"`, `"tablet"`, `"desktop"`), or `None`.
         """
-        raw = self.get("scale_to_fit_min_scale")
+        raw = self["scale_to_fit_min_scale"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
@@ -1355,12 +1348,12 @@ class Config:
     @property
     def seo_enabled(self) -> bool:
         """Check if SEO features are enabled."""
-        return self.get("seo.enabled", True)
+        return self["seo.enabled"]
 
     @property
     def sitemap_enabled(self) -> bool:
         """Check if sitemap.xml generation is enabled."""
-        return self.seo_enabled and self.get("seo.sitemap.enabled", True)
+        return self.seo_enabled and self["seo.sitemap.enabled"]
 
     @property
     def sitemap_changefreq(self) -> dict[str, str]:
@@ -1375,57 +1368,57 @@ class Config:
     @property
     def robots_enabled(self) -> bool:
         """Check if robots.txt generation is enabled."""
-        return self.seo_enabled and self.get("seo.robots.enabled", True)
+        return self.seo_enabled and self["seo.robots.enabled"]
 
     @property
     def robots_allow_all(self) -> bool:
         """Check if robots.txt should allow all crawlers."""
-        return self.get("seo.robots.allow_all", True)
+        return self["seo.robots.allow_all"]
 
     @property
     def robots_disallow(self) -> list[str]:
         """Get the list of paths to disallow in robots.txt."""
-        return self.get("seo.robots.disallow", [])
+        return self["seo.robots.disallow"]
 
     @property
     def robots_crawl_delay(self) -> int | None:
         """Get the optional crawl delay in seconds."""
-        return self.get("seo.robots.crawl_delay")
+        return self["seo.robots.crawl_delay"]
 
     @property
     def robots_extra_rules(self) -> list[str]:
         """Get additional robots.txt rules."""
-        return self.get("seo.robots.extra_rules", [])
+        return self["seo.robots.extra_rules"]
 
     @property
     def canonical_enabled(self) -> bool:
         """Check if canonical URLs are enabled."""
-        return self.seo_enabled and self.get("seo.canonical.enabled", True)
+        return self.seo_enabled and self["seo.canonical.enabled"]
 
     @property
     def canonical_base_url(self) -> str | None:
         """Get the canonical base URL."""
-        return self.get("seo.canonical.base_url")
+        return self["seo.canonical.base_url"]
 
     @property
     def seo_title_template(self) -> str:
         """Get the page title template."""
-        return self.get("seo.title_template", "{page_title} | {site_name}")
+        return self["seo.title_template"]
 
     @property
     def structured_data_enabled(self) -> bool:
         """Check if JSON-LD structured data is enabled."""
-        return self.seo_enabled and self.get("seo.structured_data.enabled", True)
+        return self.seo_enabled and self["seo.structured_data.enabled"]
 
     @property
     def structured_data_type(self) -> str:
         """Get the Schema.org type for structured data."""
-        return self.get("seo.structured_data.type", "SoftwareSourceCode")
+        return self["seo.structured_data.type"]
 
     @property
     def seo_default_description(self) -> str | None:
         """Get the default meta description."""
-        return self.get("seo.default_description")
+        return self["seo.default_description"]
 
     def exists(self) -> bool:
         """Check if the configuration file exists."""

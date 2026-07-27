@@ -181,7 +181,7 @@ def run_lint(
     result.exports_count = len(exports)
 
     # Get configured docstring style
-    config_style = docs._config.get("parser", "numpy")
+    config_style = docs._config["parser"]
 
     # Run selected checks
     if "docstrings" in checks:
