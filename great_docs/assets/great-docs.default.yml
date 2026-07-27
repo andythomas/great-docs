@@ -488,12 +488,14 @@ include_in_header: []
 # Freeze (Execution Caching)
 # --------------------------
 # Whether computational documents re-run during builds.
-# null/false: disabled — execute every document on every build
-# "auto" (default): re-render only when source changes
-# true: never re-render during project render
-# dict: {"mode": "auto"|true, "pre_render": str|list[str]}
-#   pre_render: script(s) to run before render (e.g. copy _freeze/ into the build dir)
-freeze: auto
+# mode:
+#   null/false: disabled — execute every document on every build
+#   "auto" (default): re-render only when source changes
+#   true: never re-render during project render
+# pre_render: script(s) to run before render (e.g. copy _freeze/ into the build dir)
+freeze:
+  mode: auto
+  pre_render: []
 
 # Pre-render Scripts
 # ------------------

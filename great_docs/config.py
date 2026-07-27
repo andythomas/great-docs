@@ -228,6 +228,14 @@ class Config:
                 merged["dark"] = raw
             config["logo"] = merged
 
+        # `freeze` is also excluded from the loop above: a scalar shorthand
+        # sets `mode`, not `enabled`.
+        raw = config.get("freeze")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["freeze"])
+            merged["mode"] = raw  # None | True | False | "auto" | "true"
+            config["freeze"] = merged
+
         return config
 
     @staticmethod
@@ -1024,59 +1032,33 @@ class Config:
 
     @property
     def freeze(self) -> str | bool | None:
-        """Get the freeze mode for Quarto code execution caching.
-
-        Returns
-        -------
-        str | bool | None
-            - None or False: freeze disabled
-            - "auto": re-render only when source changes
-            - True: never re-render during project render
-        """
-        raw = self.get("freeze")
-        if raw is None or raw is False:
+        """The Quarto freeze mode (None disabled, 'auto', or True)"""
+        mode = self["freeze.mode"]
+        if mode is None or mode is False:
             return None
-        if isinstance(raw, dict):
-            return raw.get("mode", "auto")
-        if raw is True or raw == "auto":
-            return raw
-        # Accept string "true" as True
-        if isinstance(raw, str) and raw.lower() == "true":
+        if mode is True or mode == "auto":
+            return mode
+        if isinstance(mode, str) and mode.lower() == "true":
             return True
         return None
 
     @property
     def pre_render(self) -> list[str]:
-        """Get the normalized list of pre-render script paths.
-
-        Combines scripts from both ``freeze.pre_render`` and the top-level ``pre_render`` key.
-
-        Returns
-        -------
-        list[str]
-            List of script paths relative to the project root.
-        """
+        """Normalized pre-render script paths from freeze.pre_render and pre_render"""
         scripts: list[str] = []
-
-        # Check freeze dict form for pre_render
-        raw_freeze = self.get("freeze")
-        if isinstance(raw_freeze, dict):
-            freeze_scripts = raw_freeze.get("pre_render")
-            if isinstance(freeze_scripts, str):
-                scripts.append(freeze_scripts)
-            elif isinstance(freeze_scripts, list):
-                scripts.extend(s for s in freeze_scripts if isinstance(s, str))
-
-        # Check top-level pre_render
-        raw_pre = self.get("pre_render")
-        if isinstance(raw_pre, str):
-            if raw_pre not in scripts:
-                scripts.append(raw_pre)
-        elif isinstance(raw_pre, list):
-            for s in raw_pre:
+        fr = self["freeze.pre_render"]
+        if isinstance(fr, str):
+            scripts.append(fr)
+        elif isinstance(fr, list):
+            scripts.extend(s for s in fr if isinstance(s, str))
+        pr = self["pre_render"]
+        if isinstance(pr, str):
+            if pr not in scripts:
+                scripts.append(pr)
+        elif isinstance(pr, list):
+            for s in pr:
                 if isinstance(s, str) and s not in scripts:
                     scripts.append(s)
-
         return scripts
 
     @property

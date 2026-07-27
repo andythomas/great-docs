@@ -790,9 +790,26 @@ class TestFreeze:
 
     def test_string_true(self, tmp_project: Path):
         """String 'true' is normalized to boolean True."""
-        cfg = Config(tmp_project)
-        cfg._config["freeze"] = "true"
+        cfg = _make_config(tmp_project, 'freeze: "true"\n')
         assert cfg.freeze is True
+
+
+class TestFreezeCanonical:
+    def test_default_auto(self, tmp_project: Path):
+        assert Config(tmp_project)["freeze.mode"] == "auto"
+        assert Config(tmp_project).freeze == "auto"
+
+    def test_null_disables(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "freeze: null\n")
+        assert cfg.freeze is None
+
+    def test_true(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "freeze: true\n")
+        assert cfg.freeze is True
+
+    def test_pre_render_from_dict(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "freeze:\n  mode: auto\n  pre_render: cp.sh\n")
+        assert cfg.pre_render == ["cp.sh"]
 
 
 class TestPreRender:
