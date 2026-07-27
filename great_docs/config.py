@@ -200,6 +200,15 @@ class Config:
                     merged["enabled"] = raw
                     seo[sub] = merged
 
+        # `announcement` is also excluded from the loop above: a string shorthand
+        # sets `content`, not `enabled`.
+        raw = config.get("announcement")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["announcement"])
+            if isinstance(raw, str):
+                merged["content"] = raw
+            config["announcement"] = merged
+
         return config
 
     @staticmethod
@@ -943,42 +952,17 @@ class Config:
 
     @property
     def announcement(self) -> dict[str, Any] | None:
-        """Get the normalized announcement banner configuration.
-
-        Returns
-        -------
-        dict | None
-            Normalized dict with keys: `content`, `type`, `dismissable`, `url`, `style`,
-            `position`. Returns `None` if no announcement is configured.
-        """
-        raw = self.get("announcement")
-        if raw is None or raw is False:
+        """The announcement banner config, or None when there is no content"""
+        content = self["announcement.content"]
+        if not content:
             return None
-        if isinstance(raw, str):
-            return {
-                "content": raw,
-                "type": "info",
-                "dismissable": True,
-                "url": None,
-                "style": None,
-                "position": "above-navbar",
-            }
-        if isinstance(raw, dict):
-            content = raw.get("content")
-            if not content:
-                return None
-            position = raw.get("position", "above-navbar")
-            if position not in ("above-navbar", "below-navbar"):
-                position = "above-navbar"
-            return {
-                "content": content,
-                "type": raw.get("type", "info"),
-                "dismissable": raw.get("dismissable", True),
-                "url": raw.get("url"),
-                "style": raw.get("style"),
-                "position": position,
-            }
-        return None
+        return {
+            "content": content,
+            "type": self["announcement.type"],
+            "dismissable": self["announcement.dismissable"],
+            "url": self["announcement.url"],
+            "style": self["announcement.style"],
+        }
 
     @property
     def versions(self) -> list:

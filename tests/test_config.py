@@ -680,6 +680,25 @@ class TestAnnouncement:
         assert cfg.announcement is None
 
 
+class TestAnnouncementCanonical:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project)["announcement.type"] == "info"
+        assert Config(tmp_project).announcement is None  # content null
+
+    def test_string_shorthand(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, 'announcement: "Heads up"\n')
+        a = cfg.announcement
+        assert a["content"] == "Heads up"
+        assert a["type"] == "info"
+        assert a["dismissable"] is True
+
+    def test_dict_partial(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "announcement:\n  content: Hi\n  type: warning\n")
+        a = cfg.announcement
+        assert a["type"] == "warning"
+        assert a["dismissable"] is True
+
+
 class TestIncludeInHeader:
     def test_default_empty(self, tmp_project: Path):
         assert Config(tmp_project).include_in_header == []

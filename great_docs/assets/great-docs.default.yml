@@ -384,11 +384,13 @@ markdown_pages:
 # Announcement Banner
 # -------------------
 # Site-wide banner above the navbar.
-# null/false: no banner
-# str: banner message (plain text or inline HTML)
-# dict: {"content": str, "type": "info"|"warning"|"success"|"danger",
-#        "dismissable": bool, "url": str|None}
-announcement: null
+# content null: no banner
+announcement:
+  content: null          # null = no banner
+  type: info
+  dismissable: true
+  url: null
+  style: null
 
 # Versioning
 # ----------
