@@ -176,6 +176,18 @@ class Config:
                 merged = copy.deepcopy(DEFAULT_CONFIG[key])
                 merged["enabled"] = bool(raw)
                 config[key] = merged
+
+        # `hero` is excluded from the loop above: its `enabled` sub-field
+        # defaults to `None` (auto — enable when a logo exists), which the
+        # bool-shorthand loop would collapse to `False`.
+        raw = config.get("hero")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["hero"])
+            if isinstance(raw, bool):
+                merged["enabled"] = raw
+            # raw is None -> keep enabled: null (auto)
+            config["hero"] = merged
+
         return config
 
     @staticmethod
@@ -844,73 +856,37 @@ class Config:
         return False
 
     @property
-    def hero_enabled(self) -> bool:
-        """Whether the hero section is enabled.
+    def hero(self) -> dict[str, Any]:
+        """Resolved hero configuration"""
+        return self["hero"]
 
-        Auto-enables when a logo is configured and `hero` is not explicitly set to `False`.
-        """
-        raw = self.get("hero")
-        if raw is False:
-            return False
-        if raw is True or isinstance(raw, dict):
-            if isinstance(raw, dict) and raw.get("enabled") is False:
-                return False
-            return True
-        # None (default): auto-enable when logo exists
-        return self.logo is not None
+    @property
+    def hero_enabled(self) -> bool:
+        """Whether the hero section is shown"""
+        enabled = self["hero.enabled"]
+        if enabled is None:
+            return self.logo is not None
+        return bool(enabled)
 
     @property
     def hero_explicitly_disabled(self) -> bool:
-        """Whether the hero was explicitly turned off by the user."""
-        raw = self.get("hero")
-        if raw is False:
-            return True
-        if isinstance(raw, dict) and raw.get("enabled") is False:
-            return True
-        return False
-
-    @property
-    def hero(self) -> dict[str, Any]:
-        """Get the resolved hero configuration dict.
-
-        Returns a dict with keys: enabled, logo, logo_height, name, tagline, badges. Missing keys
-        are filled with defaults.
-        """
-        raw = self.get("hero")
-        if isinstance(raw, dict):
-            return raw
-        return {}
+        """Whether the hero was turned off explicitly"""
+        return self["hero.enabled"] is False
 
     @property
     def hero_logo(self) -> str | dict | None | bool:
-        """Get the explicit hero logo config.
-
-        Returns the hero-specific logo value only. Returns `False` when explicitly suppressed,
-        `None` when not configured. The full fallback chain (auto-detected hero logos, navbar logo)
-        is handled in `core._build_hero_section`.
-        """
-        hero = self.hero
-        val = hero.get("logo") if hero else None
-        if val is False:
-            return False
-        if val is not None:
-            return val
-        return None
+        """The hero-specific logo, or `False` when suppressed"""
+        return self["hero.logo"]
 
     @property
     def hero_logo_height(self) -> str:
-        """Get the hero logo max-height CSS value."""
-        hero = self.hero
-        return hero.get("logo_height", "200px") if hero else "200px"
+        """The hero logo max-height CSS value"""
+        return self["hero.logo_height"]
 
     @property
     def hero_name(self) -> str | bool | None:
-        """Get the hero name, falling back to display_name.
-
-        Returns `None` when explicitly suppressed (`false`).
-        """
-        hero = self.hero
-        val = hero.get("name") if hero else None
+        """The hero name, falling back to the display name"""
+        val = self["hero.name"]
         if val is False:
             return False
         if val is not None:
@@ -919,38 +895,20 @@ class Config:
 
     @property
     def hero_tagline(self) -> str | None:
-        """Get the hero tagline.
-
-        Returns `None` when explicitly suppressed (`false`). Auto-resolved from package metadata in
-        core.py.
-        """
-        hero = self.hero
-        val = hero.get("tagline") if hero else None
-        if val is False:
-            return None
-        return val
+        """The hero tagline, or `None` when suppressed"""
+        val = self["hero.tagline"]
+        return None if val is False else val
 
     @property
     def hero_starfield(self) -> bool:
-        """Whether the interactive starfield animation is enabled on the hero."""
-        hero = self.hero
-        return bool(hero.get("starfield", False)) if hero else False
+        """Whether the starfield animation is enabled"""
+        return bool(self["hero.starfield"])
 
     @property
     def hero_badges(self) -> str | list | None:
-        """Get the hero badges config.
-
-        Returns `"auto"` (default, extract from README), an explicit list of badge dicts, or `None`
-        (disabled).
-        """
-        hero = self.hero
-        val = hero.get("badges") if hero else None
-        if val is False:
-            return None
-        if val is not None:
-            return val
-        # Default: auto-extract from README
-        return "auto"
+        """The hero badges config (`'auto'`, an explicit list, or `None`)"""
+        val = self["hero.badges"]
+        return None if val is False else val
 
     @property
     def favicon(self) -> dict[str, Any] | None:

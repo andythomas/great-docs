@@ -364,7 +364,14 @@ favicon: null
 # true/false: force enable/disable
 # dict: {"enabled": bool, "logo": str|dict|false, "logo_height": str,
 #        "name": str|false, "tagline": str|false, "badges": "auto"|list|false}
-hero: null
+hero:
+  enabled: null          # null = auto (enable when a logo is configured)
+  logo: null
+  logo_height: 200px
+  name: null
+  tagline: null
+  badges: auto
+  starfield: false
 
 # Markdown Pages
 # --------------

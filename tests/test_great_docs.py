@@ -37117,7 +37117,7 @@ class TestBuildHeroSectionBatch10:
             tmp = Path(tmp_dir)
             (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\ndescription = "Desc"\n')
             (tmp / "great-docs.yml").write_text(
-                'hero:\n  logo:\n    light: "logo-light.svg"\n    dark: "logo-dark.svg"\n'
+                'hero:\n  enabled: true\n  logo:\n    light: "logo-light.svg"\n    dark: "logo-dark.svg"\n'
             )
             (tmp / "logo-light.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
             (tmp / "logo-dark.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')

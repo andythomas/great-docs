@@ -429,7 +429,15 @@ class TestHero:
         cfg = Config(tmp_project)
         assert cfg.hero_enabled is False
         assert cfg.hero_explicitly_disabled is False
-        assert cfg.hero == {}
+        assert cfg.hero == {
+            "enabled": None,
+            "logo": None,
+            "logo_height": "200px",
+            "name": None,
+            "tagline": None,
+            "badges": "auto",
+            "starfield": False,
+        }
 
     def test_auto_enable_with_logo(self, tmp_project: Path):
         """hero=None + logo configured → hero auto-enabled."""
@@ -448,8 +456,14 @@ class TestHero:
         assert cfg.hero_enabled is True
 
     def test_hero_dict_enabled(self, tmp_project: Path):
-        cfg = _make_config(tmp_project, "hero:\n  name: My Package\n")
+        """A dict form only enables via `enabled: true`, not by setting other sub-fields."""
+        cfg = _make_config(tmp_project, "hero:\n  enabled: true\n  name: My Package\n")
         assert cfg.hero_enabled is True
+
+    def test_hero_dict_other_fields_do_not_auto_enable(self, tmp_project: Path):
+        """Setting a sub-field without `enabled` or a logo keeps hero in auto (off)."""
+        cfg = _make_config(tmp_project, "hero:\n  name: My Package\n")
+        assert cfg.hero_enabled is False
 
     def test_hero_dict_explicitly_disabled(self, tmp_project: Path):
         """Covers line 540 (hero dict with enabled: false)."""
@@ -527,6 +541,30 @@ class TestHeroBadges:
         """Covers line 615 (hero badges = false → None)."""
         cfg = _make_config(tmp_project, "hero:\n  badges: false\n")
         assert cfg.hero_badges is None
+
+
+class TestHeroCanonical:
+    def test_default_auto(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg["hero.logo_height"] == "200px"
+        assert cfg["hero.badges"] == "auto"
+        assert cfg.hero_enabled is False  # no logo -> auto resolves off
+        assert cfg.hero_logo_height == "200px"
+        assert cfg.hero_badges == "auto"
+
+    def test_false_disables(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "hero: false\n")
+        assert cfg.hero_enabled is False
+        assert cfg.hero_explicitly_disabled is True
+
+    def test_true_enables(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "hero: true\n")
+        assert cfg.hero_enabled is True
+
+    def test_dict_overrides(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "hero:\n  logo_height: 300px\n")
+        assert cfg.hero_logo_height == "300px"
+        assert cfg.hero_badges == "auto"  # untouched sub-default survives
 
 
 class TestFavicon:
