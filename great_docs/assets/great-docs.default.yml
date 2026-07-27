@@ -370,12 +370,9 @@ hero: null
 # --------------
 # Generate .md companions for every HTML page and show a copy/view-as-Markdown
 # widget on each page.  Set to false to disable both (default: true).
-# markdown_pages: true
-#
-# To generate .md pages but hide the widget:
-# markdown_pages:
-#   widget: false
-markdown_pages: true
+markdown_pages:
+  enabled: true
+  widget: true
 
 # Announcement Banner
 # -------------------

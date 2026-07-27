@@ -380,6 +380,24 @@ class TestMarkdownPages:
         assert cfg.markdown_pages_widget is False
 
 
+class TestMarkdownPagesCanonical:
+    def test_default(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg["markdown_pages"] == {"enabled": True, "widget": True}
+        assert cfg.markdown_pages is True
+        assert cfg.markdown_pages_widget is True
+
+    def test_bool_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "markdown_pages: false\n")
+        assert cfg.markdown_pages is False
+        assert cfg.markdown_pages_widget is False
+
+    def test_widget_only(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "markdown_pages:\n  widget: false\n")
+        assert cfg.markdown_pages is True
+        assert cfg.markdown_pages_widget is False
+
+
 class TestLogo:
     def test_default_none(self, tmp_project: Path):
         cfg = Config(tmp_project)

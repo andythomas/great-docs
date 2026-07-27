@@ -144,7 +144,12 @@ class Config:
     # Options accepting a bool shorthand that collapses their dict subtree.
     # The bool sets `enabled`; other sub-fields fall back to the packaged
     # defaults. Kept for backward compatibility; no longer documented.
-    _BOOL_SHORTHAND_KEYS: tuple[str, ...] = ("page_status", "tags", "social_cards")
+    _BOOL_SHORTHAND_KEYS: tuple[str, ...] = (
+        "page_status",
+        "tags",
+        "social_cards",
+        "markdown_pages",
+    )
 
     def _normalize_shorthands(self, config: dict[str, Any]) -> dict[str, Any]:
         """
@@ -555,19 +560,13 @@ class Config:
 
     @property
     def markdown_pages(self) -> bool:
-        """Check if Markdown page generation is enabled."""
-        val = self.get("markdown_pages", True)
-        if isinstance(val, dict):
-            return val.get("enabled", True)
-        return bool(val)
+        """Whether Markdown companion pages are generated"""
+        return bool(self["markdown_pages.enabled"])
 
     @property
     def markdown_pages_widget(self) -> bool:
-        """Check if the copy-page widget is shown (requires markdown_pages)."""
-        val = self.get("markdown_pages", True)
-        if isinstance(val, dict):
-            return val.get("widget", True) and val.get("enabled", True)
-        return bool(val)
+        """Whether the copy-page widget is shown (requires markdown_pages)"""
+        return bool(self["markdown_pages.widget"]) and self.markdown_pages
 
     @property
     def parser(self) -> str:
