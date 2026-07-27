@@ -1213,3 +1213,20 @@ class TestTypedEmptyDefaults:
         assert Config(tmp_project)["nav_icons"] == {}
         # Property still resolves empty -> None for consumers
         assert Config(tmp_project).nav_icons is None
+
+
+class TestShorthandNormalization:
+    def test_page_status_true(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "page_status: true\n")
+        assert cfg["page_status.enabled"] is True
+        assert cfg.page_status_show_in_sidebar is True  # sub-defaults survive
+
+    def test_tags_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "tags: false\n")
+        assert cfg["tags.enabled"] is False
+        assert cfg["tags.hierarchical"] is True
+
+    def test_social_cards_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "social_cards: false\n")
+        assert cfg["social_cards.enabled"] is False
+        assert cfg.social_cards_enabled is False

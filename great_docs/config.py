@@ -108,6 +108,7 @@ class Config:
                 print(f"Warning: Could not read great-docs.yml: {e}")
 
         config = self._lift_legacy_site_keys(config)
+        config = self._normalize_shorthands(config)
         return config
 
     def _lift_legacy_site_keys(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -138,6 +139,38 @@ class Config:
                 value = site.pop(key)
                 if key not in self._user_config:
                     config[key] = value
+        return config
+
+    # Options accepting a bool shorthand that collapses their dict subtree.
+    # The bool sets `enabled`; other sub-fields fall back to the packaged
+    # defaults. Kept for backward compatibility; no longer documented.
+    _BOOL_SHORTHAND_KEYS: tuple[str, ...] = ("page_status", "tags", "social_cards")
+
+    def _normalize_shorthands(self, config: dict[str, Any]) -> dict[str, Any]:
+        """
+        Expand shorthand config values into their canonical dict form
+
+        A user may write a scalar where the canonical form is a dict (e.g.
+        `page_status: true`, or an explicit `social_cards: null`). Each such
+        value is rebuilt into the full dict, with `enabled` set from the
+        scalar, so downstream access is always a plain nested lookup.
+
+        Parameters
+        ----------
+        config
+            The merged configuration.
+
+        Returns
+        -------
+        dict
+            The configuration with shorthand values expanded.
+        """
+        for key in self._BOOL_SHORTHAND_KEYS:
+            raw = config.get(key)
+            if isinstance(raw, bool) or raw is None:
+                merged = copy.deepcopy(DEFAULT_CONFIG[key])
+                merged["enabled"] = bool(raw)
+                config[key] = merged
         return config
 
     @staticmethod
@@ -1300,125 +1333,90 @@ class Config:
 
     @property
     def social_cards_enabled(self) -> bool:
-        """Check if social card meta tags are enabled."""
-        raw = self.get("social_cards")
-        if raw is None or raw is False:
-            return False
-        if raw is True:
-            return True
-        if isinstance(raw, dict):
-            return raw.get("enabled", True)
-        return True
+        """Whether social card meta tags are enabled"""
+        return bool(self["social_cards.enabled"])
 
     @property
     def social_cards_image(self) -> str | None:
-        """Get the default social card image path."""
-        raw = self.get("social_cards")
-        if isinstance(raw, dict):
-            return raw.get("image")
-        return None
+        """Default social card image path"""
+        return self["social_cards.image"]
 
     @property
     def social_cards_twitter_card(self) -> str | None:
-        """Get the Twitter card type override."""
-        raw = self.get("social_cards")
-        if isinstance(raw, dict):
-            return raw.get("twitter_card")
-        return None
+        """Twitter card type override"""
+        return self["social_cards.twitter_card"]
 
     @property
     def social_cards_twitter_site(self) -> str | None:
-        """Get the Twitter site @handle."""
-        raw = self.get("social_cards")
-        if isinstance(raw, dict):
-            return raw.get("twitter_site")
-        return None
+        """Twitter site `@handle`"""
+        return self["social_cards.twitter_site"]
 
     # ── Page Status Properties ────────────────────────────────────────────
 
     @property
     def page_status_enabled(self) -> bool:
-        """Check if page status badges are enabled."""
-        raw = self.get("page_status")
-        if raw is None or raw is False:
-            return False
-        if raw is True:
-            return True
-        if isinstance(raw, dict):
-            return raw.get("enabled", False)
-        return False
+        """Whether page status badges are enabled"""
+        return bool(self["page_status.enabled"])
 
     @property
     def page_status_show_in_sidebar(self) -> bool:
-        """Check if status badges should appear in the sidebar."""
-        return self.page_status_enabled and self.get("page_status.show_in_sidebar", True)
+        """Whether status badges appear in the sidebar"""
+        return self.page_status_enabled and self["page_status.show_in_sidebar"]
 
     @property
     def page_status_show_on_pages(self) -> bool:
-        """Check if status indicators should appear below page titles."""
-        return self.page_status_enabled and self.get("page_status.show_on_pages", True)
+        """Whether status indicators appear below page titles"""
+        return self.page_status_enabled and self["page_status.show_on_pages"]
 
     @property
     def page_status_definitions(self) -> dict[str, dict[str, str]]:
-        """Get the status definitions (built-in + custom overrides)."""
-        defs = self.get("page_status.statuses")
-        if defs and isinstance(defs, dict):
-            return defs
-        # Shorthand `page_status: true` replaces the entire dict with a bool,
-        # so fall back to the built-in defaults.
-        return DEFAULT_CONFIG.get("page_status", {}).get("statuses", {})
+        """Status definitions (built-in plus any user overrides)"""
+        return self["page_status.statuses"]
 
     # ── Page Tags Properties ─────────────────────────────────────────────
 
     @property
     def tags_enabled(self) -> bool:
-        """Check if page tags are enabled."""
-        raw = self.get("tags")
-        if raw is None or raw is False:
-            return False
-        if raw is True:
-            return True
-        if isinstance(raw, dict):
-            return raw.get("enabled", False)
-        return False
+        """Whether page tags are enabled"""
+        return bool(self["tags.enabled"])
 
     @property
     def tags_index_page(self) -> bool:
-        """Check if a tags index page should be generated."""
-        return self.tags_enabled and self.get("tags.index_page", True)
+        """Whether a tags index page is generated"""
+        return self.tags_enabled and self["tags.index_page"]
 
     @property
     def tags_show_on_pages(self) -> bool:
-        """Check if tags should be rendered above page titles."""
-        return self.tags_enabled and self.get("tags.show_on_pages", True)
+        """Whether tags are rendered above page titles"""
+        return self.tags_enabled and self["tags.show_on_pages"]
 
     @property
     def tags_location(self) -> str:
-        """Get the default tag pill placement: ``"top"`` or ``"bottom"``."""
-        val = self.get("tags.location", "top")
+        """Default tag pill placement, `"top"` or `"bottom"`"""
+        val = self["tags.location"]
         if val in ("top", "bottom"):
             return val
         return "top"
 
     @property
     def tags_hierarchical(self) -> bool:
-        """Check if hierarchical tags (using '/') are supported."""
-        return self.get("tags.hierarchical", True)
+        """Whether hierarchical tags (using '/') are supported"""
+        return self["tags.hierarchical"]
 
     @property
     def tags_icons(self) -> dict[str, str]:
-        """Get the tag-to-icon mapping."""
-        return self.get("tags.icons", {})
+        """Tag-to-icon mapping"""
+        return self["tags.icons"]
 
     @property
     def tags_shadow(self) -> list[str]:
-        """Get the list of shadow tags (hidden from public view)."""
-        return self.get("tags.shadow", [])
+        """Shadow tags, hidden from public view"""
+        return self["tags.shadow"]
 
     @property
     def tags_scoped(self) -> bool:
-        """Check if scoped tag listings per section are enabled."""
-        return self.get("tags.scoped", False)
+        """Whether scoped tag listings per section are enabled"""
+        return self["tags.scoped"]
 
     # ── SEO Configuration Properties ─────────────────────────────────────────
 

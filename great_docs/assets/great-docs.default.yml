@@ -527,8 +527,6 @@ skill:
 # -------------------------
 # Auto-generate <meta> tags for social media previews (LinkedIn, Discord, Slack,
 # Bluesky, Mastodon, X/Twitter, and other platforms). Enabled by default.
-# social_cards: true           # Enable with defaults (same as omitting the key)
-# social_cards: false          # Disable social card meta tags
 #
 # Fine-grained control:
 # social_cards:
@@ -546,7 +544,6 @@ social_cards:
 # ------------------
 # Lifecycle indicators in sidebar navigation. Pages opt in via frontmatter
 # (`status: new`, `deprecated`, ...).
-# Shorthand: `page_status: true`/`false`.
 page_status:
   # Master switch for page status badges.
   enabled: false
@@ -591,7 +588,6 @@ page_status:
 # ---------
 # Categorize pages for discoverability via frontmatter
 # (`tags: [Python, Testing, API]`).
-# Shorthand: `tags: true`/`false`.
 tags:
   # Master switch for page tags.
   enabled: false
