@@ -1384,3 +1384,34 @@ class TestSeoShorthandNormalization:
         cfg = _make_config(tmp_path, "seo:\n  robots: true\n")
         assert cfg["seo.robots.enabled"] is True
         assert cfg.robots_disallow == []          # sub-defaults survive
+
+
+class TestSingleSourceInvariant:
+    """Guards the single-source-of-truth contract in `great_docs/config.py`.
+
+    With no user `great-docs.yml`, `DEFAULT_CONFIG` is the entire merged
+    config. Every direct passthrough property must return exactly that value,
+    and every property (direct or derived) must resolve without `KeyError` —
+    a `KeyError` here means a property reads a key `great-docs.default.yml`
+    doesn't declare, i.e. a Python-side default snuck back in.
+    """
+
+    def test_every_scalar_property_matches_yaml_default(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        # Properties that are a direct top-level passthrough must equal the YAML value.
+        direct = [
+            "parser", "dynamic", "jupyter", "language", "date_format",
+            "github_style", "homepage", "attribution",
+            "package_info_page", "back_to_top", "keyboard_nav", "dark_mode_toggle",
+            "show_dates", "show_author", "show_security",
+        ]
+        for name in direct:
+            assert getattr(cfg, name) == DEFAULT_CONFIG[name], name
+
+    def test_no_property_reads_an_undeclared_key(self, tmp_project: Path):
+        """Every property resolves without KeyError against the packaged defaults."""
+        cfg = Config(tmp_project)
+        for name in dir(Config):
+            attr = getattr(Config, name, None)
+            if isinstance(attr, property):
+                getattr(cfg, name)  # must not raise KeyError
