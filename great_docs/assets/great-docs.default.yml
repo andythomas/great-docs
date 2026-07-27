@@ -340,16 +340,13 @@ inline_methods: 5
 
 # Logo & Favicon
 # --------------
-# Point to a single logo file (replaces the text title in the navbar):
-# logo: assets/logo.svg
-#
-# For light/dark variants:
-# logo:
-#   light: assets/logo-light.svg
-#   dark: assets/logo-dark.svg
-#
-# To show the text title alongside the logo, add: show_title: true
-logo: null
+# Point to a single logo file (replaces the text title in the navbar), or
+# give light/dark variants separately. show_title: true keeps the text
+# title alongside the logo.
+logo:
+  light: null            # null = no logo
+  dark: null
+  show_title: false
 
 # Favicon.
 # str: a single favicon file

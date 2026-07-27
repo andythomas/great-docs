@@ -218,6 +218,16 @@ class Config:
                 merged["preset"] = raw
             config["content_style"] = merged
 
+        # `logo` is also excluded from the loop above: a string shorthand
+        # sets both `light` and `dark`, not `enabled`.
+        raw = config.get("logo")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["logo"])
+            if isinstance(raw, str):
+                merged["light"] = raw
+                merged["dark"] = raw
+            config["logo"] = merged
+
         return config
 
     @staticmethod
@@ -860,30 +870,15 @@ class Config:
 
     @property
     def logo(self) -> dict[str, Any] | None:
-        """Get the normalized logo configuration.
-
-        Returns
-        -------
-        dict | None
-            Normalized logo dict with at least `light` key, or `None` if no logo is configured. A
-            bare string in `great-docs.yml` is expanded to `{"light": "<path>", "dark": "<path>"}`.
-        """
-        raw = self.get("logo")
-        if raw is None:
+        """The logo config, or None when no logo is set"""
+        if not self["logo.light"]:
             return None
-        if isinstance(raw, str):
-            return {"light": raw, "dark": raw}
-        if isinstance(raw, dict):
-            return raw
-        return None
+        return self["logo"]
 
     @property
     def logo_show_title(self) -> bool:
-        """Whether to show the text title alongside the logo."""
-        logo = self.logo
-        if isinstance(logo, dict):
-            return bool(logo.get("show_title", False))
-        return False
+        """Whether the text title is shown alongside the logo"""
+        return bool(self["logo.show_title"]) if self.logo else False
 
     @property
     def hero(self) -> dict[str, Any]:

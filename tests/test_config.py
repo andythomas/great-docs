@@ -407,7 +407,11 @@ class TestLogo:
     def test_string(self, tmp_project: Path):
         """Covers line 503 (logo string → dict expansion)."""
         cfg = _make_config(tmp_project, "logo: assets/logo.svg\n")
-        assert cfg.logo == {"light": "assets/logo.svg", "dark": "assets/logo.svg"}
+        assert cfg.logo == {
+            "light": "assets/logo.svg",
+            "dark": "assets/logo.svg",
+            "show_title": False,
+        }
 
     def test_dict(self, tmp_project: Path):
         cfg = _make_config(
@@ -1028,6 +1032,20 @@ class TestContentStyleCanonical:
     def test_dict(self, tmp_path: Path):
         cfg = _make_config(tmp_path, "content_style:\n  preset: peach\n  pages: homepage\n")
         assert cfg.content_style == {"preset": "peach", "pages": "homepage"}
+
+
+class TestLogoCanonical:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project)["logo.show_title"] is False
+        assert Config(tmp_project).logo is None
+
+    def test_string_shorthand(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "logo: assets/logo.svg\n")
+        assert cfg.logo == {"light": "assets/logo.svg", "dark": "assets/logo.svg", "show_title": False}
+
+    def test_dict_show_title(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "logo:\n  light: a.svg\n  show_title: true\n")
+        assert cfg.logo_show_title is True
 
 
 class TestExistsAndToDict:
