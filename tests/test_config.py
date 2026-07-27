@@ -109,6 +109,10 @@ class TestGetItem:
         with pytest.raises(KeyError):
             Config(tmp_project)["github_style.nope"]
 
+    def test_new_is_old_default_is_none(self, tmp_project: Path):
+        # new_is_old is a live default now, resolved via strict subscript
+        assert Config(tmp_project)["new_is_old"] is None
+
 
 class TestScalarProperties:
     def test_exclude_default(self, tmp_project: Path):

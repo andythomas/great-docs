@@ -417,6 +417,13 @@ version_aliases:
   # /v/dev/ -> prerelease version, if any
   dev: true
 
+# Badge "new" expiry
+# -----------------
+# How long a page keeps its "new" status badge before it is considered old.
+# null: no expiry (badge persists). Accepts a duration understood by
+# parse_badge_expiry (see user_guide/30-multi-version-docs.qmd).
+new_is_old: null
+
 # Colors & Navbar
 # ---------------
 # Site-wide accent color (any CSS color). Sets the --gd-accent property used by

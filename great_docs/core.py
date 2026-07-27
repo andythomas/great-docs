@@ -16044,10 +16044,7 @@ anchor-sections: true
                     site_url=self._config.site_url,
                     progress_callback=_progress_cb,
                     on_renders_done=_on_renders_done,
-                    # `new_is_old` is documented (user_guide/30-multi-version-docs.qmd) but has
-                    # no entry in great-docs.default.yml, so it can't go through the strict
-                    # Config[...] lookup; read it from the merged dict directly.
-                    badge_expiry_raw=self._config.to_dict().get("new_is_old"),
+                    badge_expiry_raw=self._config["new_is_old"],
                 )
 
                 if not vb_result["success"]:
