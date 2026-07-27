@@ -209,6 +209,15 @@ class Config:
                 merged["content"] = raw
             config["announcement"] = merged
 
+        # `content_style` is also excluded from the loop above: a string
+        # shorthand sets `preset`, not `enabled`.
+        raw = config.get("content_style")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["content_style"])
+            if isinstance(raw, str):
+                merged["preset"] = raw
+            config["content_style"] = merged
+
         return config
 
     @staticmethod
@@ -1230,21 +1239,14 @@ class Config:
 
     @property
     def content_style(self) -> dict[str, str] | None:
-        """Get the normalized content area gradient configuration."""
-        raw = self.get("content_style")
-        if raw is None or raw is False:
+        """The content-area gradient config, or None when no preset is set"""
+        preset = self["content_style.preset"]
+        if not preset or not isinstance(preset, str):
             return None
-        if isinstance(raw, str):
-            return {"preset": raw, "pages": "all"}
-        if isinstance(raw, dict):
-            preset = raw.get("preset")
-            if not preset or not isinstance(preset, str):
-                return None
-            pages = raw.get("pages", "all")
-            if pages not in ("all", "homepage"):
-                pages = "all"
-            return {"preset": preset, "pages": pages}
-        return None
+        pages = self["content_style.pages"]
+        if pages not in ("all", "homepage"):
+            pages = "all"
+        return {"preset": preset, "pages": pages}
 
     @property
     def scale_to_fit(self) -> list[str] | None:

@@ -1016,6 +1016,20 @@ class TestContentStyle:
         assert cfg.content_style is None
 
 
+class TestContentStyleCanonical:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project)["content_style.pages"] == "all"
+        assert Config(tmp_project).content_style is None
+
+    def test_string_shorthand(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "content_style: sky\n")
+        assert cfg.content_style == {"preset": "sky", "pages": "all"}
+
+    def test_dict(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "content_style:\n  preset: peach\n  pages: homepage\n")
+        assert cfg.content_style == {"preset": "peach", "pages": "homepage"}
+
+
 class TestExistsAndToDict:
     def test_exists_true(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "parser: google\n")

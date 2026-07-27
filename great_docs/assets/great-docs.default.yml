@@ -437,8 +437,10 @@ navbar_color: null
 
 # Content-area gradient preset (same preset names as navbar_style); adds a
 # subtle radial glow at the top of the content area.
-# str: preset for all pages; dict: {"preset": str, "pages": "all"|"homepage"}.
-content_style: null
+# preset: null = disabled; pages: "all"|"homepage".
+content_style:
+  preset: null
+  pages: all
 
 # Scale to Fit
 # ------------
