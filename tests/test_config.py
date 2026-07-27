@@ -35,6 +35,14 @@ class TestConfigInit:
         cfg = Config(tmp_project)
         assert cfg._config == DEFAULT_CONFIG.copy()
 
+
+class TestConfigIsolation:
+    def test_mutation_does_not_leak_into_defaults(self, tmp_project: Path):
+        from great_docs.config import DEFAULT_CONFIG
+        cfg = Config(tmp_project)
+        cfg._config["changelog"]["max_releases"] = 999
+        assert DEFAULT_CONFIG["changelog"]["max_releases"] == 50
+
     def test_loads_user_config(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "parser: google\n")
         assert cfg.parser == "google"

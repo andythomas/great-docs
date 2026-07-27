@@ -20,6 +20,7 @@ Contract for adding an option — keep the single source intact:
   default value.
 """
 
+import copy
 import io
 import re
 from importlib import resources
@@ -90,7 +91,7 @@ class Config:
         dict
             The loaded configuration merged with defaults.
         """
-        config = DEFAULT_CONFIG.copy()
+        config = copy.deepcopy(DEFAULT_CONFIG)
         self._user_config: dict[str, Any] = {}
 
         if self.config_path.exists():
