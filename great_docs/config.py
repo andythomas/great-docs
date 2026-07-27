@@ -154,11 +154,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # False: disable both.
     # Dict form: {"widget": False} generates .md pages but hides the widget.
     "markdown_pages": True,
-    # Announcement banner (site-wide banner above the navbar)
+    # Announcement banner (site-wide banner above or below the navbar)
     # None/False: no banner (default)
     # str: banner message text (plain text or inline HTML)
     # dict: {"content": str, "type": "info"|"warning"|"success"|"danger",
-    #        "dismissable": bool, "url": str|None}
+    #        "dismissable": bool, "url": str|None,
+    #        "position": "above-navbar"|"below-navbar"}
     "announcement": None,
     # Multi-version documentation
     # None/[]: disabled (default — single-version site)
@@ -1248,24 +1249,35 @@ class Config:
         Returns
         -------
         dict | None
-            Normalized dict with keys: content, type, dismissable, url. Returns `None` if no
-            announcement is configured.
+            Normalized dict with keys: `content`, `type`, `dismissable`, `url`, `style`,
+            `position`. Returns `None` if no announcement is configured.
         """
         raw = self.get("announcement")
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
-            return {"content": raw, "type": "info", "dismissable": True, "url": None, "style": None}
+            return {
+                "content": raw,
+                "type": "info",
+                "dismissable": True,
+                "url": None,
+                "style": None,
+                "position": "above-navbar",
+            }
         if isinstance(raw, dict):
             content = raw.get("content")
             if not content:
                 return None
+            position = raw.get("position", "above-navbar")
+            if position not in ("above-navbar", "below-navbar"):
+                position = "above-navbar"
             return {
                 "content": content,
                 "type": raw.get("type", "info"),
                 "dismissable": raw.get("dismissable", True),
                 "url": raw.get("url"),
                 "style": raw.get("style"),
+                "position": position,
             }
         return None
 

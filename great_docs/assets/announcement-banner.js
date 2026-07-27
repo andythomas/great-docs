@@ -1,7 +1,7 @@
 /**
  * Announcement Banner for Great Docs
  *
- * Renders a site-wide banner above the navbar. Supports dismiss with
+ * Renders a site-wide banner above or below the navbar. Supports dismiss with
  * sessionStorage so the banner stays hidden for the current browsing session.
  */
 (function () {
@@ -17,6 +17,7 @@
   var dismissable = meta.getAttribute("data-dismissable") !== "false";
   var url = meta.getAttribute("data-url") || "";
   var style = meta.getAttribute("data-style") || "";
+  var position = meta.getAttribute("data-position") || "above-navbar";
 
   // Build a storage key from the banner content so a *new* announcement
   // is shown even if the user dismissed a previous one.
@@ -91,10 +92,26 @@
     banner.appendChild(btn);
   }
 
-  // ── insert into the fixed header, above the navbar ──
+  // ── insert into the fixed header ──
+  // Both positions live inside #quarto-header: above-navbar before the <nav>,
+  // below-navbar after it. For below-navbar we insert *before* any secondary
+  // nav rather than appending: the secondary nav counter-translates by its own
+  // height to stay pinned when the header unpins on mobile, which only lands
+  // correctly if it remains the header's last child.
   var header = document.getElementById("quarto-header");
-  if (header && header.firstChild) {
-    header.insertBefore(banner, header.firstChild);
+  if (header) {
+    if (position === "below-navbar") {
+      var secondaryNav = header.querySelector(".quarto-secondary-nav");
+      if (secondaryNav) {
+        header.insertBefore(banner, secondaryNav);
+      } else {
+        header.appendChild(banner);
+      }
+    } else if (header.firstChild) {
+      header.insertBefore(banner, header.firstChild);
+    } else {
+      header.appendChild(banner);
+    }
   } else {
     // Fallback: prepend to body
     document.body.insertBefore(banner, document.body.firstChild);
