@@ -1307,3 +1307,22 @@ class TestShorthandNormalization:
         cfg = _make_config(tmp_path, "social_cards: false\n")
         assert cfg["social_cards.enabled"] is False
         assert cfg.social_cards_enabled is False
+
+
+class TestSeoShorthandNormalization:
+    def test_sitemap_true_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  sitemap: true\n")
+        assert cfg["seo.sitemap.enabled"] is True
+        assert cfg.sitemap_enabled is True
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"   # full default dict, no KeyError
+        assert cfg.sitemap_priority["homepage"] == 1.0
+
+    def test_sitemap_false_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  sitemap: false\n")
+        assert cfg["seo.sitemap.enabled"] is False
+        assert cfg.sitemap_enabled is False
+
+    def test_robots_true_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  robots: true\n")
+        assert cfg["seo.robots.enabled"] is True
+        assert cfg.robots_disallow == []          # sub-defaults survive

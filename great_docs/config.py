@@ -188,6 +188,18 @@ class Config:
             # raw is None -> keep enabled: null (auto)
             config["hero"] = merged
 
+        # `seo.*` nested bool shorthands (e.g. `seo:\n  sitemap: true`) collapse
+        # a dict subtree; expand each back to its full default dict so strict
+        # `seo.<sub>.*` reads resolve.
+        seo = config.get("seo")
+        if isinstance(seo, dict):
+            for sub in ("sitemap", "robots", "canonical", "structured_data"):
+                raw = seo.get(sub)
+                if isinstance(raw, bool):
+                    merged = copy.deepcopy(DEFAULT_CONFIG["seo"][sub])
+                    merged["enabled"] = raw
+                    seo[sub] = merged
+
         return config
 
     @staticmethod
