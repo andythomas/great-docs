@@ -403,6 +403,12 @@ class TestLogo:
             "show_title": False,
         }
 
+    def test_dark_only(self, tmp_project: Path):
+        """A dark-only variant still counts as a logo being set."""
+        cfg = _make_config(tmp_project, "logo:\n  dark: d.svg\n")
+        assert cfg.logo is not None
+        assert cfg.logo["dark"] == "d.svg"
+
     def test_dict(self, tmp_project: Path):
         cfg = _make_config(
             tmp_project,
@@ -1384,6 +1390,15 @@ class TestSeoShorthandNormalization:
         cfg = _make_config(tmp_path, "seo:\n  robots: true\n")
         assert cfg["seo.robots.enabled"] is True
         assert cfg.robots_disallow == []          # sub-defaults survive
+
+    def test_top_level_seo_false_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo: false\n")
+        assert cfg.seo_enabled is False
+
+    def test_top_level_seo_true_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo: true\n")
+        assert cfg.seo_enabled is True
+        assert cfg.sitemap_enabled is True        # sub-defaults survive
 
 
 class TestSingleSourceInvariant:

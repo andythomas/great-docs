@@ -188,10 +188,19 @@ class Config:
             # raw is None -> keep enabled: null (auto)
             config["hero"] = merged
 
+        # A bare `seo: true`/`seo: false` collapses the whole subtree to a bool;
+        # rebuild it into the full default dict with `enabled` set from the
+        # scalar, same as the `_BOOL_SHORTHAND_KEYS` loop above.
+        #
         # `seo.*` nested bool shorthands (e.g. `seo:\n  sitemap: true`) collapse
         # a dict subtree; expand each back to its full default dict so strict
         # `seo.<sub>.*` reads resolve.
         seo = config.get("seo")
+        if isinstance(seo, bool):
+            merged = copy.deepcopy(DEFAULT_CONFIG["seo"])
+            merged["enabled"] = seo
+            config["seo"] = merged
+            seo = merged
         if isinstance(seo, dict):
             for sub in ("sitemap", "robots", "canonical", "structured_data"):
                 raw = seo.get(sub)
@@ -779,7 +788,7 @@ class Config:
         try:
             return method_count > int(val)
         except (TypeError, ValueError):
-            return method_count > 5
+            return method_count > int(DEFAULT_CONFIG["inline_methods"])
 
     @property
     def authors(self) -> list[dict[str, Any]]:
@@ -872,7 +881,7 @@ class Config:
     @property
     def logo(self) -> dict[str, Any] | None:
         """The logo config, or None when no logo is set"""
-        if not self["logo.light"]:
+        if not (self["logo.light"] or self["logo.dark"]):
             return None
         return self["logo"]
 
