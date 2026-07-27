@@ -457,7 +457,7 @@ scale_to_fit_min_scale: null
 # Lucide icons prepended to sidebar/navbar entries.
 # null/false: disabled
 # dict: {"navbar": {"Label": "icon-name"}, "sidebar": {"Label": "icon-name"}}
-nav_icons: null
+nav_icons: {}
 
 # UI Features
 # -----------
@@ -495,7 +495,7 @@ freeze: auto
 # Quarto's native pre-render hook (alternative to freeze.pre_render). Copied
 # into the build directory and wired into _quarto.yml.
 # str: a single script path; list[str]: several. Paths are relative to root.
-pre_render: null
+pre_render: []
 
 # Agent Skills
 # ------------

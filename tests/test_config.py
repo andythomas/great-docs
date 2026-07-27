@@ -1202,3 +1202,14 @@ class TestYamlCompleteness:
         assert cfg["cli.desc"] is None
         assert cfg["cli.sections"] == []
         assert cfg["tags.location"] == "top"
+
+
+class TestTypedEmptyDefaults:
+    def test_pre_render_default_is_empty_list(self, tmp_project: Path):
+        assert Config(tmp_project)["pre_render"] == []
+        assert Config(tmp_project).pre_render == []
+
+    def test_nav_icons_default_is_empty_dict(self, tmp_project: Path):
+        assert Config(tmp_project)["nav_icons"] == {}
+        # Property still resolves empty -> None for consumers
+        assert Config(tmp_project).nav_icons is None
