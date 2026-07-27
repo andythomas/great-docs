@@ -119,6 +119,9 @@ cli:
   enabled: false
   module: null
   name: null
+  title: null
+  desc: null
+  sections: []
 
 # Go CLI Documentation
 # --------------------
@@ -300,7 +303,9 @@ user_guide: null
 # bibliography:                           # or multiple files
 #   - docs/references.bib
 #   - docs/software.bib
+bibliography: []
 # csl: docs/nature.csl                    # optional citation style
+csl: null
 
 # API Reference Structure
 # -----------------------
@@ -603,6 +608,8 @@ tags:
   shadow: []
   # When true, section pages show a tag cloud scoped to that section.
   scoped: false
+  # Default tag pill placement: "top" or "bottom".
+  location: top
 
 # SEO
 # ---

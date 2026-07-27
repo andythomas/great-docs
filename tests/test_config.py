@@ -1191,3 +1191,14 @@ def test_arbitrary_site_key_reaches_format_html(tmp_path: Path):
 def test_legacy_site_key_does_not_leak_into_format_html(tmp_path: Path):
     cfg = _quarto_config_for(tmp_path, "site:\n  show_dates: true\n")
     assert "show_dates" not in cfg["format"]["html"]
+
+
+class TestYamlCompleteness:
+    def test_new_keys_present(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg["bibliography"] == []
+        assert cfg["csl"] is None
+        assert cfg["cli.title"] is None
+        assert cfg["cli.desc"] is None
+        assert cfg["cli.sections"] == []
+        assert cfg["tags.location"] == "top"
