@@ -1169,6 +1169,10 @@ def test_L3_code_include_expansion(tmp_path: Path):
     assert "{{< include" not in content or all(
         ".qmd" in line or ".md" in line for line in content.splitlines() if "{{< include" in line
     )
+    # Ensure triple curly brace escaping work properly for code includes.
+    original = r"{{{< include src/mypackage/examples/usage.py >}}}"
+    replaced = docs._expand_code_includes(original, tmp_path)
+    assert replaced == original
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
