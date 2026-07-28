@@ -128,20 +128,17 @@ cli:
 # Builds the Go binary and extracts its command tree via --help. Works with any
 # Go CLI (Cobra, urfave/cli, ...) whose subcommands support --help.
 go_cli:
-  enabled: false
+  enabled: false   # Enable Go CLI documentation (default: false)
 
 # MCP Server Documentation
 # ------------------------
 # Auto-generates reference pages from an MCP server's tool/resource/prompt
 # definitions.
 mcp:
-  enabled: true
-  # Importable module path containing the MCP server (e.g. "sweet.mcp").
-  module: null
-  # Variable name of the Server instance; auto-detected when null.
-  server_var: null
-  # Display name override; defaults to the server name.
-  name: null
+  enabled: true          # Enable MCP server documentation
+  module: null           # Importable module path (e.g. "sweet.mcp")
+  server_var: null       # Variable name of the Server instance; auto-detected when null
+  name: null             # Display name override; defaults to the server name
   # Manual tool categories (grouping on the index page). Example:
   #   categories:
   #     "Data tools": [load, save]
@@ -350,8 +347,8 @@ inline_methods: 5
 # title alongside the logo.
 logo:
   light: null            # null = no logo
-  dark: null
-  show_title: false
+  dark: null             # dark-mode variant; falls back to `light` when null
+  show_title: false      # keep the text title alongside the logo
 
 # Favicon. null: auto-generate from the logo, else skip.
 # favicon: assets/favicon.png            # single file
@@ -363,36 +360,35 @@ favicon: null
 
 # Hero Section
 # ------------
-# Landing-page hero.
-# null: auto-enable when a logo is configured
-# true/false: force enable/disable
+# Landing-page hero. null: auto-enable when a logo is configured;
+# true/false: force enable/disable; or set fields explicitly below.
 hero:
-  enabled: null          # null = auto (enable when a logo is configured)
-  logo: null
-  logo_height: 200px
-  name: null
-  tagline: null
-  badges: auto
-  starfield: false
+  enabled: null          # null = auto (on when a logo is set)
+  logo: null             # hero-specific logo; falls back to the navbar logo
+  logo_height: 200px     # max-height CSS value
+  name: null             # defaults to display_name; false hides it
+  tagline: null          # false hides it
+  badges: auto           # "auto" (from README), a list, or false
+  starfield: false       # interactive starfield animation
 
 # Markdown Pages
 # --------------
 # Generate .md companions for every HTML page and show a copy/view-as-Markdown
 # widget on each page.  Set to false to disable both (default: true).
 markdown_pages:
-  enabled: true
-  widget: true
+  enabled: true   # Generate .md companions for every HTML page (default: true)
+  widget: true    # Show the copy/view-as-Markdown widget (requires enabled)
 
 # Announcement Banner
 # -------------------
 # Site-wide banner above the navbar.
 # content null: no banner
 announcement:
-  content: null          # null = no banner
-  type: info
-  dismissable: true
-  url: null
-  style: null
+  content: null          # null = no banner; else the banner text (supports basic Markdown)
+  type: info             # "info" | "warning" | "success" | "danger"
+  dismissable: true      # Allow visitors to dismiss the banner
+  url: null              # Optional link the banner text points to
+  style: null            # Optional gradient preset (same names as navbar_style)
 
 # Versioning
 # ----------
@@ -406,22 +402,16 @@ versions: []
 
 # Version selector widget (enabled automatically when `versions` is non-empty).
 version_selector:
-  enabled: true
-  # "navbar-right" | "navbar-left" | "sidebar-top"
-  placement: navbar-right
-  # Include end-of-life versions in the dropdown.
-  show_eol: true
-  # Show a banner on non-latest versions.
-  warning_banner: true
+  enabled: true             # Master switch for the widget
+  placement: navbar-right   # "navbar-right" | "navbar-left" | "sidebar-top"
+  show_eol: true            # Include end-of-life versions in the dropdown
+  warning_banner: true      # Show a banner on non-latest versions
 
 # Floating version aliases.
 version_aliases:
-  # /v/latest/ -> latest stable version
-  latest: true
-  # /v/stable/ -> same as latest
-  stable: true
-  # /v/dev/ -> prerelease version, if any
-  dev: true
+  latest: true   # /v/latest/ -> latest stable version
+  stable: true   # /v/stable/ -> same as latest
+  dev: true      # /v/dev/ -> prerelease version, if any
 
 # Badge "new" expiry
 # -----------------
@@ -454,10 +444,9 @@ navbar_color: null
 
 # Content-area gradient preset (same preset names as navbar_style); adds a
 # subtle radial glow at the top of the content area.
-# preset: null = disabled; pages: "all"|"homepage".
 content_style:
-  preset: null
-  pages: all
+  preset: null   # null = disabled; else a gradient preset name
+  pages: all     # "all" or "homepage"
 
 # Scale to Fit
 # ------------
@@ -537,11 +526,9 @@ pre_render: []
 # Emits a SKILL.md conforming to the Agent Skills spec (https://agentskills.io/)
 # so coding agents can learn the package.
 skill:
-  enabled: true
-  # Path to a hand-written SKILL.md (overrides auto-generation).
-  file: null
-  # Also serve at /.well-known/agent-skills/{name}/SKILL.md + index.json.
-  well_known: true
+  enabled: true       # Emit a SKILL.md for this package (default: true)
+  file: null          # Path to a hand-written SKILL.md (overrides auto-generation)
+  well_known: true    # Also serve at /.well-known/agent-skills/{name}/SKILL.md + index.json
   # Strings for the Gotchas section.
   gotchas: []
   # Strings for the Best Practices section.
@@ -551,8 +538,7 @@ skill:
   #     - need: "Parse a file"
   #       use: read_yaml()
   decision_table: []
-  # Path to extra Markdown appended to the generated body.
-  extra_body: null
+  extra_body: null    # Path to extra Markdown appended to the generated body
   # Multiple named skills (overrides 'file' when set):
   # skills:
   #   - name: my-package
@@ -573,23 +559,20 @@ skill:
 #   twitter_site: "@myhandle"       # Twitter/X site @handle
 #   twitter_card: summary_large_image  # "summary" or "summary_large_image"
 social_cards:
-  enabled: true
-  image: null
-  twitter_card: null
-  twitter_site: null
+  enabled: true          # Auto-generate social preview meta tags (default: true)
+  image: null            # Default og:image for all pages; auto-generated when null
+  twitter_card: null     # "summary" or "summary_large_image"
+  twitter_site: null     # Twitter/X site @handle (e.g. "@myhandle")
 
 # Page Status Badges
 # ------------------
 # Lifecycle indicators in sidebar navigation. Pages opt in via frontmatter
 # (`status: new`, `deprecated`, ...).
 page_status:
-  # Master switch for page status badges.
-  enabled: false
-  # Show badges next to sidebar navigation links.
-  show_in_sidebar: true
-  # Show a status indicator below page titles (like tags).
-  show_on_pages: true
-  # Built-in status definitions (extend or override). Each: {label, icon, color, description}.
+  enabled: false            # Master switch for page status badges
+  show_in_sidebar: true     # Show badges next to sidebar navigation links
+  show_on_pages: true       # Show a status indicator below page titles (like tags)
+  # Built-in status definitions (extend or override).
   statuses:
     new:
       label: New
@@ -627,14 +610,10 @@ page_status:
 # Categorize pages for discoverability via frontmatter
 # (`tags: [Python, Testing, API]`).
 tags:
-  # Master switch for page tags.
-  enabled: false
-  # Auto-generate a tags index page listing all tags and their pages.
-  index_page: true
-  # Render tag pills above page titles, linked to the tag index.
-  show_on_pages: true
-  # Support hierarchical tags with "/" (e.g. "Python/Testing").
-  hierarchical: true
+  enabled: false         # Master switch for page tags
+  index_page: true       # Auto-generate a tags index page listing all tags and their pages
+  show_on_pages: true    # Render tag pills above page titles, linked to the tag index
+  hierarchical: true     # Support hierarchical tags with "/" (e.g. "Python/Testing")
   # Optional tag icons (tag name -> Lucide icon). Example:
   #   icons:
   #     Python: code
@@ -642,20 +621,16 @@ tags:
   # Shadow tags: names hidden from public view (internal organization only).
   # Shadow-tagged pages are indexed but their tags are not rendered.
   shadow: []
-  # When true, section pages show a tag cloud scoped to that section.
-  scoped: false
-  # Default tag pill placement: "top" or "bottom".
-  location: top
+  scoped: false          # Show a tag cloud scoped to the section on section pages
+  location: top          # Default tag pill placement: "top" or "bottom"
 
 # SEO
 # ---
 # Generates sitemap.xml, robots.txt, and discoverability metadata.
 seo:
-  # Master switch for all SEO features.
-  enabled: true
+  enabled: true            # Master switch for all SEO features
   sitemap:
-    # Generate sitemap.xml.
-    enabled: true
+    enabled: true          # Generate sitemap.xml
     # Change frequency by page type (always|hourly|daily|weekly|monthly|yearly|never).
     changefreq:
       homepage: weekly
@@ -671,29 +646,18 @@ seo:
       changelog: 0.6
       default: 0.5
   robots:
-    # Generate robots.txt.
-    enabled: true
-    # Allow all crawlers by default.
-    allow_all: true
-    # Paths to disallow (e.g. ["/drafts/", "/_internal/"]).
-    disallow: []
-    # Optional crawl delay in seconds.
-    crawl_delay: null
-    # Extra rules as raw strings (e.g. ["User-agent: GPTBot", "Disallow: /"]).
-    extra_rules: []
+    enabled: true          # Generate robots.txt
+    allow_all: true        # Allow all crawlers by default
+    disallow: []           # Paths to disallow, e.g. ["/drafts/", "/_internal/"]
+    crawl_delay: null      # Optional crawl delay in seconds
+    extra_rules: []        # Extra raw lines, e.g. ["User-agent: GPTBot", "Disallow: /"]
   canonical:
-    # Add canonical URLs to pages.
-    enabled: true
+    enabled: true          # Add canonical URLs to pages
     # Base URL (e.g. "https://example.github.io/pkg/"); auto-detected from
     # GitHub Pages when null.
     base_url: null
-  # Page title template; supports {page_title} and {site_name}.
-  title_template: "{page_title} | {site_name}"
-  # JSON-LD structured data for software documentation.
+  title_template: "{page_title} | {site_name}"   # supports {page_title} and {site_name}
   structured_data:
-    # Add JSON-LD to pages.
-    enabled: true
-    # Schema.org type.
-    type: SoftwareSourceCode
-  # Default meta description; falls back to the package description when null.
-  default_description: null
+    enabled: true              # Add JSON-LD to pages
+    type: SoftwareSourceCode   # Schema.org type
+  default_description: null   # Falls back to the package description when null
