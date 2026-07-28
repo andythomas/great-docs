@@ -504,7 +504,7 @@ attribution: true
 # Custom Head HTML
 # ----------------
 # Injected into <head> of every page. A string is inline HTML; a list mixes
-# inline strings and {text}/{file} entries.
+# inline strings and `text:`/`file:` map entries.
 # include_in_header: '<link rel="preconnect" href="https://example.com">'
 # include_in_header:
 #   - '<script defer src="/analytics.js"></script>'
@@ -548,7 +548,7 @@ skill:
   best_practices: []
   # Manual decision-table rows. Example:
   #   decision_table:
-  #     - need: Parse a file
+  #     - need: "Parse a file"
   #       use: read_yaml()
   decision_table: []
   # Path to extra Markdown appended to the generated body.
