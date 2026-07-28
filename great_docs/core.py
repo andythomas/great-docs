@@ -5610,8 +5610,9 @@ class GreatDocs:
         # No frontmatter, create one
         return f"---\n{key}: {yaml_value}\n---\n\n{content}"
 
+    # include double but ignore triple curly braces
     _CODE_INCLUDE_RE = re.compile(
-        r"\{\{<\s*include\s+(.*?)\s*>\}\}",
+        r"(?<!\{)\{\{<\s*include\s+(.*?)\s*>\}\}(?!\})",
     )
 
     _CONTENT_EXTENSIONS = {".qmd", ".md"}

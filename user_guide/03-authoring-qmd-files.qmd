@@ -989,9 +989,9 @@ in multiple pages, extracting it into an include file means you only need to upd
 When the `include` shortcode references a code file (anything other than `.qmd` or `.md`), Great
 Docs automatically wraps the file contents in a syntax-highlighted code block:
 
-````markdown
+```markdown{shortcodes=false}
 {{{< include src/mypackage/examples/demo.py >}}}
-````
+```
 
 The language is auto-detected from the file extension. A `.py` file becomes a `python` code block,
 a `.js` file becomes `javascript`, and so on. This is the same `include` shortcode used for content
@@ -1001,16 +1001,20 @@ through to Quarto as usual.
 Code includes are ideal for keeping documentation in sync with real code. Instead of copying code
 snippets into your pages (where they can drift out of date), reference the source files directly.
 
+::: {.callout-note}
+Generally, include shortcodes should not be enclosed in code blocks, as the formatting is applied automatically.
+:::
+
 #### Including existing source files
 
 If your library already has runnable examples, tests, or configuration files that you want to
 showcase in the documentation, point `include` at them directly:
 
-````markdown
+```markdown{shortcodes=false}
 {{{< include src/mypackage/examples/usage.py >}}}
 {{{< include tests/test_core.py lines="12-30" >}}}
 {{{< include pyproject.toml >}}}
-````
+```
 
 Because paths are resolved relative to the project root, any file in your repository is reachable.
 This is the primary use case: your code examples are real, tested code that stays in sync
@@ -1035,10 +1039,10 @@ user_guide/
 
 Then reference them with a path relative to the user guide directory:
 
-````markdown
+```markdown
 {{{< include _includes/quickstart.py >}}}
 {{{< include _includes/shortcode-demo.qmd lang="markdown" >}}}
-````
+```
 
 This keeps documentation-only snippets close to the pages that use them, separate from the real
 source code. You can include `.qmd` files as code too, just add the `lang` or `lines` keyword to
@@ -1066,24 +1070,24 @@ required but using it consistently keeps all your snippet files in one predictab
 
 **Line ranges**: include only specific lines with the `lines` keyword:
 
-````markdown
+```markdown
 {{{< include src/mypackage/core.py lines="10-25" >}}}
-````
+```
 
 Line numbers are 1-based and inclusive. This is useful for highlighting a specific function or block
 without showing the entire file.
 
 **Language override**: override the auto-detected language with the `lang` keyword:
 
-````markdown
+```markdown
 {{{< include config/settings.conf lang="toml" >}}}
-````
+```
 
 **Combining options**: both keywords can be used together:
 
-````markdown
+```markdown
 {{{< include src/mypackage/core.py lines="5-15" lang="python" >}}}
-````
+```
 
 #### Path resolution
 
