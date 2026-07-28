@@ -260,11 +260,23 @@ def test_emitted_template_comments_out_exactly_the_source():
     src_lines = source.splitlines()
     emt_lines = create_default_config().splitlines()
     assert len(src_lines) == len(emt_lines)
+    # A live block is commented as one unit: its column-0 key and every
+    # indented line under it (nested keys and interleaved prose) get a `# `
+    # at column 0. Section headers and pure example blocks are left as-is.
+    in_block = False
     for src, emt in zip(src_lines, emt_lines):
-        if not src.strip() or src.lstrip().startswith("#"):
+        if not src.strip():
             assert emt == src
+            continue
+        indented = src.lstrip(" ") != src
+        if indented:
+            assert emt == (f"# {src}" if in_block else src)
+        elif src.lstrip(" ").startswith("#"):
+            assert emt == src
+            in_block = False
         else:
             assert emt == f"# {src}"
+            in_block = True
 
 
 def test_create_default_config_override_replaces_scalar():

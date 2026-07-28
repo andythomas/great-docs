@@ -1475,9 +1475,14 @@ def create_default_config(overrides: dict[str, str] | None = None) -> str:
 
     The `great-docs.default.yml` template is emitted with every live value line
     commented out, so a fresh file documents every option without overriding
-    the packaged defaults. Any top-level key named in `overrides` is instead
-    emitted live, with its default (and any indented block body) replaced by
-    the supplied text.
+    the packaged defaults. A whole live block is commented as one unit: the
+    top-level key and every line beneath it — nested keys *and* any interleaved
+    prose comments — are prefixed with `# ` at column 0. Interleaved prose thus
+    carries a second `#`, so a user can uncomment a whole block (strip one
+    `# `) and get valid YAML with the prose still commented. Section headers and
+    pure example blocks (comment-only, no live key) are left untouched. Any
+    top-level key named in `overrides` is emitted live, with its default (and
+    any indented block body) replaced by the supplied text.
 
     Parameters
     ----------
@@ -1499,13 +1504,32 @@ def create_default_config(overrides: dict[str, str] | None = None) -> str:
     overrides = overrides or {}
     lines = text.splitlines(keepends=True)
     out: list[str] = []
+    in_block = False
     i = 0
     while i < len(lines):
         line = lines[i]
         i += 1
-        if not line.strip() or line.lstrip().startswith("#"):
-            out.append(line)
+
+        if not line.strip():
+            out.append(line)  # blank line — preserve, stay in the current block
             continue
+
+        body = line.lstrip(" ")
+        indented = body != line
+
+        if indented:
+            # Inside a live block, comment every line (nested keys and
+            # interleaved prose alike) at column 0; outside one, leave example
+            # bodies untouched.
+            out.append(f"# {line}" if in_block else line)
+            continue
+
+        if body.startswith("#"):
+            out.append(line)  # section header / doc / pure example key
+            in_block = False
+            continue
+
+        # Column-0 live key: opens a block whose indented body follows.
         match = _TOP_LEVEL_KEY.match(line)
         key = match.group(1) if match else None
         if key is not None and key in overrides:
@@ -1513,6 +1537,8 @@ def create_default_config(overrides: dict[str, str] | None = None) -> str:
             # Drop the replaced key's old block body (indented lines).
             while i < len(lines) and lines[i].strip() and lines[i][:1] in (" ", "\t"):
                 i += 1
+            in_block = False
         else:
             out.append(f"# {line}")
+            in_block = True
     return "".join(out)

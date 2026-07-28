@@ -68,7 +68,8 @@ no_auto_exclude: false
 # ---------
 # true (default): auto-detect the package name and link to pypi.org
 # false: disable the PyPI link
-# pypi: https://artifactory.example.com/pkg   # custom index URL
+# str: a custom package index URL
+# pypi: https://artifactory.example.com/pkg
 pypi: true
 
 # GitHub Integration
@@ -102,25 +103,19 @@ sidebar_filter:
 
 # CLI Documentation
 # -----------------
-# cli:
-#   enabled: false             # Enable CLI documentation (default: false)
-#   module: my_package.cli     # Module containing Click commands (auto-detected)
-#   name: cli                  # Name of the Click command object (auto-detected)
-#   title: "CLI Reference"     # Optional title for the CLI index page + sidebar section
-#   desc: >-                   # Optional intro paragraph shown atop the CLI index page
-#     Command-line interface for my-package.
-#   sections:                  # Optional explicit grouping/ordering for the CLI index page.
-#     - title: "Project setup" # When omitted, commands are auto-grouped in code order
-#       desc: "Create and configure a project."
-#       contents: [init, config]
-#     - title: Building
-#       contents: [build, preview]
 cli:
-  enabled: false
-  module: null
-  name: null
-  title: null
-  desc: null
+  enabled: false        # Enable CLI documentation
+  module: null          # e.g. my_package.cli; auto-detected
+  name: null            # Click command object; auto-detected
+  title: null           # Optional index page + sidebar title
+  desc: null            # Optional intro paragraph atop the index page
+  # sections: explicit grouping/ordering (omit = auto by code order). Example:
+  #   sections:
+  #     - title: "Project setup"
+  #       desc: "Create and configure a project."
+  #       contents: [init, config]
+  #     - title: Building
+  #       contents: [build, preview]
   sections: []
 
 # Go CLI Documentation
@@ -174,25 +169,18 @@ funding: null
 
 # Site Settings
 # -------------
-# These settings are forwarded to _quarto.yml (format.html section)
-#
-# `site` is a pure Quarto passthrough: its entire subtree is merged into
-# `format.html`, so any valid `format.html` key works here with no great-docs
-# change. `css` is the one exception (great-docs copies the file and references
-# it by basename). The great-docs page/UI settings that used to live here
-# (language, show_dates, date_format, show_author, show_security) are top-level
-# keys below; setting them under `site` still works and is lifted automatically.
-# site:
-#   theme: flatly              # Quarto theme (default: flatly)
-#   toc: true                  # Show table of contents (default: true)
-#   toc-depth: 2               # TOC heading depth (default: 2)
-#   html-math-method: katex    # HTML math renderer (default: katex; e.g., mathjax)
-#   toc-title: "On this page"  # TOC title (default: "On this page")
+# Forwarded to _quarto.yml (format.html). `site` is a pure Quarto passthrough:
+# its entire subtree is merged into `format.html`, so any valid `format.html`
+# key works here (e.g. `toc-title: "On this page"`). `css` is the one exception
+# (great-docs copies the file and references it by basename). The great-docs
+# page/UI settings that used to live here (language, show_dates, date_format,
+# show_author, show_security) are top-level keys below; setting them under
+# `site` still works and is lifted automatically.
 site:
-  theme: flatly
-  toc: true
-  toc-depth: 2
-  html-math-method: katex
+  theme: flatly            # Quarto theme
+  toc: true                # Show table of contents
+  toc-depth: 2             # TOC heading depth
+  html-math-method: katex  # HTML math renderer (e.g. mathjax)
 
 # Page Metadata
 # -------------
@@ -381,8 +369,7 @@ markdown_pages:
 
 # Announcement Banner
 # -------------------
-# Site-wide banner above or below the navbar.
-# content null: no banner
+# Site-wide banner above or below the navbar. Set `content` to enable it.
 announcement:
   content: null          # null = no banner; else the banner text (supports basic Markdown)
   type: info             # "info" | "warning" | "success" | "danger"
