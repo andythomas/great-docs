@@ -381,7 +381,7 @@ markdown_pages:
 
 # Announcement Banner
 # -------------------
-# Site-wide banner above the navbar.
+# Site-wide banner above or below the navbar.
 # content null: no banner
 announcement:
   content: null          # null = no banner; else the banner text (supports basic Markdown)
@@ -389,6 +389,7 @@ announcement:
   dismissable: true      # Allow visitors to dismiss the banner
   url: null              # Optional link the banner text points to
   style: null            # Optional gradient preset (same names as navbar_style)
+  position: above-navbar # "above-navbar" (default) | "below-navbar"
 
 # Versioning
 # ----------

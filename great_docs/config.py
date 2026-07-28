@@ -970,12 +970,16 @@ class Config:
         content = self["announcement.content"]
         if not content:
             return None
+        position = self["announcement.position"]
+        if position not in ("above-navbar", "below-navbar"):
+            position = "above-navbar"
         return {
             "content": content,
             "type": self["announcement.type"],
             "dismissable": self["announcement.dismissable"],
             "url": self["announcement.url"],
             "style": self["announcement.style"],
+            "position": position,
         }
 
     @property
