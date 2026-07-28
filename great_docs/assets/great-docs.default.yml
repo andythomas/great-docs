@@ -106,12 +106,12 @@ sidebar_filter:
 #   enabled: false             # Enable CLI documentation (default: false)
 #   module: my_package.cli     # Module containing Click commands (auto-detected)
 #   name: cli                  # Name of the Click command object (auto-detected)
-#   title: CLI Reference       # Optional title for the CLI index page + sidebar section
+#   title: "CLI Reference"     # Optional title for the CLI index page + sidebar section
 #   desc: >-                   # Optional intro paragraph shown atop the CLI index page
 #     Command-line interface for my-package.
 #   sections:                  # Optional explicit grouping/ordering for the CLI index page.
-#     - title: Project setup   # When omitted, commands are auto-grouped in code order
-#       desc: Create and configure a project.
+#     - title: "Project setup" # When omitted, commands are auto-grouped in code order
+#       desc: "Create and configure a project."
 #       contents: [init, config]
 #     - title: Building
 #       contents: [build, preview]
@@ -153,9 +153,9 @@ dark_mode_toggle: true
 # ------------------
 # Author metadata for display in the landing page sidebar and page attribution
 # authors:
-#   - name: Your Name
+#   - name: "Your Name"
 #     email: you@example.com
-#     role: Lead Developer
+#     role: "Lead Developer"
 #     affiliation: Organization
 #     github: yourusername
 #     homepage: https://yoursite.com
@@ -187,7 +187,7 @@ funding: null
 #   toc: true                  # Show table of contents (default: true)
 #   toc-depth: 2               # TOC heading depth (default: 2)
 #   html-math-method: katex    # HTML math renderer (default: katex; e.g., mathjax)
-#   toc-title: On this page    # TOC title (default: "On this page")
+#   toc-title: "On this page"  # TOC title (default: "On this page")
 site:
   theme: flatly
   toc: true
@@ -217,8 +217,8 @@ show_security: true
 # Optional catch-all author for auto-generated pages (reference, changelog, etc.)
 # team_author:
 #   name: "Project Team"
-#   image: "assets/team-avatar.png"
-#   url: "https://github.com/org/project"
+#   image: assets/team-avatar.png
+#   url: https://github.com/org/project
 team_author: null
 
 # Changelog (GitHub Releases)
@@ -241,7 +241,7 @@ changelog:
 #     dir: examples              # Source directory (relative to project root)
 #     index: true                # Generate card-based index page (default: false)
 #     index_columns: 2           # Columns for image cards: 1 or 2 (default: 2)
-#     navbar_after: User Guide   # Place after this navbar item (optional)
+#     navbar_after: "User Guide" # Place after this navbar item (optional)
 #   - title: Tutorials
 #     dir: tutorials             # No index — navbar links to first page
 #   - title: Blog                # Blog section using Quarto's listing directive
@@ -283,7 +283,7 @@ homepage: index
 # user_guide:
 #   - section: "Get Started"
 #     contents:
-#       - text: "Welcome"
+#       - text: Welcome
 #         href: index.qmd
 #       - quickstart.qmd
 #       - installation.qmd
@@ -320,15 +320,15 @@ csl: null
 # explicitly elsewhere in the reference if needed).
 #
 # reference:
-#   - title: Core Classes
-#     desc: Main classes for working with the package
+#   - title: "Core Classes"
+#     desc: "Main classes for working with the package"
 #     contents:
 #       - name: MyClass
 #         members: false       # Don't document methods here
 #       - SimpleClass          # Methods documented inline (default)
 #
-#   - title: Utility Functions
-#     desc: Helper functions for common tasks
+#   - title: "Utility Functions"
+#     desc: "Helper functions for common tasks"
 #     contents:
 #       - helper_func
 #       - another_func
