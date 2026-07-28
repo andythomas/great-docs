@@ -184,6 +184,16 @@ def test_config_defaults_yaml_matches_frozen_defaults():
     assert DEFAULT_CONFIG == FROZEN_DEFAULT_CONFIG
 
 
+def test_no_python_literal_examples_in_default_yaml():
+    """Comments must show examples as YAML, never Python/JSON literals (C1)."""
+    text = _default_config_text()
+    bad = re.compile(
+        r'#.*(: \{"|: \[\{|\bdict: \{|\blist\[|\bExample: \{)'
+    )
+    offenders = [ln for ln in text.splitlines() if bad.search(ln)]
+    assert not offenders, "Python-literal example comments found:\n" + "\n".join(offenders)
+
+
 def test_config_defaults_yaml_is_packaged():
     resource = resources.files("great_docs").joinpath(
         "assets", "great-docs.default.yml"

@@ -68,7 +68,7 @@ no_auto_exclude: false
 # ---------
 # true (default): auto-detect the package name and link to pypi.org
 # false: disable the PyPI link
-# str: custom package index URL (e.g. "https://artifactory.example.com/pkg")
+# pypi: https://artifactory.example.com/pkg   # custom index URL
 pypi: true
 
 # GitHub Integration
@@ -142,7 +142,9 @@ mcp:
   server_var: null
   # Display name override; defaults to the server name.
   name: null
-  # Manual tool categories: {"Category Name": ["tool_a", "tool_b"]}.
+  # Manual tool categories (grouping on the index page). Example:
+  #   categories:
+  #     "Data tools": [load, save]
   categories: {}
 
 # Dark Mode Toggle
@@ -167,7 +169,10 @@ authors: []
 # Funding
 # -------
 # Funding organization (copyright holder / funder).
-# Example: {"name": "Posit Software, PBC", "roles": ["Copyright holder", "funder"], "ror": "https://ror.org/03wc8by49"}
+# funding:
+#   name: "Posit Software, PBC"
+#   roles: ["Copyright holder", "funder"]
+#   ror: https://ror.org/03wc8by49
 funding: null
 
 # Site Settings
@@ -348,10 +353,12 @@ logo:
   dark: null
   show_title: false
 
-# Favicon.
-# str: a single favicon file
-# dict: {"icon", "apple_touch", "og_image"}
-# null: auto-generate from the logo, else skip
+# Favicon. null: auto-generate from the logo, else skip.
+# favicon: assets/favicon.png            # single file
+# favicon:                               # or per-purpose:
+#   icon: assets/icon.png
+#   apple_touch: assets/apple-touch-icon.png
+#   og_image: assets/og-image.png
 favicon: null
 
 # Hero Section
@@ -359,8 +366,6 @@ favicon: null
 # Landing-page hero.
 # null: auto-enable when a logo is configured
 # true/false: force enable/disable
-# dict: {"enabled": bool, "logo": str|dict|false, "logo_height": str,
-#        "name": str|false, "tagline": str|false, "badges": "auto"|list|false}
 hero:
   enabled: null          # null = auto (enable when a logo is configured)
   logo: null
@@ -391,11 +396,12 @@ announcement:
 
 # Versioning
 # ----------
-# Multi-version documentation.
-# null/[]: disabled (single-version site)
-# list[str | dict]: ordered versions, newest first
-#   Minimal: ["0.3", "0.2", "0.1"]
-#   Full:    [{"tag": "0.3", "label": "0.3.0", "latest": true}, ...]
+# Multi-version documentation; disabled when empty. Newest first.
+# versions: ["0.3", "0.2", "0.1"]          # minimal: tags only
+# versions:                                 # or full control:
+#   - tag: "0.3"
+#     label: "0.3.0"
+#     latest: true
 versions: []
 
 # Version selector widget (enabled automatically when `versions` is non-empty).
@@ -426,9 +432,12 @@ new_is_old: null
 
 # Colors & Navbar
 # ---------------
-# Site-wide accent color (any CSS color). Sets the --gd-accent property used by
-# shortcodes, gradient presets, and other accent-colored elements.
-# str: one color for both modes; dict: {"light": str, "dark": str}.
+# Site-wide accent color (any CSS color); sets --gd-accent. One color for
+# both modes, or per-mode:
+# accent_color: "#3b82f6"
+# accent_color:
+#   light: "#3b82f6"
+#   dark: "#60a5fa"
 accent_color: null
 
 # Navbar gradient preset (e.g. "sky", "peach", "lilac").
@@ -436,7 +445,11 @@ navbar_style: null
 
 # Navbar solid background color (any CSS color). Text color is chosen
 # automatically for contrast (APCA). Overridden when navbar_style is set.
-# str: one color for both modes; dict: {"light": str, "dark": str}.
+# One color for both modes, or per-mode:
+# navbar_color: "#3b82f6"
+# navbar_color:
+#   light: "#3b82f6"
+#   dark: "#60a5fa"
 navbar_color: null
 
 # Content-area gradient preset (same preset names as navbar_style); adds a
@@ -451,7 +464,7 @@ content_style:
 # Auto-shrink wide HTML output to the content width. The matched element's
 # nearest output wrapper is scaled down (never up).
 # null/false: disabled
-# list[str]: CSS selectors to auto-scale (e.g. ["#pb_tbl"])
+# scale_to_fit: ["#pb_tbl"]               # CSS selectors to auto-scale
 # Per-page override: `scale-to-fit: ["#pb_tbl"]`
 scale_to_fit: null
 
@@ -466,9 +479,12 @@ scale_to_fit_min_scale: null
 
 # Navigation Icons
 # ----------------
-# Lucide icons prepended to sidebar/navbar entries.
-# null/false: disabled
-# dict: {"navbar": {"Label": "icon-name"}, "sidebar": {"Label": "icon-name"}}
+# Lucide icons prepended to sidebar/navbar entries. null/false disables.
+# nav_icons:
+#   navbar:
+#     "User Guide": book-open
+#   sidebar:
+#     Reference: code
 nav_icons: {}
 
 # UI Features
@@ -487,9 +503,12 @@ attribution: true
 
 # Custom Head HTML
 # ----------------
-# Injected into the <head> of every page.
-# str: inline HTML (e.g. a <script> or <link> tag)
-# list[str | dict]: inline strings or {"text": ...} / {"file": ...} entries
+# Injected into <head> of every page. A string is inline HTML; a list mixes
+# inline strings and {text}/{file} entries.
+# include_in_header: '<link rel="preconnect" href="https://example.com">'
+# include_in_header:
+#   - '<script defer src="/analytics.js"></script>'
+#   - file: partials/head.html
 include_in_header: []
 
 # Freeze (Execution Caching)
@@ -507,8 +526,10 @@ freeze:
 # Pre-render Scripts
 # ------------------
 # Quarto's native pre-render hook (alternative to freeze.pre_render). Copied
-# into the build directory and wired into _quarto.yml.
-# str: a single script path; list[str]: several. Paths are relative to root.
+# into the build directory and wired into _quarto.yml. Paths are relative to
+# root.
+# pre_render: scripts/before-render.py     # single script
+# pre_render: [scripts/before-render.py, scripts/other.py]   # several
 pre_render: []
 
 # Agent Skills
@@ -525,7 +546,10 @@ skill:
   gotchas: []
   # Strings for the Best Practices section.
   best_practices: []
-  # Manual decision-table rows: [{"need": "...", "use": "..."}].
+  # Manual decision-table rows. Example:
+  #   decision_table:
+  #     - need: Parse a file
+  #       use: read_yaml()
   decision_table: []
   # Path to extra Markdown appended to the generated body.
   extra_body: null
@@ -611,7 +635,9 @@ tags:
   show_on_pages: true
   # Support hierarchical tags with "/" (e.g. "Python/Testing").
   hierarchical: true
-  # Optional tag icons: tag name -> Lucide icon name (e.g. {"Python": "code"}).
+  # Optional tag icons (tag name -> Lucide icon). Example:
+  #   icons:
+  #     Python: code
   icons: {}
   # Shadow tags: names hidden from public view (internal organization only).
   # Shadow-tagged pages are indexed but their tags are not rendered.
