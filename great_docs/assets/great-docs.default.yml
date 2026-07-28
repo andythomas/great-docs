@@ -394,7 +394,7 @@ announcement:
 # ----------
 # Multi-version documentation; disabled when empty. Newest first.
 # versions: ["0.3", "0.2", "0.1"]          # minimal: tags only
-# versions:                                 # or full control:
+# versions:                                # or full control:
 #   - tag: "0.3"
 #     label: "0.3.0"
 #     latest: true
@@ -422,10 +422,9 @@ new_is_old: null
 
 # Colors & Navbar
 # ---------------
-# Site-wide accent color (any CSS color); sets --gd-accent. One color for
-# both modes, or per-mode:
-# accent_color: "#3b82f6"
-# accent_color:
+# Site-wide accent color (any CSS color); sets --gd-accent.
+# accent_color: "#3b82f6"                  # one color for both modes
+# accent_color:                            # or per-mode:
 #   light: "#3b82f6"
 #   dark: "#60a5fa"
 accent_color: null
@@ -435,9 +434,8 @@ navbar_style: null
 
 # Navbar solid background color (any CSS color). Text color is chosen
 # automatically for contrast (APCA). Overridden when navbar_style is set.
-# One color for both modes, or per-mode:
-# navbar_color: "#3b82f6"
-# navbar_color:
+# navbar_color: "#3b82f6"                  # one color for both modes
+# navbar_color:                            # or per-mode:
 #   light: "#3b82f6"
 #   dark: "#60a5fa"
 navbar_color: null
@@ -494,8 +492,8 @@ attribution: true
 # ----------------
 # Injected into <head> of every page. A string is inline HTML; a list mixes
 # inline strings and `text:`/`file:` map entries.
-# include_in_header: '<link rel="preconnect" href="https://example.com">'
-# include_in_header:
+# include_in_header: '<link rel="preconnect" href="https://example.com">'  # inline HTML
+# include_in_header:                                                       # or several entries:
 #   - '<script defer src="/analytics.js"></script>'
 #   - file: partials/head.html
 include_in_header: []
