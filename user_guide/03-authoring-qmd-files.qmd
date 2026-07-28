@@ -1001,6 +1001,10 @@ through to Quarto as usual.
 Code includes are ideal for keeping documentation in sync with real code. Instead of copying code
 snippets into your pages (where they can drift out of date), reference the source files directly.
 
+::: {.callout-note}
+Generally, include shortcodes should not be enclosed in code blocks, as the formatting is applied automatically.
+:::
+
 #### Including existing source files
 
 If your library already has runnable examples, tests, or configuration files that you want to
