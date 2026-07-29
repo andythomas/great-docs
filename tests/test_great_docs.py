@@ -3503,6 +3503,37 @@ def test_assets_added_to_quarto_config():
         assert "assets/**" in config["project"]["resources"]
 
 
+def test_dark_only_logo_does_not_crash_quarto_config():
+    """Regression: a dark-only logo config must not crash navbar logo injection.
+
+    roborev #801 finding 2: `logo: {dark: ...}` used to raise `TypeError` at
+    `package_root / logo_config["light"]` because `light` was `None`.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        assets = project_path / "assets"
+        assets.mkdir()
+        (assets / "logo-dark.svg").write_text("<svg></svg>")
+
+        gd_yml = project_path / "great-docs.yml"
+        gd_yml.write_text("logo:\n  dark: assets/logo-dark.svg\n", encoding="utf-8")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        docs._update_quarto_config()
+
+        quarto_yml = docs.project_path / "_quarto.yml"
+        with open(quarto_yml, "r") as f:
+            config = read_yaml(f)
+
+        assert config["website"]["navbar"]["logo"] == "logo-dark.svg"
+
+
 def test_assets_not_added_to_quarto_config_when_missing():
     """Test that assets/** is not added to Quarto config when assets don't exist."""
 

@@ -245,6 +245,12 @@ class Config:
                 merged["light"] = raw
                 merged["dark"] = raw
             config["logo"] = merged
+            raw = config["logo"]
+        if isinstance(raw, dict) and not raw.get("light") and raw.get("dark"):
+            # A dark-only logo still needs a `light` asset for the primary
+            # navbar <img>; fall back to the same file (core.py:11900 assumes
+            # `light` is always present once Config.logo is not None).
+            raw["light"] = raw["dark"]
 
         # `freeze` is also excluded from the loop above: a scalar shorthand
         # sets `mode`, not `enabled`.

@@ -404,10 +404,14 @@ class TestLogo:
         }
 
     def test_dark_only(self, tmp_project: Path):
-        """A dark-only variant still counts as a logo being set."""
+        """A dark-only variant still counts as a logo being set, and `light`
+        falls back to the same asset so navbar-logo injection (core.py) never
+        sees a `None` `light` path (roborev #801 finding 2).
+        """
         cfg = _make_config(tmp_project, "logo:\n  dark: d.svg\n")
         assert cfg.logo is not None
         assert cfg.logo["dark"] == "d.svg"
+        assert cfg.logo["light"] == "d.svg"
 
     def test_dict(self, tmp_project: Path):
         cfg = _make_config(
