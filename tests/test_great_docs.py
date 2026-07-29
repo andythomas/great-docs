@@ -41674,3 +41674,26 @@ def test_build_reference_yaml_empty():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         assert docs._build_reference_yaml({}) == "reference:"
+
+
+class TestInspectRepoGitNeeds:
+    def test_top_level_show_dates_requires_full_history(self, tmp_path: Path):
+        """Regression: top-level `show_dates: true` must trigger a full clone.
+
+        roborev #801 finding 5: only the legacy `site.show_dates` was checked,
+        so the new top-level key left remote builds shallow.
+        """
+        (tmp_path / "great-docs.yml").write_text("show_dates: true\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_legacy_nested_show_dates_still_requires_full_history(self, tmp_path: Path):
+        """The legacy `site.show_dates` location keeps working."""
+        (tmp_path / "great-docs.yml").write_text(
+            "site:\n  show_dates: true\n", encoding="utf-8"
+        )
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_no_show_dates_does_not_require_full_history(self, tmp_path: Path):
+        """No `show_dates` anywhere resolves to `tags` (no `source.branch` set)."""
+        (tmp_path / "great-docs.yml").write_text("package: test\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "tags"

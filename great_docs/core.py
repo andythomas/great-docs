@@ -16599,9 +16599,17 @@ anchor-sections: true
         if versions:
             return "full"
 
-        # Page metadata dates need git log for first-commit detection
-        site = cfg.get("site", {})
-        if isinstance(site, dict) and site.get("show_dates"):
+        # Page metadata dates need git log for first-commit detection.
+        # `show_dates` lives at the top level; `site.show_dates` is kept as a
+        # legacy fallback since this raw-YAML inspection runs before any
+        # `Config`-level normalization (Config._lift_legacy_site_keys never
+        # sees this clone).
+        show_dates = cfg.get("show_dates")
+        if show_dates is None:
+            site = cfg.get("site")
+            if isinstance(site, dict):
+                show_dates = site.get("show_dates")
+        if show_dates:
             return "full"
 
         # Source links benefit from tags for _detect_git_ref()
