@@ -9,7 +9,10 @@ Contract for adding an option — keep the single source intact:
 - Declare the option and its default in `great-docs.default.yml`, never here.
   This module holds no default values.
 - Read through `config["dot.path"]`. The lookup is strict: a key absent from
-  the merged config raises `KeyError`.
+  the merged config raises `KeyError`. A user's bare `key:` (null) over a
+  dict-valued option therefore means "not specified" and keeps the defaults,
+  so such a read still resolves; see `Config._NULL_DISABLES` for the few
+  options a null switches off instead.
 - Default to a typed empty container (`[]`, `{}`) rather than `null`, unless the
   option is an optional scalar, a genuine tri-state, or a single optional record.
 - For an option whose value is a dict of sub-fields, declare those sub-fields
@@ -278,14 +281,30 @@ class Config:
 
         return config
 
+    # A bare `key:` (null) switches these options off. For every other
+    # dict-valued option a null means "not specified" and `_merge` keeps the
+    # packaged defaults, so an empty or commented-out block reads the same as
+    # an absent one. These four are the exception for backward compatibility:
+    # each defaults to on, yet a null has always disabled it.
+    _NULL_DISABLES: tuple[str, ...] = (
+        "social_cards",
+        "markdown_pages",
+        "mcp",
+        "freeze",
+    )
+
     @staticmethod
     def _merge(defaults: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
         """
         Deep merge two config-shaped mappings
 
         Values in `user` win; dicts present in both are merged recursively.
-        `defaults` is not mutated — a new mapping is returned. Also used to
-        overlay the `site` subtree onto `_quarto.yml` `format.html`.
+        A `None` where the default is a dict counts as "not specified" and
+        leaves the default subtree standing, so an empty or commented-out
+        block (`seo:` with nothing under it) reads the same as an absent one;
+        `_NULL_DISABLES` names the few keys that opt out of this. `defaults`
+        is not mutated — a new mapping is returned. Also used to overlay the
+        `site` subtree onto `_quarto.yml` `format.html`.
 
         Parameters
         ----------
@@ -302,8 +321,12 @@ class Config:
         result = defaults.copy()
 
         for key, value in user.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            if key not in result or not isinstance(result[key], dict):
+                result[key] = value
+            elif isinstance(value, dict):
                 result[key] = Config._merge(result[key], value)
+            elif value is None and key not in Config._NULL_DISABLES:
+                pass  # keep the default subtree
             else:
                 result[key] = value
 

@@ -1458,6 +1458,60 @@ class TestSeoShorthandNormalization:
         assert cfg.seo_enabled is True
         assert cfg.sitemap_enabled is True        # sub-defaults survive
 
+    def test_top_level_seo_null_keeps_defaults(self, tmp_path: Path):
+        # `seo:` with nothing under it (an empty or commented-out block) parses
+        # as None; SEO stays on, as it did before strict subscript reads.
+        cfg = _make_config(tmp_path, "seo:\n")
+        assert cfg.seo_enabled is True
+        assert cfg.sitemap_enabled is True
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"
+
+    def test_nested_seo_null_keeps_defaults(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  sitemap:\n")
+        assert cfg.seo_enabled is True
+        assert cfg.sitemap_enabled is True
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"
+        assert cfg.sitemap_priority["homepage"] == 1.0
+
+
+class TestNullMeansUnspecified:
+    """A bare `key:` leaves a dict-valued option at its defaults.
+
+    An empty or fully commented-out block parses as None, which must not
+    clobber the default subtree and strand the strict `key.sub` reads. The
+    `_NULL_DISABLES` options are the deliberate exception.
+    """
+
+    _KEYS = sorted(
+        k
+        for k, v in DEFAULT_CONFIG.items()
+        if isinstance(v, dict) and k not in Config._NULL_DISABLES
+    )
+    _SUB_KEYS = sorted(
+        (k, sub)
+        for k in _KEYS
+        for sub, v in DEFAULT_CONFIG[k].items()
+        if isinstance(v, dict)
+    )
+
+    @pytest.mark.parametrize("key", _KEYS)
+    def test_null_reads_as_absent(self, tmp_path: Path, key: str):
+        cfg = _make_config(tmp_path, f"{key}:\n")
+        assert cfg[key] == DEFAULT_CONFIG[key]
+
+    @pytest.mark.parametrize(("key", "sub"), _SUB_KEYS)
+    def test_null_sub_key_reads_as_absent(self, tmp_path: Path, key: str, sub: str):
+        cfg = _make_config(tmp_path, f"{key}:\n  {sub}:\n")
+        assert cfg[f"{key}.{sub}"] == DEFAULT_CONFIG[key][sub]
+
+    def test_null_disables_are_still_off(self, tmp_path: Path):
+        # The backward-compatible exceptions: on by default, off when nulled.
+        cfg = _make_config(tmp_path, "social_cards:\nmarkdown_pages:\nmcp:\nfreeze:\n")
+        assert cfg.social_cards_enabled is False
+        assert cfg.markdown_pages is False
+        assert cfg.mcp_enabled is False
+        assert cfg.freeze is None
+
 
 class TestPypiResolution:
     """`pypi` is a tri-state: `null` picks a link by project type, any other value is obeyed.
