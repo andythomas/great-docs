@@ -657,7 +657,7 @@ hero:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `hero` | `bool` / `dict` | auto | `false` to disable; `true` or `{}` to enable; dict to customize |
+| `hero` | `bool` / `dict` | auto | `false` to disable; `true` to force-enable; dict to customize (auto-enables with a logo) |
 | `hero.name` | `str` / `false` | display name | Package name shown in hero |
 | `hero.tagline` | `str` / `false` | description | Tagline shown below the name |
 | `hero.logo` | `str` / `dict` / `false` | auto-detect | Hero-specific logo (can have `light`/`dark` keys); auto-detects `logo-hero.*` files |
