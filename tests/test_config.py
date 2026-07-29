@@ -456,14 +456,20 @@ class TestHero:
         assert cfg.hero_enabled is True
 
     def test_hero_dict_enabled(self, tmp_project: Path):
-        """A dict form only enables via `enabled: true`, not by setting other sub-fields."""
+        """A dict form with an explicit `enabled: true` and a customization field."""
         cfg = _make_config(tmp_project, "hero:\n  enabled: true\n  name: My Package\n")
         assert cfg.hero_enabled is True
 
-    def test_hero_dict_other_fields_do_not_auto_enable(self, tmp_project: Path):
-        """Setting a sub-field without `enabled` or a logo keeps hero in auto (off)."""
+    def test_hero_dict_any_field_enables_for_backward_compat(self, tmp_project: Path):
+        """A hero dict without `enabled` still enables the hero (backward compat).
+
+        Not the documented go-forward contract (see user_guide/11-theming.qmd,
+        which now describes the logo-driven auto-enable model), but existing
+        configs that set hero sub-fields without `enabled` or a logo must keep
+        rendering a hero — silently preserved for compatibility.
+        """
         cfg = _make_config(tmp_project, "hero:\n  name: My Package\n")
-        assert cfg.hero_enabled is False
+        assert cfg.hero_enabled is True
 
     def test_hero_logo_only_auto_enables(self, tmp_project: Path):
         """An explicit `hero.logo`, with no top-level `logo`, still auto-enables.
@@ -475,16 +481,27 @@ class TestHero:
         cfg = _make_config(tmp_project, "hero:\n  logo: x.svg\n")
         assert cfg.hero_enabled is True
 
-    def test_empty_hero_no_logo_stays_disabled(self, tmp_project: Path):
-        """An empty hero dict/null with no logo anywhere keeps auto resolving to off.
+    def test_empty_hero_dict_enables_for_backward_compat(self, tmp_project: Path):
+        """An empty hero dict (`hero: {}`) enables the hero.
 
-        The old "any hero dict force-enables" quirk is intentionally dropped.
+        Matches the documented `hero` summary table in user_guide/11-theming.qmd:
+        "`false` to disable; `true` to force-enable; dict to customize".
         """
         cfg = _make_config(tmp_project, "hero: {}\n")
+        assert cfg.hero_enabled is True
+
+    def test_hero_null_with_no_logo_stays_disabled(self, tmp_project: Path):
+        """`hero: null` is not a dict, so it falls back to logo-based auto-detection."""
+        cfg = _make_config(tmp_project, "hero: null\n")
         assert cfg.hero_enabled is False
 
-        cfg_null = _make_config(tmp_project, "hero: null\n")
-        assert cfg_null.hero_enabled is False
+    def test_hero_dict_with_badges_false_and_no_logo_enables(self, tmp_project: Path):
+        """Regression: `hero: {name: ..., badges: false}` without a logo still
+        enables the hero (roborev #801 finding 1).
+        """
+        cfg = _make_config(tmp_project, "hero:\n  name: My Package\n  badges: false\n")
+        assert cfg.hero_enabled is True
+        assert cfg.hero_badges is None
 
     def test_hero_dict_explicitly_disabled(self, tmp_project: Path):
         """Covers line 540 (hero dict with enabled: false)."""

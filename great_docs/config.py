@@ -187,6 +187,15 @@ class Config:
                 merged["enabled"] = raw
             # raw is None -> keep enabled: null (auto)
             config["hero"] = merged
+        else:
+            user_hero = self._user_config.get("hero")
+            if isinstance(user_hero, dict) and "enabled" not in user_hero:
+                # Backward compatibility: a user-supplied hero mapping (of any
+                # shape, even {}) used to enable the hero unconditionally, even
+                # without a logo. No longer documented (see
+                # user_guide/11-theming.qmd), but preserved silently for
+                # existing configs.
+                raw["enabled"] = True
 
         # A bare `seo: true`/`seo: false` collapses the whole subtree to a bool;
         # rebuild it into the full default dict with `enabled` set from the
