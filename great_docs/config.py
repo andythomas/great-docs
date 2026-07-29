@@ -25,7 +25,7 @@ import io
 import re
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from yaml12 import read_yaml
 
@@ -99,12 +99,20 @@ class Config:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     user_config = read_yaml(f) or {}
 
-                self._user_config = user_config
-                # Deep merge user config with defaults
-                config = self._merge(config, user_config)
+                if not isinstance(user_config, dict):
+                    # A valid YAML document that isn't a mapping (a list, a bare
+                    # scalar) has no config to contribute; the defaults stand.
+                    print(
+                        "Warning: great-docs.yml must be a mapping of options; "
+                        f"got {type(user_config).__name__}. Using defaults."
+                    )
+                else:
+                    self._user_config = cast("dict[str, Any]", user_config)
+                    # Deep merge user config with defaults
+                    config = self._merge(config, self._user_config)
             except ValueError as e:
                 print(f"Warning: Error parsing great-docs.yml: {e}")
-            except Exception as e:
+            except OSError as e:
                 print(f"Warning: Could not read great-docs.yml: {e}")
 
         config = self._lift_legacy_site_keys(config)
@@ -149,6 +157,7 @@ class Config:
         "tags",
         "social_cards",
         "markdown_pages",
+        "mcp",
     )
 
     def _normalize_shorthands(self, config: dict[str, Any]) -> dict[str, Any]:

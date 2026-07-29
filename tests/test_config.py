@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from great_docs import config as config_module
 from great_docs.config import DEFAULT_CONFIG, Config, create_default_config, load_config
 
 
@@ -1404,6 +1405,31 @@ class TestShorthandNormalization:
         assert cfg["social_cards.enabled"] is False
         assert cfg.social_cards_enabled is False
 
+    def test_mcp_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "mcp: false\n")
+        assert cfg.mcp_enabled is False
+        assert cfg.mcp_categories == {}  # sub-defaults survive
+
+    def test_mcp_null(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "mcp:\n")
+        assert cfg.mcp_enabled is False
+        assert cfg.mcp_module is None
+
+
+class TestNonMappingConfig:
+    """A syntactically valid great-docs.yml that isn't a mapping falls back to defaults."""
+
+    def test_list_document(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        cfg = _make_config(tmp_path, "- one\n- two\n")
+        assert cfg.parser == DEFAULT_CONFIG["parser"]
+        assert cfg.hero_enabled is False
+        assert "must be a mapping" in capsys.readouterr().out
+
+    def test_scalar_document(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        cfg = _make_config(tmp_path, "just a string\n")
+        assert cfg.parser == DEFAULT_CONFIG["parser"]
+        assert "must be a mapping" in capsys.readouterr().out
+
 
 class TestSeoShorthandNormalization:
     def test_sitemap_true_expands(self, tmp_path: Path):
@@ -1462,3 +1488,39 @@ class TestSingleSourceInvariant:
             attr = getattr(Config, name, None)
             if isinstance(attr, property):
                 getattr(cfg, name)  # must not raise KeyError
+
+    def test_every_literal_lookup_path_is_declared(self):
+        """Every `self["dot.path"]` in config.py resolves in `DEFAULT_CONFIG`.
+
+        Complements the property sweep above, which only exercises paths that
+        the default config actually reaches: a lookup behind a disabled branch
+        (or in a method rather than a property) is invisible to it but is still
+        a strict read that must be declared in the packaged YAML.
+        """
+        import ast
+
+        source = Path(config_module.__file__).read_text(encoding="utf-8")
+        paths: set[str] = set()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Subscript):
+                continue
+            target, key = node.value, node.slice
+            is_self = isinstance(target, ast.Name) and target.id == "self"
+            if is_self and isinstance(key, ast.Constant) and isinstance(key.value, str):
+                paths.add(key.value)
+
+        assert paths, "found no literal lookups — the AST scan is broken"
+
+        undeclared = []
+        for path in sorted(paths):
+            value = DEFAULT_CONFIG
+            for part in path.split("."):
+                if isinstance(value, dict) and part in value:
+                    value = value[part]
+                else:
+                    undeclared.append(path)
+                    break
+        assert not undeclared, (
+            "config.py reads keys that great-docs.default.yml does not declare: "
+            f"{undeclared}"
+        )

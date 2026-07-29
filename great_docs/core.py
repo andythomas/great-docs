@@ -11639,8 +11639,10 @@ anchor-sections: true
         )
 
         # toc-title: use the translated label unless the user overrode it via
-        # site.toc-title (already merged above).
-        if "toc-title" not in config["format"]["html"]:
+        # site.toc-title. Test the user's `site` rather than the merged result —
+        # a label this method wrote on an earlier pass must be refreshed from the
+        # current language, not treated as an override.
+        if "toc-title" not in self._config.site_quarto:
             from ._translations import get_translation
 
             config["format"]["html"]["toc-title"] = get_translation(
