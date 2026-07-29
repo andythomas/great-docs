@@ -550,7 +550,7 @@ skill:
 #   twitter_card: summary_large_image  # "summary" or "summary_large_image"
 social_cards:
   enabled: true          # Auto-generate social preview meta tags (default: true)
-  image: null            # Default og:image for all pages; auto-generated when null
+  image: null            # Default og:image for all pages; omitted from meta tags when null
   twitter_card: null     # "summary" or "summary_large_image"
   twitter_site: null     # Twitter/X site @handle (e.g. "@myhandle")
 
