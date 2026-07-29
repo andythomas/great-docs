@@ -66,11 +66,12 @@ no_auto_exclude: false
 
 # PyPI Link
 # ---------
-# true (default): auto-detect the package name and link to pypi.org
+# null (default): link to pypi.org for Python projects, no link otherwise
+# true: auto-detect the package name and link to pypi.org
 # false: disable the PyPI link
 # str: a custom package index URL
 # pypi: https://artifactory.example.com/pkg
-pypi: true
+pypi: null
 
 # GitHub Integration
 # ------------------

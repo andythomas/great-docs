@@ -1459,6 +1459,51 @@ class TestSeoShorthandNormalization:
         assert cfg.sitemap_enabled is True        # sub-defaults survive
 
 
+class TestPypiResolution:
+    """`pypi` is a tri-state: `null` picks a link by project type, any other value is obeyed.
+
+    The default carries no project-type knowledge of its own — an explicit value
+    means the same thing whether or not it happens to equal the default.
+    """
+
+    def test_default_is_the_auto_sentinel(self):
+        assert DEFAULT_CONFIG["pypi"] is None
+
+    def test_auto_links_for_python_project(self, tmp_project: Path):
+        assert Config(tmp_project).pypi is True
+
+    def test_auto_is_off_for_non_python_project(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "project_type: go\n")
+        assert cfg.pypi is False
+
+    def test_auto_links_for_mixed_project(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "project_type: [python, go]\n")
+        assert cfg.pypi is True
+
+    @pytest.mark.parametrize("project_type", ["python", "go"])
+    def test_explicit_true_is_obeyed(self, tmp_path: Path, project_type: str):
+        cfg = _make_config(tmp_path, f"project_type: {project_type}\npypi: true\n")
+        assert cfg.pypi is True
+
+    @pytest.mark.parametrize("project_type", ["python", "go"])
+    def test_explicit_false_is_obeyed(self, tmp_path: Path, project_type: str):
+        cfg = _make_config(tmp_path, f"project_type: {project_type}\npypi: false\n")
+        assert cfg.pypi is False
+
+    @pytest.mark.parametrize("project_type", ["python", "go"])
+    def test_explicit_url_is_obeyed(self, tmp_path: Path, project_type: str):
+        cfg = _make_config(
+            tmp_path,
+            f'project_type: {project_type}\npypi: "https://packages.example.com/simple/pkg"\n',
+        )
+        assert cfg.pypi == "https://packages.example.com/simple/pkg"
+
+    def test_explicit_null_is_auto(self, tmp_path: Path):
+        """An explicit `null` means auto, never a `None` leaking to the caller."""
+        cfg = _make_config(tmp_path, "project_type: go\npypi:\n")
+        assert cfg.pypi is False
+
+
 class TestSingleSourceInvariant:
     """Guards the single-source-of-truth contract in `great_docs/config.py`.
 

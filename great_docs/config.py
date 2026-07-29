@@ -379,18 +379,15 @@ class Config:
         Returns
         -------
         bool | str
-            - True: auto-detect package name and link to pypi.org (default for Python projects)
+            - True: auto-detect package name and link to pypi.org
             - False: disable the PyPI link entirely
             - str: custom package index URL
         """
-        # If the user has explicitly set pypi in great-docs.yml, honour it regardless of
-        # project_type
-        if "pypi" in self._user_config:
-            return self._user_config["pypi"]
-        # Non-Python projects default to no PyPI link
-        if not self.is_python_project:
-            return False
-        return True
+        value = self["pypi"]
+        if value is None:
+            # Auto: a PyPI link makes sense only for a Python project.
+            return self.is_python_project
+        return value
 
     @property
     def repo(self) -> str | None:

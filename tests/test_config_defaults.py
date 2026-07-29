@@ -21,7 +21,10 @@ FROZEN_DEFAULT_CONFIG: dict[str, Any] = {
     "exclude": [],
     "auto_include": [],
     "no_auto_exclude": False,
-    "pypi": True,
+    # Deliberately changed from the captured `True`: the project-type-dependent
+    # default is now expressed as the `null` auto sentinel rather than inferred
+    # from whether the key appears in the user's file. Behaviour is unchanged.
+    "pypi": None,
     "repo": None,
     "github_style": "widget",
     "site_url": None,

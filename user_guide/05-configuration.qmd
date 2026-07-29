@@ -365,7 +365,9 @@ pypi: false
 pypi: "https://packages.example.com/simple/my-package"
 ```
 
-When `pypi` is `true` (the default), the link is auto-generated as
+By default (`pypi: null`) the link is generated for Python projects and omitted for everything
+else, so a Go-only project gets no PyPI link without your having to say so. Setting `pypi: true`
+forces the link on regardless of `project_type`; it is auto-generated as
 `https://pypi.org/project/{package_name}/`.
 
 ## Site URL
@@ -935,7 +937,7 @@ source:
   placement: usage
 
 # PyPI Link
-pypi: true  # true (default), false to disable, or a custom URL string
+pypi: null  # null (default) links for Python projects; true forces, false disables, or a URL string
 
 # Sidebar
 sidebar_filter:
