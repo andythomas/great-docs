@@ -197,6 +197,13 @@ class Config:
                 # existing configs.
                 raw["enabled"] = True
 
+        hero_logo = config["hero"].get("logo")
+        if isinstance(hero_logo, dict) and not hero_logo.get("light") and hero_logo.get("dark"):
+            # Mirror the top-level `logo` dark-only fallback: a dark-only
+            # hero.logo must still resolve to a `light` asset, or
+            # core.py's _build_hero_section silently drops the image.
+            hero_logo["light"] = hero_logo["dark"]
+
         # A bare `seo: true`/`seo: false` collapses the whole subtree to a bool;
         # rebuild it into the full default dict with `enabled` set from the
         # scalar, same as the `_BOOL_SHORTHAND_KEYS` loop above.

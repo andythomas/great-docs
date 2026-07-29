@@ -14297,6 +14297,40 @@ def test_build_hero_section_with_light_dark_logo():
         assert "logo-dark.svg" in result
 
 
+def test_build_hero_section_dark_only_logo_still_renders():
+    """Regression: a dark-only `hero.logo` must still render an `<img>`.
+
+    Final-review finding on the roborev #801 batch: without the config-side
+    `light` fallback, `logo_html` stayed empty and the hero silently rendered
+    with no logo image at all (sibling bug to
+    `test_dark_only_logo_does_not_crash_quarto_config` for the top-level
+    `logo` key).
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "testpkg"\n', encoding="utf-8")
+        gd_yml = Path(tmp_dir) / "great-docs.yml"
+        gd_yml.write_text(
+            format_yaml(
+                {
+                    "hero": {
+                        "enabled": True,
+                        "logo": {"dark": "assets/hero-dark.svg"},
+                        "name": "TestPkg",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        docs = GreatDocs(project_path=tmp_dir)
+        result, cleaned = docs._build_hero_section()
+
+        assert "<img" in result
+        assert "hero-dark.svg" in result
+
+
 def test_build_hero_section_auto_enable_no_hero():
     """_build_hero_section returns empty when not enabled and no hero detected."""
     with tempfile.TemporaryDirectory() as tmp_dir:

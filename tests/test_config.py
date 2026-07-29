@@ -513,6 +513,17 @@ class TestHero:
         assert cfg.hero_enabled is False
         assert cfg.hero_explicitly_disabled is True
 
+    def test_hero_logo_dark_only_falls_back_to_light(self, tmp_project: Path):
+        """A dark-only hero.logo dict must still resolve a `light` asset.
+
+        Mirrors TestLogo.test_dark_only for the top-level logo — without
+        this, core.py's _build_hero_section silently drops the hero logo
+        image entirely (final-review finding on roborev #801 batch).
+        """
+        cfg = _make_config(tmp_project, "hero:\n  logo:\n    dark: hero-d.svg\n")
+        assert cfg.hero_logo["dark"] == "hero-d.svg"
+        assert cfg.hero_logo["light"] == "hero-d.svg"
+
 
 class TestHeroLogo:
     def test_default_none(self, tmp_project: Path):

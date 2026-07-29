@@ -559,10 +559,13 @@ hero: false
 
 ### Customizing the Hero
 
-Each hero component can be overridden or suppressed individually:
+Each hero component can be overridden or suppressed individually. These examples add
+`enabled: true` since they have no logo configured — if you already have a logo (and
+therefore an auto-enabled hero), you can omit it:
 
 ```{.yaml filename="great-docs.yml"}
 hero:
+  enabled: true                         # Needed here since no logo is configured
   name: "My Package"                    # Override the auto-detected name
   tagline: "A better way to build things"  # Override the description
   logo_height: 120px                    # Default: 200px
@@ -573,6 +576,7 @@ Set any component to `false` to suppress it:
 
 ```{.yaml filename="great-docs.yml"}
 hero:
+  enabled: true
   name: false              # Hide the name (logo and tagline only)
   badges: false            # No badges
 ```
