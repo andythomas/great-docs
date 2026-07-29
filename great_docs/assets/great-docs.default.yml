@@ -169,13 +169,17 @@ funding: null
 
 # Site Settings
 # -------------
-# Forwarded to _quarto.yml (format.html). `site` is a pure Quarto passthrough:
-# its entire subtree is merged into `format.html`, so any valid `format.html`
-# key works here (e.g. `toc-title: "On this page"`). `css` is the one exception
-# (great-docs copies the file and references it by basename). The great-docs
-# page/UI settings that used to live here (language, show_dates, date_format,
-# show_author, show_security) are top-level keys below; setting them under
-# `site` still works and is lifted automatically.
+# Forwarded to _quarto.yml (format.html). `site` is a Quarto passthrough:
+# its subtree is merged into `format.html`, so most valid `format.html` keys
+# work here (e.g. `toc-title: "On this page"`). Reserved keys that great-docs
+# manages itself and always overrides: `css` (copied and referenced by
+# basename separately), `code-copy` (disabled — great-docs supplies its own
+# copy-code widget), `html-table-processing` (disabled — required for GT
+# table styling), and `mermaid` (fixed to the light theme — dark mode is
+# handled via a CSS container). The great-docs page/UI settings that used to
+# live here (language, show_dates, date_format, show_author, show_security)
+# are top-level keys below; setting them under `site` still works and is
+# lifted automatically.
 site:
   theme: flatly            # Quarto theme
   toc: true                # Show table of contents
