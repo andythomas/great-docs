@@ -86,12 +86,18 @@ def test_any_docstring_section_union():
 
 
 def test_doc_type_union():
-    """DocType includes the four core Doc types."""
+    """DocType includes the five core Doc types."""
     from great_docs._apiref.typing import DocType
 
     args = get_args(DocType)
     type_names = {t.__name__ for t in args}
-    assert type_names == {"DocClass", "DocFunction", "DocAttribute", "DocModule"}
+    assert type_names == {
+        "DocClass",
+        "DocFunction",
+        "DocAttribute",
+        "DocTypeAlias",
+        "DocModule",
+    }
 
 
 def test_doc_member_type_union():

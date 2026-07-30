@@ -67,6 +67,6 @@ RenderObjType: TypeAlias = (
 
 AnyDocstringSection: TypeAlias = gf.DocstringSection | DCDocstringSection
 
-DocType: TypeAlias = DocClass | DocFunction | DocAttribute | DocModule
+DocType: TypeAlias = DocClass | DocFunction | DocAttribute | DocTypeAlias | DocModule
 
 DocMemberType: TypeAlias = MemberPage | Doc
