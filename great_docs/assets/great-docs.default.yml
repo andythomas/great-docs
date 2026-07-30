@@ -9,37 +9,43 @@
 # Module Name
 # -----------
 # Importable module name, when it differs from the project name
-# (e.g. project 'py-yaml12' imports as 'yaml12'). Auto-detected when null.
+# (e.g. project 'py-yaml12' imports as 'yaml12').
+# : null - (default) auto-detect
+# : type(str) - the module name
 module: null
 
 # Display Name
 # ------------
-# Custom display name for your package in the site navbar/title.
-# If not provided, uses the actual package name (e.g., 'my_package' or 'my-package').
-# Use this to provide a marketing/presentation name (e.g., 'My Package').
+# Display name for your package in the site navbar/title. Use this for a
+# marketing/presentation name (e.g. 'My Package').
+# : null - (default) the actual package name (e.g. 'my_package' or 'my-package')
+# : type(str) - the name to display
 display_name: null
 
 # Project Type
 # ------------
 # Primary ecosystem(s) the project belongs to. Controls which
 # ecosystem-specific links and features are active by default.
-#   "python"          — Python package (default); enables PyPI link
-#   "go"              — Go CLI/library; disables PyPI link by default
-#   ["python", "go"]  — mixed project (e.g. a Python package with a Go sidecar)
+# : python - (default) Python package; enables the PyPI link
+# : go - Go CLI/library; disables the PyPI link by default
+# : type(list) - mixed project, e.g. [python, go]
 project_type: python
 
 # Docstring Parser
 # ----------------
-# The docstring format used in your package (numpy, google, or sphinx)
-# This value was auto-detected during initialization, but can be overridden here.
+# The docstring format used in your package. Auto-detected during
+# initialization, but can be overridden here.
+# : numpy - (default) numpydoc style
+# : google - Google style
+# : sphinx - Sphinx/reStructuredText style
 parser: numpy
 
 # Dynamic Introspection
 # ---------------------
-# When true, the renderer uses runtime introspection (more accurate for complex packages).
-# When false, uses static analysis only (better for packages with cyclic aliases).
-# This value was auto-detected during initialization based on what works for your
-# package, but can be overridden here.
+# How the renderer inspects your package. Auto-detected during initialization
+# based on what works for your package, but can be overridden here.
+# : true - (default) runtime introspection; more accurate for complex packages
+# : false - static analysis only; better for packages with cyclic aliases
 dynamic: true
 
 # Jupyter Kernel
@@ -66,10 +72,10 @@ no_auto_exclude: false
 
 # PyPI Link
 # ---------
-# null (default): link to pypi.org for Python projects, no link otherwise
-# true: auto-detect the package name and link to pypi.org
-# false: disable the PyPI link
-# str: a custom package index URL
+# : null - (default) link to pypi.org for Python projects, no link otherwise
+# : true - auto-detect the package name and link to pypi.org
+# : false - disable the PyPI link
+# : type(str) - a custom package index URL
 # pypi: https://artifactory.example.com/pkg
 pypi: null
 
@@ -78,7 +84,9 @@ pypi: null
 # GitHub repository URL override (e.g. "https://github.com/owner/repo").
 repo: null
 
-# GitHub link style: "widget" (shows stars count) or "icon" (simple icon)
+# GitHub link style
+# : widget - (default) a widget showing the stars count
+# : icon - a simple icon
 github_style: widget
 
 # Site URL
@@ -247,32 +255,29 @@ sections: []
 # Add hand-written HTML pages that Great Docs should either wrap with the site
 # shell (layout: passthrough) or copy through unchanged (layout: raw).
 #
-# Omit `custom_pages` to use the conventional `custom/` directory.
-# Set `custom_pages: false` to disable discovery.
-#
+# : null - (default) discover the conventional `custom/` directory
+# : false - disable discovery
+# : type(str) - a single directory, e.g. marketing
+# : type(list) - one entry per directory:
 # custom_pages:
 #   - dir: marketing             # Source directory (relative to project root)
 #     output: py                 # URL/output prefix (optional; defaults to dir basename)
 #   - dir: playgrounds
 #     output: demos
-#
-# Short form for a single directory:
-# custom_pages: marketing
 custom_pages: null
 
 # Homepage
 # --------
-# "index" (default): separate homepage from the README / index source
-# "user_guide": the first user-guide page becomes the landing page
+# : index - (default) separate homepage from the README / index source
+# : user_guide - the first user-guide page becomes the landing page
 homepage: index
 
 # User Guide
 # ----------
-# Custom directory for User Guide .qmd files (relative to project root).
-# If not provided, looks for user_guide/ in the project root.
-# user_guide: docs/guides
-#
-# For explicit control over section ordering and grouping:
+# Where the User Guide .qmd files live, and optionally how they are ordered.
+# : null - (default) look for user_guide/ in the project root
+# : type(str) - a custom directory (relative to project root), e.g. docs/guides
+# : type(list) - explicit section ordering and grouping:
 # user_guide:
 #   - section: "Get Started"
 #     contents:
@@ -294,8 +299,10 @@ user_guide: null
 # Project-level bibliography for [@citation-key] syntax. Paths are relative to
 # the project root; the file(s) are copied into the build directory and wired
 # into _quarto.yml so every page can cite without per-page frontmatter.
-# bibliography: docs/references.bib       # single file
-# bibliography:                           # or multiple files
+# : [] - (default) no bibliography
+# : type(str) - a single file, e.g. docs/references.bib
+# : type(list) - several files:
+# bibliography:
 #   - docs/references.bib
 #   - docs/software.bib
 bibliography: []
@@ -330,22 +337,27 @@ reference: []
 # Inline Methods
 # --------------
 # Whether class methods get their own pages or stay inline.
-# true: always inline; false: always split; int: inline up to N, split above N.
+# : 5 - (default) inline up to 5 methods, split above that
+# : true - always inline
+# : false - always split
+# : type(int) - inline up to N methods, split above N
 inline_methods: 5
 
 # Logo & Favicon
 # --------------
-# Point to a single logo file (replaces the text title in the navbar), or
-# give light/dark variants separately. show_title: true keeps the text
-# title alongside the logo.
+# A logo replaces the text title in the navbar.
+# : type(str) - a single file used in both light and dark mode
+# : type(map) - (default) light/dark variants, as below
 logo:
   light: null            # null = no logo
   dark: null             # dark-mode variant; falls back to `light` when null
   show_title: false      # keep the text title alongside the logo
 
-# Favicon. null: auto-generate from the logo, else skip.
-# favicon: assets/favicon.png            # single file
-# favicon:                               # or per-purpose:
+# Favicon.
+# : null - (default) auto-generate from the logo, else skip
+# : type(str) - a single file, e.g. assets/favicon.png
+# : type(map) - one file per purpose:
+# favicon:
 #   icon: assets/icon.png
 #   apple_touch: assets/apple-touch-icon.png
 #   og_image: assets/og-image.png
@@ -353,8 +365,10 @@ favicon: null
 
 # Hero Section
 # ------------
-# Landing-page hero. null: auto-enable when a logo is configured;
-# true/false: force enable/disable; or set fields explicitly below.
+# Landing-page hero.
+# : true - force enable
+# : false - force disable
+# : type(map) - (default) set the fields explicitly, as below
 hero:
   enabled: null          # null = auto (on when a logo is set)
   logo: null             # hero-specific logo; falls back to the navbar logo
@@ -367,14 +381,18 @@ hero:
 # Markdown Pages
 # --------------
 # Generate .md companions for every HTML page and show a copy/view-as-Markdown
-# widget on each page.  Set to false to disable both (default: true).
+# widget on each page.
+# : false - disable both
+# : type(map) - (default) set the fields explicitly, as below
 markdown_pages:
   enabled: true   # Generate .md companions for every HTML page (default: true)
   widget: true    # Show the copy/view-as-Markdown widget (requires enabled)
 
 # Announcement Banner
 # -------------------
-# Site-wide banner above or below the navbar. Set `content` to enable it.
+# Site-wide banner above or below the navbar. Setting `content` enables it.
+# : type(str) - the banner text (sets `content`)
+# : type(map) - (default) set the fields explicitly, as below
 announcement:
   content: null          # null = no banner; else the banner text (supports basic Markdown)
   type: info             # "info" | "warning" | "success" | "danger"
@@ -386,8 +404,9 @@ announcement:
 # Versioning
 # ----------
 # Multi-version documentation; disabled when empty. Newest first.
-# versions: ["0.3", "0.2", "0.1"]          # minimal: tags only
-# versions:                                # or full control:
+# : [] - (default) single-version site
+# : type(list) - tags only, e.g. ["0.3", "0.2", "0.1"], or a map per version:
+# versions:
 #   - tag: "0.3"
 #     label: "0.3.0"
 #     latest: true
@@ -409,32 +428,41 @@ version_aliases:
 # Badge "new" expiry
 # -----------------
 # How long a page keeps its "new" status badge before it is considered old.
-# null: no expiry (badge persists). Accepts a duration understood by
-# parse_badge_expiry (see user_guide/30-multi-version-docs.qmd).
+# : null - (default) no expiry; the badge persists
+# : type(str) - a duration understood by parse_badge_expiry
+#               (see user_guide/30-multi-version-docs.qmd)
 new_is_old: null
 
 # Colors & Navbar
 # ---------------
-# Site-wide accent color (any CSS color); sets --gd-accent.
-# accent_color: "#3b82f6"                  # one color for both modes
-# accent_color:                            # or per-mode:
+# Site-wide accent color; sets --gd-accent.
+# : null - (default) the theme's own accent color
+# : type(str) - any CSS color, used in both modes, e.g. "#3b82f6"
+# : type(map) - per-mode:
+# accent_color:
 #   light: "#3b82f6"
 #   dark: "#60a5fa"
 accent_color: null
 
-# Navbar gradient preset (e.g. "sky", "peach", "lilac").
+# Navbar gradient preset.
+# : null - (default) no gradient
+# : type(str) - a preset name, e.g. sky, peach, lilac
 navbar_style: null
 
-# Navbar solid background color (any CSS color). Text color is chosen
-# automatically for contrast (APCA). Overridden when navbar_style is set.
-# navbar_color: "#3b82f6"                  # one color for both modes
-# navbar_color:                            # or per-mode:
+# Navbar solid background color. Text color is chosen automatically for
+# contrast (APCA). Overridden when navbar_style is set.
+# : null - (default) the theme's own navbar color
+# : type(str) - any CSS color, used in both modes, e.g. "#3b82f6"
+# : type(map) - per-mode:
+# navbar_color:
 #   light: "#3b82f6"
 #   dark: "#60a5fa"
 navbar_color: null
 
 # Content-area gradient preset (same preset names as navbar_style); adds a
 # subtle radial glow at the top of the content area.
+# : type(str) - a preset name (sets `preset`)
+# : type(map) - (default) set the fields explicitly, as below
 content_style:
   preset: null   # null = disabled; else a gradient preset name
   pages: all     # "all" or "homepage"
@@ -443,23 +471,29 @@ content_style:
 # ------------
 # Auto-shrink wide HTML output to the content width. The matched element's
 # nearest output wrapper is scaled down (never up).
-# null/false: disabled
-# scale_to_fit: ["#pb_tbl"]               # CSS selectors to auto-scale
+# : null - (default) disabled
+# : false - disabled
+# : type(list) - CSS selectors to auto-scale, e.g. ["#pb_tbl"]
 # Per-page override: `scale-to-fit: ["#pb_tbl"]`
 scale_to_fit: null
 
 # Minimum scale for scale-to-fit; below it, content is shown full size with
 # horizontal scrolling instead.
-# null/false: no minimum
-# float (0-1): minimum scale factor (e.g. 0.4 = don't shrink below 40%)
-# str keyword: viewport breakpoint below which scaling is disabled —
-#   "mobile" (≤ 576px), "tablet" (≤ 768px), "desktop" (≤ 992px)
+# : null - (default) no minimum
+# : false - no minimum
+# : type(float) - minimum scale factor, 0-1 (e.g. 0.4 = don't shrink below 40%)
+# : mobile - disable scaling at viewports ≤ 576px
+# : tablet - disable scaling at viewports ≤ 768px
+# : desktop - disable scaling at viewports ≤ 992px
 # Per-page override: `scale-to-fit-min-scale: "tablet"`
 scale_to_fit_min_scale: null
 
 # Navigation Icons
 # ----------------
-# Lucide icons prepended to sidebar/navbar entries. null/false disables.
+# Lucide icons prepended to sidebar/navbar entries.
+# : {} - (default) no icons
+# : false - disabled
+# : type(map) - an icon per navbar/sidebar entry:
 # nav_icons:
 #   navbar:
 #     "User Guide": book-open
@@ -483,21 +517,24 @@ attribution: true
 
 # Custom Head HTML
 # ----------------
-# Injected into <head> of every page. A string is inline HTML; a list mixes
-# inline strings and `text:`/`file:` map entries.
-# include_in_header: '<link rel="preconnect" href="https://example.com">'  # inline HTML
-# include_in_header:                                                       # or several entries:
+# Injected into <head> of every page.
+# : [] - (default) nothing injected
+# : type(str) - inline HTML, e.g. '<link rel="preconnect" href="https://example.com">'
+# : type(list) - several entries, mixing inline HTML and `text:`/`file:` maps:
+# include_in_header:
 #   - '<script defer src="/analytics.js"></script>'
 #   - file: partials/head.html
 include_in_header: []
 
 # Freeze (Execution Caching)
 # --------------------------
-# Whether computational documents re-run during builds.
+# Whether computational documents re-run during builds. A scalar shorthand
+# sets `mode` (e.g. `freeze: false`).
 # mode:
-#   null/false: disabled — execute every document on every build
-#   "auto" (default): re-render only when source changes
-#   true: never re-render during project render
+#   : auto - (default) re-render only when the source changes
+#   : true - never re-render during project render
+#   : false - execute every document on every build
+#   : null - as false
 # pre_render: script(s) to run before render (e.g. copy _freeze/ into the build dir)
 freeze:
   mode: auto
@@ -508,8 +545,9 @@ freeze:
 # Quarto's native pre-render hook (alternative to freeze.pre_render). Copied
 # into the build directory and wired into _quarto.yml. Paths are relative to
 # root.
-# pre_render: scripts/before-render.py     # single script
-# pre_render: [scripts/before-render.py, scripts/other.py]   # several
+# : [] - (default) no scripts
+# : type(str) - a single script, e.g. scripts/before-render.py
+# : type(list) - several, e.g. [scripts/before-render.py, scripts/other.py]
 pre_render: []
 
 # Agent Skills
