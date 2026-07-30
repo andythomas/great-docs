@@ -360,7 +360,16 @@ def test_api_reference_builds_with_a_type_alias(monkeypatch, tmp_path):
     ref.build()
 
     assert (tmp_path / "reference" / "index.qmd").exists()
-    assert (tmp_path / "reference" / "Contract.qmd").exists()
+    contract_qmd = (tmp_path / "reference" / "Contract.qmd").read_text()
+    assert "A contract kind." in contract_qmd
+    assert "doc-type-alias" in contract_qmd
+    assert "doc-label-typealias" in contract_qmd
+    assert (
+        "[type]{.doc-type-alias-keyword .kw} [Contract]{.doc-parameter-name}"
+        " [=]{.doc-parameter-default-sep .op}"
+        " [Literal[[&quot;a&quot;]{.st}, [&quot;b&quot;]{.st}]]{.doc-parameter-default}"
+        in contract_qmd
+    )
     kinds = {item.obj.kind.value for item in ref.items}
     assert "type alias" in kinds
 
