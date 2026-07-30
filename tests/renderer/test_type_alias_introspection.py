@@ -1,4 +1,9 @@
-"""Tests for objects whose canonical path cannot be read off the runtime object."""
+"""
+Tests for the dynamic (introspection) load path
+
+Two subjects share these fixtures: objects whose canonical path cannot be read
+off the runtime object, and the docstrings of PEP 695 type aliases.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,15 @@ from pathlib import Path
 
 import griffe as gf
 import pytest
+
+# Applied per-test rather than module-wide: the canonical-path tests below carry
+# no PEP 695 syntax and must keep running on 3.11.
+requires_pep695 = pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+
+BOILERPLATE = "Type aliases are created through the type statement"
 
 
 def _write_package(tmp_path: Path, name: str, files: dict[str, str]) -> Path:
@@ -139,3 +153,85 @@ def test_a_genuine_alias_cycle_still_raises(monkeypatch, tmp_path):
 
     with pytest.raises(gf.CyclicAliasError):
         _ = get_object("gdta_alias_cycle:x", dynamic=True).canonical_path
+
+
+@requires_pep695
+def test_documented_alias_keeps_the_author_docstring(monkeypatch, tmp_path):
+    from great_docs._apiref.introspect import get_object, replace_docstring
+
+    root = _write_package(
+        tmp_path,
+        "gdta_documented",
+        {
+            "__init__.py": '''
+                """Package."""
+                type Contract = int | str
+                """The author's own docstring."""
+            '''
+        },
+    )
+    _install(monkeypatch, root)
+
+    obj = get_object("gdta_documented:Contract")
+    replace_docstring(obj)
+
+    assert obj.docstring is not None
+    assert obj.docstring.value == "The author's own docstring."
+    assert BOILERPLATE not in obj.docstring.value
+
+
+@requires_pep695
+def test_undocumented_alias_gets_no_boilerplate(monkeypatch, tmp_path):
+    from great_docs._apiref.introspect import get_object, replace_docstring
+
+    root = _write_package(
+        tmp_path,
+        "gdta_undocumented",
+        {
+            "__init__.py": '''
+                """Package."""
+                type Contract = int | str
+            '''
+        },
+    )
+    _install(monkeypatch, root)
+
+    obj = get_object("gdta_undocumented:Contract")
+    replace_docstring(obj)
+
+    assert obj.docstring is None or BOILERPLATE not in obj.docstring.value
+
+
+@requires_pep695
+@pytest.mark.xfail(
+    reason=(
+        "Pre-existing bug unrelated to PEP 695: replace_docstring overwrites the "
+        "statically-parsed docstring of any attribute whose runtime value carries a "
+        "__doc__. Here `Contract: TypeAlias = int` picks up int.__doc__."
+    ),
+    strict=True,
+)
+def test_legacy_spelling_docstring_overwritten(monkeypatch, tmp_path):
+    """Pins the pre-existing overwrite bug for `X: TypeAlias = ...` until it is fixed"""
+    from great_docs._apiref.introspect import get_object, replace_docstring
+
+    root = _write_package(
+        tmp_path,
+        "gdta_legacy",
+        {
+            "__init__.py": '''
+                """Package."""
+                from typing import TypeAlias
+
+                Contract: TypeAlias = int
+                """Legacy docstring."""
+            '''
+        },
+    )
+    _install(monkeypatch, root)
+
+    obj = get_object("gdta_legacy:Contract")
+    replace_docstring(obj)
+
+    assert obj.docstring is not None
+    assert obj.docstring.value == "Legacy docstring."
