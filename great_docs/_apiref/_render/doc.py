@@ -174,6 +174,16 @@ class __RenderDoc(RenderBase):
         return self.obj.kind.value
 
     @cached_property
+    def kind_slug(self) -> str:
+        """
+        The object's kind as a CSS class slug
+
+        Some kinds (e.g. `type alias`) contain a space, which a browser would
+        otherwise parse as two separate classes.
+        """
+        return self.kind.replace(" ", "-")
+
+    @cached_property
     def label(self) -> str:
         """
         A label for the object
@@ -225,7 +235,7 @@ class __RenderDoc(RenderBase):
             Attr(
                 classes=[
                     "doc-object-name",
-                    f"doc-{self.kind}",
+                    f"doc-{self.kind_slug}",
                     "doc-label",
                     f"doc-label-{self.label}",
                 ],
@@ -605,7 +615,7 @@ class __RenderDoc(RenderBase):
         link = Link(
             markdown_escape(self.summary_name),
             f"{self.page_path}#{anchor}",
-            attr=Attr(classes=[f"doc-{self.kind}", "doc-label", f"doc-label-{self.label}"]),
+            attr=Attr(classes=[f"doc-{self.kind_slug}", "doc-label", f"doc-label-{self.label}"]),
         )
         return [(str(link), self.docstring_subject)]
 

@@ -11,6 +11,7 @@ from ._render.docattribute import RenderDocAttribute
 from ._render.docclass import RenderDocClass
 from ._render.docfunction import RenderDocFunction
 from ._render.docmodule import RenderDocModule
+from ._render.doctypealias import RenderDocTypeAlias
 from ._render.reference_page import RenderReferencePage
 from ._render.reference_section import RenderReferenceSection
 from .content import (
@@ -59,6 +60,7 @@ RenderObjType: TypeAlias = (
     | RenderDocClass
     | RenderDocFunction
     | RenderDocAttribute
+    | RenderDocTypeAlias
     | RenderDocModule
     | RenderReferencePage
     | RenderAPIPage

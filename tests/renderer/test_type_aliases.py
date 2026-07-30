@@ -91,3 +91,105 @@ def test_from_griffe_builds_a_type_alias_node():
     assert doc.kind == "type alias"
     assert doc.name == "Contract"
     assert doc.anchor == "package.Contract"
+
+
+def _render_alias(source: str, name: str) -> str:
+    """Render the named alias from a source snippet to qmd"""
+    from great_docs._apiref._tools import render_code_variable
+
+    return render_code_variable(source, name)
+
+
+def test_reported_crash_no_longer_raises():
+    """The reproducer from issue #288."""
+    source = 'from typing import Literal\n\ntype Contract = Literal["a", "b"]\n'
+    qmd = _render_alias(source, "Contract")
+    assert "Contract" in qmd
+
+
+@pytest.mark.parametrize(
+    ("source", "name", "expected"),
+    [
+        (
+            'from typing import Literal\ntype Contract = Literal["a", "b"]\n',
+            "Contract",
+            "[type]{.doc-type-alias-keyword .kw} [Contract]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [Literal['a', 'b']]{.doc-parameter-default}",
+        ),
+        (
+            "type ListOrSet[T] = list[T] | set[T]\n",
+            "ListOrSet",
+            "[type]{.doc-type-alias-keyword .kw} [ListOrSet[T]]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [list[T] | set[T]]{.doc-parameter-default}",
+        ),
+        (
+            "from typing import Callable\ntype Callback[**P] = Callable[P, int]\n",
+            "Callback",
+            "[type]{.doc-type-alias-keyword .kw} [Callback[**P]]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [Callable[P, int]]{.doc-parameter-default}",
+        ),
+        (
+            "type Bounded[T: str] = list[T]\n",
+            "Bounded",
+            "[type]{.doc-type-alias-keyword .kw} [Bounded[T: str]]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [list[T]]{.doc-parameter-default}",
+        ),
+        (
+            "type Constrained[S: (str, bytes)] = list[S]\n",
+            "Constrained",
+            "[type]{.doc-type-alias-keyword .kw}"
+            " [Constrained[S: (str, bytes)]]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [list[S]]{.doc-parameter-default}",
+        ),
+        (
+            "type Variadic[T, *Ts] = tuple[T, *Ts]\n",
+            "Variadic",
+            "[type]{.doc-type-alias-keyword .kw} [Variadic[T, *Ts]]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [tuple[T, *Ts]]{.doc-parameter-default}",
+        ),
+        (
+            "type WithDefault[T = int] = list[T]\n",
+            "WithDefault",
+            "[type]{.doc-type-alias-keyword .kw} [WithDefault[T = int]]{.doc-parameter-name}"
+            " [=]{.doc-parameter-default-sep .op}"
+            " [list[T]]{.doc-parameter-default}",
+        ),
+    ],
+)
+def test_signature_rendering(source: str, name: str, expected: str):
+    assert expected in _render_alias(source, name)
+
+
+def test_css_class_slug_is_hyphenated():
+    """A space in the class attribute would silently become two classes."""
+    qmd = _render_alias("type Contract = int | str\n", "Contract")
+    assert "doc-type-alias" in qmd
+    assert "doc-type alias" not in qmd
+
+
+def test_label_class_reaches_existing_scss():
+    qmd = _render_alias("type Contract = int | str\n", "Contract")
+    assert "doc-label-typealias" in qmd
+
+
+def test_docstring_is_rendered():
+    source = 'type Contract = int | str\n"""A contract kind."""\n'
+    assert "A contract kind." in _render_alias(source, "Contract")
+
+
+def test_recursive_alias_renders():
+    """Lazy evaluation means the value is never resolved, so this must not raise."""
+    qmd = _render_alias("type Recursive = Recursive | None\n", "Recursive")
+    assert "Recursive" in qmd
+
+
+def test_forward_reference_alias_renders():
+    """The static `.value` expression is unresolved, so an undefined name is fine."""
+    qmd = _render_alias("type Broken = NotDefinedAnywhere\n", "Broken")
+    assert "NotDefinedAnywhere" in qmd
