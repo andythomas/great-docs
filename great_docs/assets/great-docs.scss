@@ -726,7 +726,7 @@ dt a.doc-method-name::after {
   }
 
   // Attribute signature (uses <p><code> rather than div.sourceCode)
-  .doc-signature.doc-attribute {
+  .doc-signature:is(.doc-attribute, .doc-type-alias) {
     code {
       background-color: #2d3748 !important;
       color: #e2e8f0 !important;

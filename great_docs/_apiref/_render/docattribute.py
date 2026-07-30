@@ -43,7 +43,7 @@ class __RenderDocAttribute(RenderDoc):
         term = self.render_variable_definition(name, annotation, default)
         return Div(
             Code(str(term)).html,
-            Attr(classes=["doc-signature", f"doc-{self.kind}"]),
+            Attr(classes=["doc-signature", f"doc-{self.kind_slug}"]),
         )
 
     def render_description(self) -> BlockContent:

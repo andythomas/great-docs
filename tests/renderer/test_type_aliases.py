@@ -115,7 +115,7 @@ def test_reported_crash_no_longer_raises():
             "Contract",
             "[type]{.doc-type-alias-keyword .kw} [Contract]{.doc-parameter-name}"
             " [=]{.doc-parameter-default-sep .op}"
-            " [Literal['a', 'b']]{.doc-parameter-default}",
+            " [Literal[[&quot;a&quot;]{.st}, [&quot;b&quot;]{.st}]]{.doc-parameter-default}",
         ),
         (
             "type ListOrSet[T] = list[T] | set[T]\n",
@@ -173,7 +173,8 @@ def test_css_class_slug_is_hyphenated():
     assert "doc-type alias" not in qmd
 
 
-def test_label_class_reaches_existing_scss():
+def test_label_class_is_emitted():
+    """The label class matches the existing `.doc-label-typealias` scss rule."""
     qmd = _render_alias("type Contract = int | str\n", "Contract")
     assert "doc-label-typealias" in qmd
 
@@ -186,10 +187,31 @@ def test_docstring_is_rendered():
 def test_recursive_alias_renders():
     """Lazy evaluation means the value is never resolved, so this must not raise."""
     qmd = _render_alias("type Recursive = Recursive | None\n", "Recursive")
-    assert "Recursive" in qmd
+    assert "[Recursive | None]{.doc-parameter-default}" in qmd
 
 
 def test_forward_reference_alias_renders():
     """The static `.value` expression is unresolved, so an undefined name is fine."""
     qmd = _render_alias("type Broken = NotDefinedAnywhere\n", "Broken")
     assert "NotDefinedAnywhere" in qmd
+
+
+def test_valueless_alias_omits_default_clause():
+    """A `TypeAlias` with no `.value` must not render the literal string 'None'.
+
+    `type X = ...` always has a value when parsed from source, so this state
+    is constructed directly rather than via `_render_alias`.
+    """
+    import griffe as gf
+
+    from great_docs._apiref._render import get_render_type
+    from great_docs._apiref.content import Doc
+
+    obj = gf.TypeAlias(name="Empty", lineno=1)
+    assert obj.value is None
+
+    doc = Doc.from_griffe("Empty", obj)
+    qmd = str(get_render_type(doc)(doc, 1))
+
+    assert "None" not in qmd
+    assert "doc-parameter-default-sep" not in qmd

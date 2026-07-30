@@ -169,7 +169,7 @@ class __RenderDoc(RenderBase):
         """
         The object's kind
 
-        class, function, method, property, attribute, module, alias
+        class, function, method, property, attribute, type alias, module, alias
         """
         return self.obj.kind.value
 
