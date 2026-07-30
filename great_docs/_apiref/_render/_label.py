@@ -91,10 +91,15 @@ def get_label(obj: gf.Alias | gf.Object) -> str:
     return label
 
 
-def _attribute_label(obj: gf.Attribute) -> str:
+def _attribute_label(obj: gf.Attribute | gf.TypeAlias) -> str:
+    # A PEP 695 alias (`type X = ...`) is a `TypeAlias`, which has no
+    # `annotation`, so this must precede any use of one.
+    if obj.kind.value == "type alias":
+        return "typealias"
+
     annotation = str(obj.annotation) if obj.annotation else ""
 
-    if obj.kind.value == "type alias":
+    if "TypeAlias" in annotation:
         return "typealias"
     elif "TypeVar" in annotation or "ParamSpec" in annotation or "TypeVarTuple" in annotation:
         return "typevar"

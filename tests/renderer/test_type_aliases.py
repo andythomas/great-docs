@@ -42,3 +42,39 @@ def test_render_type_parameters_none():
     from great_docs._apiref._render._type_parameters import render_type_parameters
 
     assert render_type_parameters(None) == ""
+
+
+def _load_member(code: str, name: str):
+    """Load a single named member from a source snippet"""
+    import griffe as gf
+
+    with gf.temporary_visited_package("package", {"__init__.py": code}) as m:
+        return m[name]
+
+
+def test_label_pep695_spelling():
+    from great_docs._apiref._render._label import get_label
+
+    obj = _load_member('type Contract = int | str', "Contract")
+    assert get_label(obj) == "typealias"
+
+
+def test_label_legacy_spelling():
+    from great_docs._apiref._render._label import get_label
+
+    code = "from typing import TypeAlias\nContract: TypeAlias = int | str\n"
+    obj = _load_member(code, "Contract")
+    assert get_label(obj) == "typealias"
+
+
+def test_label_typevar_still_works():
+    from great_docs._apiref._render._label import get_label
+
+    code = 'from typing import TypeVar\nT = TypeVar("T")\n'
+    assert get_label(_load_member(code, "T")) == "typevar"
+
+
+def test_label_plain_constant_still_works():
+    from great_docs._apiref._render._label import get_label
+
+    assert get_label(_load_member("MAX: int = 3\n", "MAX")) == "constant"
