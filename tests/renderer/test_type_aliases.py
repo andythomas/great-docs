@@ -176,6 +176,28 @@ def test_signature_rendering(source: str, name: str, expected: str):
     assert expected in _render_alias(source, name)
 
 
+def test_type_information_preserves_alias_name():
+    from unittest.mock import MagicMock, patch
+
+    import griffe as gf
+
+    from great_docs._apiref.typing_information import TypeInformation
+
+    api_ref = MagicMock()
+    api_ref.package = "package"
+    api_ref.settings.dir = "reference"
+
+    with (
+        gf.temporary_visited_package(
+            "package", {"__init__.py": "type Contract[T] = list[T]\n"}
+        ) as module,
+        patch("great_docs._apiref.typing_information.get_object", return_value=module),
+    ):
+        rendered = str(TypeInformation("package", api_ref))
+
+    assert "[Contract[T]]{.doc-parameter-name}" in rendered
+
+
 def test_css_class_slug_is_hyphenated():
     """A space in the class attribute would silently become two classes."""
     qmd = _render_alias("type Contract = int | str\n", "Contract")

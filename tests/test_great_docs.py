@@ -34113,7 +34113,7 @@ def test_type_sections_post_init_typevars_no_sig_name():
 
 
 def test_type_sections_post_init_typealiases_settings():
-    """TypeSections.__post_init__ sets show_signature_name=False and show_signature_annotation=False on typealiases."""
+    """TypeSections keeps alias names and hides redundant annotations."""
 
     ta_item = InventoryItem(name="MyAlias", obj=MagicMock())
 
@@ -34132,8 +34132,8 @@ def test_type_sections_post_init_typealiases_settings():
             typealiases_items=[ta_item],
         )
 
-    assert mock_render.show_signature_name is False
     assert mock_render.show_signature_annotation is False
+    assert "show_signature_name" not in ts.categories[2].render_flags
 
 
 def test_type_sections_render_body_protocols_section():

@@ -60,7 +60,7 @@ class TypeSections(Block):
             _TypeCategory(
                 "Type Aliases",
                 self.typealiases_items,
-                {"show_signature_name": False, "show_signature_annotation": False},
+                {"show_signature_annotation": False},
             ),
         ]
 
