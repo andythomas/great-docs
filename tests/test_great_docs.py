@@ -3517,7 +3517,9 @@ def test_dark_only_logo_does_not_crash_quarto_config():
 
         assets = project_path / "assets"
         assets.mkdir()
-        (assets / "logo-dark.svg").write_text("<svg></svg>")
+        (assets / "logo-dark.svg").write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>'
+        )
 
         gd_yml = project_path / "great-docs.yml"
         gd_yml.write_text("logo:\n  dark: assets/logo-dark.svg\n", encoding="utf-8")
