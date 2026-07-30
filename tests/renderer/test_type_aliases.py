@@ -308,3 +308,33 @@ def test_module_level_type_alias_group():
 
     assert "Type Aliases" in qmd
     assert "Contract" in qmd
+
+
+def test_inventory_role_for_type_alias():
+    from great_docs._apiref.inventory import InventoryItem, _create_inventory_item
+
+    obj = _load_member("type Contract = int | str\n", "Contract")
+    entry = _create_inventory_item(InventoryItem(obj=obj, name="package.Contract"))
+
+    assert entry["role"] == "type"
+
+
+def test_inventory_roles_never_contain_spaces():
+    from great_docs._apiref.inventory import InventoryItem, _create_inventory_item
+
+    code = "type Contract = int | str\ndef f(): ...\nclass C: ...\nMAX: int = 3\n"
+    for name in ("Contract", "f", "C", "MAX"):
+        obj = _load_member(code, name)
+        entry = _create_inventory_item(InventoryItem(obj=obj, name=name))
+        assert " " not in entry["role"]
+
+
+def test_inventory_roles_unchanged_for_other_kinds():
+    from great_docs._apiref.inventory import InventoryItem, _create_inventory_item
+
+    code = "def f(): ...\nclass C: ...\nMAX: int = 3\n"
+    expected = {"f": "function", "C": "class", "MAX": "attribute"}
+    for name, role in expected.items():
+        obj = _load_member(code, name)
+        entry = _create_inventory_item(InventoryItem(obj=obj, name=name))
+        assert entry["role"] == role
