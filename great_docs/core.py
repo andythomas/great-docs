@@ -6,11 +6,12 @@ import sys
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 
 from ._subprocess import TEXT_MODE_KWARGS
-from .config import Config
+from .config import Config, create_default_config
 
 # Quarto's default input file types, enumerated as render globs. Used to seed
 # `project.render` whenever we also add `!` exclusions. A recursive `**` glob
@@ -4924,7 +4925,7 @@ class GreatDocs:
         if not module_path:
             # Try common MCP module locations based on the documented package
             package_name = self._normalize_package_name(
-                self._config.get("module") or self.project_path.name
+                self._config["module"] or self.project_path.name
             )
             common_mcp_modules = [
                 f"{package_name}.mcp",
@@ -5097,7 +5098,7 @@ class GreatDocs:
         package_name = self._detect_package_name()
         owner, repo, _ = self._get_github_repo_info()
         repo_url = f"https://github.com/{owner}/{repo}" if owner and repo else None
-        site_url = self._config.get("site_url")
+        site_url = self._config["site_url"]
 
         generate_mcp_manifest(
             server_info=mcp_info,
@@ -9269,13 +9270,7 @@ class GreatDocs:
         if not authors:
             return ""
 
-        lines = [
-            "# Author Information",
-            "# ------------------",
-            "# Author metadata for display in the landing page sidebar",
-            "# You can add additional fields: github, orcid, affiliation, homepage",
-            "authors:",
-        ]
+        lines = ["authors:"]
 
         for author in authors:
             lines.append(f"  - name: {author['name']}")
@@ -9293,141 +9288,13 @@ class GreatDocs:
 
         return "\n".join(lines)
 
-    @staticmethod
-    def _format_preserved_extras_yaml(
-        display_name: str | None = None,
-        site: dict | None = None,
-        funding: dict | None = None,
-    ) -> tuple[str, str, str]:
-        """
-        Build YAML fragments for preserved config values.
-
-        Returns
-        -------
-        tuple[str, str, str]
-            `(display_name_yaml, site_yaml, funding_yaml)`: each is either
-            an active YAML block or the commented-out template placeholder.
-        """
-        # ── display_name ─────────────────────────────────────────────
-        if display_name:
-            dn_yaml = (
-                "# Display Name\n"
-                "# ------------\n"
-                "# Custom display name for the site navbar/title\n"
-                f'display_name: "{display_name}"\n'
-            )
-        else:
-            dn_yaml = ""
-
-        # ── site settings ────────────────────────────────────────────
-        if site:
-            parts = [
-                "# Site Settings",
-                "# -------------",
-                "site:",
-            ]
-            for k, v in site.items():
-                if isinstance(v, bool):
-                    parts.append(f"  {k}: {'true' if v else 'false'}")
-                elif isinstance(v, str):
-                    parts.append(f"  {k}: {v}")
-                else:
-                    parts.append(f"  {k}: {v}")
-            site_yaml = "\n".join(parts) + "\n"
-        else:
-            site_yaml = (
-                "# Site Settings\n"
-                "# -------------\n"
-                "# site:\n"
-                "#   theme: flatly              # Quarto theme (default: flatly)\n"
-                "#   toc: true                  # Show table of contents (default: true)\n"
-                "#   toc-depth: 2               # TOC heading depth (default: 2)\n"
-                '#   toc-title: On this page    # TOC title (default: "On this page")\n'
-            )
-
-        # ── funding ──────────────────────────────────────────────────
-        if funding and isinstance(funding, dict) and funding.get("name"):
-            parts = [
-                "# Funding / Copyright Holder",
-                "# --------------------------",
-                "funding:",
-                f'  name: "{funding["name"]}"',
-            ]
-            if funding.get("roles"):
-                parts.append("  roles:")
-                for role in funding["roles"]:
-                    parts.append(f"    - {role}")
-            if funding.get("homepage"):
-                parts.append(f"  homepage: {funding['homepage']}")
-            if funding.get("ror"):
-                parts.append(f"  ror: {funding['ror']}")
-            funding_yaml = "\n".join(parts) + "\n"
-        else:
-            funding_yaml = (
-                "# Funding / Copyright Holder\n"
-                "# --------------------------\n"
-                "# Credit the organization that funds or holds copyright for this package.\n"
-                "# Displays in sidebar and footer. Homepage and ROR provide links.\n"
-                "# funding:\n"
-                '#   name: "Posit Software, PBC"\n'
-                "#   roles:\n"
-                "#     - Copyright holder\n"
-                "#     - funder\n"
-                "#   homepage: https://posit.co\n"
-                "#   ror: https://ror.org/03wc8by49\n"
-            )
-
-        return dn_yaml, site_yaml, funding_yaml
-
-    @staticmethod
-    def _format_cli_yaml(cli_config: dict | None = None) -> str:
-        """
-        Build YAML fragment for CLI documentation configuration.
-
-        Parameters
-        ----------
-        cli_config
-            CLI config dict (e.g. `{"enabled": True, "module": "pkg.cli"}`),
-            or `None` to emit a commented-out template.
-
-        Returns
-        -------
-        str
-            Active `cli:` YAML block when enabled, or a commented-out template.
-        """
-        if cli_config and cli_config.get("enabled"):
-            parts = [
-                "# CLI Documentation",
-                "# -----------------",
-                "cli:",
-                "  enabled: true",
-            ]
-            if cli_config.get("module"):
-                parts.append(f"  module: {cli_config['module']}")
-            if cli_config.get("name"):
-                parts.append(f"  name: {cli_config['name']}")
-            return "\n".join(parts) + "\n"
-
-        return (
-            "\n".join(
-                [
-                    "# CLI Documentation",
-                    "# -----------------",
-                    "# cli:",
-                    "#   enabled: true              # Enable CLI documentation",
-                    "#   module: my_package.cli     # Module containing Click commands",
-                    "#   name: cli                  # Name of the Click command object",
-                ]
-            )
-            + "\n"
-        )
-
     def _generate_initial_config(self, force: bool = False) -> bool:
         """
         Generate an initial great-docs.yml with discovered exports.
 
-        Creates a great-docs.yml file in the project root with sensible defaults
-        and a reference section populated from discovered package exports.
+        Renders the shipped `great-docs.default.yml` template with detected
+        values (`parser`, `dynamic`, and optionally `module`, `authors`,
+        `reference`) spliced in as live keys.
 
         Parameters
         ----------
@@ -9441,7 +9308,6 @@ class GreatDocs:
         """
         config_path = self._find_package_root() / "great-docs.yml"
 
-        # Check if config already exists
         if config_path.exists() and not force:
             print(
                 f"great-docs.yml already exists at {config_path}\n"
@@ -9453,43 +9319,48 @@ class GreatDocs:
         package_name = self._detect_package_name()
         if not package_name:
             print("Warning: Could not detect package name, creating minimal config")
-            # Create minimal config without reference section
-            config_content = self._generate_minimal_config()
-            config_path.write_text(config_content, encoding="utf-8")
+            # No importable name to detect from; fall back to the documented
+            # parser/dynamic defaults so the emitted config is never empty.
+            minimal_overrides = {"parser": "parser: numpy", "dynamic": "dynamic: true"}
+            config_path.write_text(
+                create_default_config(minimal_overrides), encoding="utf-8"
+            )
             print(f"Created {config_path}")
             return True
 
-        # Get normalized package name for imports
-        importable_name = self._normalize_package_name(package_name)
+        overrides: dict[str, str] = {}
 
-        # Try to detect the actual module name (handles namespace packages,
-        # src-layout mismatches, compiled extensions, etc.)
+        # Resolve the importable module name.
+        importable_name = self._normalize_package_name(package_name)
         module_name = self._detect_module_name()
         if module_name:
             importable_name = module_name
-
-        # Only write an explicit 'module:' line when the detected module name
-        # differs from the simple hyphen→underscore normalized project name.
         normalized_name = self._normalize_package_name(package_name)
         explicit_module = module_name if module_name != normalized_name else None
+        if explicit_module:
+            overrides["module"] = f"module: {explicit_module}"
 
         # Detect docstring style
         print("Detecting docstring style...")
         parser_style = self._detect_docstring_style(importable_name)
+        overrides["parser"] = f"parser: {parser_style}"
+
+        # Authors from pyproject.toml
+        authors_yaml = self._format_authors_yaml(self._extract_authors_from_pyproject())
+        if authors_yaml:
+            overrides["authors"] = authors_yaml
 
         # Discover exports
         exports = self._get_package_exports(importable_name)
         if not exports:
-            print("Warning: Could not discover exports, creating minimal config")
-            # Without exports, we still try to detect dynamic mode
+            print(
+                "Warning: Could not discover exports; edit the commented "
+                "'reference:' section in great-docs.yml to list your API."
+            )
             print("Testing dynamic introspection mode...")
             dynamic_mode = self._detect_dynamic_mode(importable_name)
-            config_content = self._generate_minimal_config(
-                parser=parser_style,
-                dynamic=dynamic_mode,
-                module=explicit_module,
-            )
-            config_path.write_text(config_content, encoding="utf-8")
+            overrides["dynamic"] = f"dynamic: {'true' if dynamic_mode else 'false'}"
+            config_path.write_text(create_default_config(overrides), encoding="utf-8")
             print(f"Created {config_path}")
             return True
 
@@ -9497,7 +9368,6 @@ class GreatDocs:
         print("Categorizing API objects...")
         categories = self._categorize_api_objects(importable_name, exports)
 
-        # Determine dynamic mode based on cyclic alias detection during categorization
         cyclic_alias_count = categories.get("cyclic_alias_count", 0)
         if cyclic_alias_count > 0:
             print(
@@ -9505,260 +9375,41 @@ class GreatDocs:
             )  # pragma: no cover
             dynamic_mode = False  # pragma: no cover
         else:
-            # Run the explicit detection as a fallback
             print("Testing dynamic introspection mode...")
             dynamic_mode = self._detect_dynamic_mode(importable_name)
+        overrides["dynamic"] = f"dynamic: {'true' if dynamic_mode else 'false'}"
 
-        # Generate config content
-        config_content = self._generate_config_with_reference(
-            categories,
-            importable_name,
-            parser=parser_style,
-            dynamic=dynamic_mode,
-            module=explicit_module,
-        )
+        reference_yaml = self._build_reference_yaml(categories)
+        if "  - title:" in reference_yaml:
+            overrides["reference"] = reference_yaml
 
-        config_path.write_text(config_content, encoding="utf-8")
+        config_path.write_text(create_default_config(overrides), encoding="utf-8")
         print(f"Created {config_path}")
         return True
 
-    def _generate_minimal_config(
-        self,
-        parser: str = "numpy",
-        dynamic: bool = True,
-        module: str | None = None,
-    ) -> str:
+    def _build_reference_yaml(self, categories: dict) -> str:
         """
-        Generate minimal great-docs.yml without reference section.
-
-        Parameters
-        ----------
-        parser
-            The docstring parser style ("numpy", "google", or "sphinx").
-        dynamic
-            Whether to use dynamic introspection mode for API reference generation.
-        module
-            Explicit module name when it differs from the project name.
-
-        Returns
-        -------
-        str
-            YAML content for a minimal configuration file.
-        """
-        dynamic_str = "true" if dynamic else "false"
-
-        # Extract authors from pyproject.toml
-        authors = self._extract_authors_from_pyproject()
-        authors_yaml = self._format_authors_yaml(authors)
-
-        # Build the config with optional authors section
-        authors_section = f"\n{authors_yaml}\n" if authors_yaml else ""
-
-        # Build default YAML fragments for site, funding, etc.
-        _dn_yaml, site_yaml, funding_yaml = self._format_preserved_extras_yaml()
-
-        # Build CLI section (default commented-out template)
-        cli_yaml = self._format_cli_yaml()
-
-        return f"""# Great Docs Configuration
-# See https://posit-dev.github.io/great-docs/user-guide/configuration.html
-
-# Module Name (optional)
-# ----------------------
-# Set this if your importable module name differs from the project name.
-# Example: project 'py-yaml12' with module name 'yaml12'
-{f"module: {module}" if module else "# module: yaml12"}
-
-# Docstring Parser
-# ----------------
-# The docstring format used in your package (numpy, google, or sphinx)
-parser: {parser}
-
-# Dynamic Introspection
-# ---------------------
-# Use runtime introspection for more accurate documentation (default: true)
-# Set to false if your package has cyclic alias issues (e.g., PyO3/Rust bindings)
-dynamic: {dynamic_str}
-
-# Exclusions
-# ----------
-# Items to exclude from auto-documentation (affects 'init' and 'scan')
-# exclude:
-#   - InternalClass
-#   - helper_function
-
-# Logo & Favicon
-# ---------------
-# Point to a single logo file (replaces the text title in the navbar):
-# logo: assets/logo.svg
-#
-# For light/dark variants:
-# logo:
-#   light: assets/logo-light.svg
-#   dark: assets/logo-dark.svg
-#
-# To show the text title alongside the logo, add: show_title: true
-{authors_section}
-{funding_yaml}
-# Site URL
-# --------
-# Canonical address of the deployed documentation site.
-# Required for subdirectory deployments, skills page install commands,
-# .well-known/ discovery, and sitemaps.
-# site_url: "https://your-org.github.io/your-package/"
-
-{site_yaml}
-# Jupyter Kernel
-# --------------
-# Jupyter kernel to use for executing code cells in .qmd files.
-# This is set at the project level so it applies to all pages, including
-# auto-generated API reference pages. Can be overridden in individual .qmd
-# file frontmatter if needed for special cases.
-jupyter: python3
-
-{cli_yaml}
-# API Reference Structure
-# -----------------------
-# Auto-discovery couldn't determine your package's public API.
-# You can manually specify which items to document here.
-#
-# Uncomment and customize the reference section below:
-#
-# reference:
-#   - title: Functions
-#     desc: Public functions provided by the package
-#     contents:
-#       - my_function
-#       - another_function
-#
-#   - title: Classes
-#     desc: Main classes for working with the package
-#     contents:
-#       - name: MyClass
-#         members: false       # Don't document methods inline
-#       - SimpleClass          # Methods documented inline (default)
-#
-# After editing, run 'great-docs build' to generate your documentation.
-"""
-
-    def _generate_config_with_reference(
-        self,
-        categories: dict,
-        package_name: str,
-        parser: str = "numpy",
-        dynamic: bool = True,
-        module: str | None = None,
-    ) -> str:
-        """
-        Generate great-docs.yml with a reference section from discovered exports.
+        Build the `reference:` YAML block from categorized exports
 
         Parameters
         ----------
         categories
-            Dictionary from _categorize_api_objects with classes, functions, other.
-        package_name
-            The package name (for method threshold comments).
-        parser
-            The docstring parser style ("numpy", "google", or "sphinx").
-        dynamic
-            Whether to use dynamic introspection mode for API reference generation.
-        module
-            Explicit module name when it differs from the project name.
+            Dictionary from `_categorize_api_objects` with class-like and flat
+            export groups plus method-count metadata.
 
         Returns
         -------
         str
-            YAML content for the configuration file.
+            A YAML block beginning with `reference:`; bare `reference:` when no
+            category has items.
         """
-        dynamic_str = "true" if dynamic else "false"
+        lines = ["reference:"]
 
-        # Extract authors from pyproject.toml
-        authors = self._extract_authors_from_pyproject()
-        authors_yaml = self._format_authors_yaml(authors)
-
-        lines = [
-            "# Great Docs Configuration",
-            "# See https://posit-dev.github.io/great-docs/user-guide/configuration.html",
-            "",
-            "# Module Name (optional)",
-            "# ----------------------",
-            "# Set this if your importable module name differs from the project name.",
-            "# Example: project 'py-yaml12' with module name 'yaml12'",
-            f"module: {module}" if module else "# module: yaml12",
-            "",
-        ]
-
-        lines.extend(
-            [
-                "# Docstring Parser",
-                "# ----------------",
-                "# The docstring format used in your package (numpy, google, or sphinx)",
-                f"parser: {parser}",
-                "",
-                "# Dynamic Introspection",
-                "# ---------------------",
-                "# Use runtime introspection for more accurate documentation (default: true)",
-                "# Set to false if your package has cyclic alias issues (e.g., PyO3/Rust bindings)",
-                f"dynamic: {dynamic_str}",
-                "",
-                "# API Discovery Settings",
-                "# ----------------------",
-                "# Exclude items from auto-documentation",
-                "# exclude:",
-                "#   - InternalClass",
-                "#   - helper_function",
-                "",
-                "# Logo & Favicon",
-                "# ---------------",
-                "# Point to a single logo file (replaces the text title in the navbar):",
-                "# logo: assets/logo.svg",
-                "#",
-                "# For light/dark variants:",
-                "# logo:",
-                "#   light: assets/logo-light.svg",
-                "#   dark: assets/logo-dark.svg",
-                "#",
-                "# To show the text title alongside the logo, add: show_title: true",
-                "",
-            ]
-        )
-
-        # Add authors section if we found any
-        if authors_yaml:
-            lines.append(authors_yaml)
-            lines.append("")
-
-        # Add funding section (default commented-out template)
-        _dn_yaml, site_yaml, funding_yaml = self._format_preserved_extras_yaml()
-        lines.extend(funding_yaml.rstrip("\n").splitlines())
-        lines.append("")
-
-        # Add reference section
-        lines.extend(
-            [
-                "# API Reference Structure",
-                "# -----------------------",
-                "# Customize the sections below to organize your API documentation.",
-                "# - Reorder items within a section to change their display order",
-                "# - Move items between sections or create new sections",
-                "# - Use 'members: false' to exclude methods from documentation",
-                "# - Add 'desc:' to sections for descriptions",
-                "",
-                "reference:",
-            ]
-        )
-
-        # Auto-generate reference sections from discovered exports
         class_methods = categories.get("class_methods", {})
         class_method_names = categories.get("class_method_names", {})
-
-        # Track large classes that need separate method sections
         large_classes: list[str] = []
-
-        # Track whether we've emitted any section yet (for blank-line spacing)
         has_prev_section = False
 
-        # --- Class-like sections (support big-class splitting) ---
         _class_like_sections = [
             ("classes", "Classes", "Main classes provided by the package"),
             ("dataclasses", "Dataclasses", "Dataclass definitions"),
@@ -9787,7 +9438,6 @@ jupyter: python3
                     lines.append(f"      - {class_name}")
             has_prev_section = True
 
-        # Add separate method sections for large classes
         for class_name in large_classes:
             method_names = class_method_names.get(class_name, [])
             if method_names:
@@ -9798,7 +9448,6 @@ jupyter: python3
                 for method_name in method_names:
                     lines.append(f"      - {class_name}.{method_name}")
 
-        # --- Flat sections (simple lists, no big-class splitting) ---
         _flat_sections = [
             ("enums", "Enumerations", "Enumeration types"),
             ("exceptions", "Exceptions", "Exception classes"),
@@ -9824,40 +9473,7 @@ jupyter: python3
                 lines.append(f"      - {name}")
             has_prev_section = True
 
-        # Add trailing sections for site URL and site settings (default templates)
-        lines.extend(
-            [
-                "",
-                "# Site URL",
-                "# --------",
-                "# Canonical address of the deployed documentation site.",
-                "# Required for subdirectory deployments, skills page install commands,",
-                "# .well-known/ discovery, and sitemaps.",
-                '# site_url: "https://your-org.github.io/your-package/"',
-                "",
-            ]
-        )
-        lines.extend(site_yaml.rstrip("\n").splitlines())
-
-        lines.extend(
-            [
-                "",
-                "# Jupyter Kernel",
-                "# --------------",
-                "# Jupyter kernel to use for executing code cells in .qmd files.",
-                "# This is set at the project level so it applies to all pages, including",
-                "# auto-generated API reference pages. Can be overridden in individual .qmd",
-                "# file frontmatter if needed for special cases.",
-                "jupyter: python3",
-                "",
-            ]
-        )
-
-        # Add CLI documentation section (default commented-out template)
-        cli_yaml = self._format_cli_yaml()
-        lines.extend(cli_yaml.rstrip("\n").splitlines())
-
-        return "\n".join(lines) + "\n"
+        return "\n".join(lines)
 
     def _find_index_source_file(self) -> tuple[Path | None, list[str]]:
         """
@@ -12014,19 +11630,20 @@ anchor-sections: true
                 if "!.well-known/**" not in config["project"]["render"]:
                     config["project"]["render"].append("!.well-known/**")
 
-        # Apply site settings from great-docs.yml (forwarded to format.html)
-        site_settings = self._config.site
-        config["format"]["html"]["theme"] = site_settings.get("theme", "flatly")
-        config["format"]["html"]["toc"] = site_settings.get("toc", True)
-        config["format"]["html"]["toc-depth"] = site_settings.get("toc-depth", 2)
-        config["format"]["html"]["html-math-method"] = site_settings.get(
-            "html-math-method", "katex"
+        # Site settings are a pure Quarto passthrough: the whole subtree
+        # (theme, toc, toc-depth, html-math-method defaults from
+        # great-docs.default.yml, plus any user format.html keys) merges into
+        # format.html. Legacy great-docs keys were normalized to the top level
+        # at load, and css is applied separately below.
+        config["format"]["html"] = Config._merge(
+            config["format"]["html"], self._config.site_quarto
         )
 
-        # Use translated toc-title unless the user explicitly overrode it
-        if "toc-title" in site_settings:
-            config["format"]["html"]["toc-title"] = site_settings["toc-title"]  # pragma: no cover
-        else:
+        # toc-title: use the translated label unless the user overrode it via
+        # site.toc-title. Test the user's `site` rather than the merged result —
+        # a label this method wrote on an earlier pass must be refreshed from the
+        # current language, not treated as an override.
+        if "toc-title" not in self._config.site_quarto:
             from ._translations import get_translation
 
             config["format"]["html"]["toc-title"] = get_translation(
@@ -16430,7 +16047,7 @@ anchor-sections: true
                     site_url=self._config.site_url,
                     progress_callback=_progress_cb,
                     on_renders_done=_on_renders_done,
-                    badge_expiry_raw=self._config.get("new_is_old"),
+                    badge_expiry_raw=self._config["new_is_old"],
                 )
 
                 if not vb_result["success"]:
@@ -16985,9 +16602,17 @@ anchor-sections: true
         if versions:
             return "full"
 
-        # Page metadata dates need git log for first-commit detection
-        site = cfg.get("site", {})
-        if isinstance(site, dict) and site.get("show_dates"):
+        # Page metadata dates need git log for first-commit detection.
+        # `show_dates` lives at the top level; `site.show_dates` is kept as a
+        # legacy fallback since this raw-YAML inspection runs before any
+        # `Config`-level normalization (Config._lift_legacy_site_keys never
+        # sees this clone).
+        show_dates = cfg.get("show_dates")
+        if show_dates is None:
+            site = cfg.get("site")
+            if isinstance(site, dict):
+                show_dates = site.get("show_dates")
+        if show_dates:
             return "full"
 
         # Source links benefit from tags for _detect_git_ref()

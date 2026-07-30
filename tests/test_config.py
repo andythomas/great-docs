@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from great_docs.config import Config, DEFAULT_CONFIG, create_default_config, load_config
+from great_docs import config as config_module
+from great_docs.config import DEFAULT_CONFIG, Config, create_default_config, load_config
 
 
 @pytest.fixture
@@ -34,6 +35,14 @@ class TestConfigInit:
     def test_no_config_file_uses_defaults(self, tmp_project: Path):
         cfg = Config(tmp_project)
         assert cfg._config == DEFAULT_CONFIG.copy()
+
+
+class TestConfigIsolation:
+    def test_mutation_does_not_leak_into_defaults(self, tmp_project: Path):
+        from great_docs.config import DEFAULT_CONFIG
+        cfg = Config(tmp_project)
+        cfg._config["changelog"]["max_releases"] = 999
+        assert DEFAULT_CONFIG["changelog"]["max_releases"] == 50
 
     def test_loads_user_config(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "parser: google\n")
@@ -73,30 +82,37 @@ class TestMergeConfig:
 
     def test_new_key_in_user_config(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "custom_key: custom_value\n")
-        assert cfg.get("custom_key") == "custom_value"
+        assert cfg["custom_key"] == "custom_value"
 
 
-class TestGet:
-    def test_simple_key(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("parser") == "numpy"
+class TestGetRemoved:
+    def test_get_method_is_gone(self, tmp_project: Path):
+        assert not hasattr(Config, "get")
 
-    def test_dot_notation(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("source.enabled") is True
+    def test_lint_parser_read(self, tmp_project: Path):
+        # _lint reads the parser through subscript now
+        assert Config(tmp_project)["parser"] == "numpy"
 
-    def test_missing_key_returns_default(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("nonexistent", "fallback") == "fallback"
 
-    def test_missing_nested_key_returns_default(self, tmp_project: Path):
-        cfg = Config(tmp_project)
-        assert cfg.get("source.nonexistent", 42) == 42
+class TestGetItem:
+    def test_top_level_hit(self, tmp_project: Path):
+        assert Config(tmp_project)["github_style"] == "widget"
 
-    def test_traversal_through_non_dict_returns_default(self, tmp_project: Path):
-        cfg = _make_config(tmp_project, "parser: google\n")
-        # parser is a string, not a dict — can't traverse further
-        assert cfg.get("parser.sub", "nope") == "nope"
+    def test_nested_hit(self, tmp_project: Path):
+        assert Config(tmp_project)["source.placement"] == "usage"
+
+    def test_missing_top_level_raises(self, tmp_project: Path):
+        with pytest.raises(KeyError):
+            Config(tmp_project)["does_not_exist"]
+
+    def test_traversal_into_scalar_raises(self, tmp_project: Path):
+        # github_style is a string; indexing into it must fail loud
+        with pytest.raises(KeyError):
+            Config(tmp_project)["github_style.nope"]
+
+    def test_new_is_old_default_is_none(self, tmp_project: Path):
+        # new_is_old is a live default now, resolved via strict subscript
+        assert Config(tmp_project)["new_is_old"] is None
 
 
 class TestScalarProperties:
@@ -221,16 +237,13 @@ class TestScalarProperties:
         assert Config(tmp_project).funding is None
 
     def test_site_default(self, tmp_project: Path):
+        # `site` is now a pure Quarto passthrough; great-docs-owned keys
+        # (language, show_dates, ...) are top-level, not under `site`.
         assert Config(tmp_project).site == {
             "theme": "flatly",
             "toc": True,
             "toc-depth": 2,
             "html-math-method": "katex",
-            "language": "en",
-            "show_dates": False,
-            "date_format": "%B %d, %Y",
-            "show_author": True,
-            "show_security": True,
         }
 
     def test_jupyter_default(self, tmp_project: Path):
@@ -358,6 +371,24 @@ class TestMarkdownPages:
         assert cfg.markdown_pages_widget is False
 
 
+class TestMarkdownPagesCanonical:
+    def test_default(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg["markdown_pages"] == {"enabled": True, "widget": True}
+        assert cfg.markdown_pages is True
+        assert cfg.markdown_pages_widget is True
+
+    def test_bool_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "markdown_pages: false\n")
+        assert cfg.markdown_pages is False
+        assert cfg.markdown_pages_widget is False
+
+    def test_widget_only(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "markdown_pages:\n  widget: false\n")
+        assert cfg.markdown_pages is True
+        assert cfg.markdown_pages_widget is False
+
+
 class TestLogo:
     def test_default_none(self, tmp_project: Path):
         cfg = Config(tmp_project)
@@ -367,7 +398,21 @@ class TestLogo:
     def test_string(self, tmp_project: Path):
         """Covers line 503 (logo string → dict expansion)."""
         cfg = _make_config(tmp_project, "logo: assets/logo.svg\n")
-        assert cfg.logo == {"light": "assets/logo.svg", "dark": "assets/logo.svg"}
+        assert cfg.logo == {
+            "light": "assets/logo.svg",
+            "dark": "assets/logo.svg",
+            "show_title": False,
+        }
+
+    def test_dark_only(self, tmp_project: Path):
+        """A dark-only variant still counts as a logo being set, and `light`
+        falls back to the same asset so navbar-logo injection (core.py) never
+        sees a `None` `light` path (roborev #801 finding 2).
+        """
+        cfg = _make_config(tmp_project, "logo:\n  dark: d.svg\n")
+        assert cfg.logo is not None
+        assert cfg.logo["dark"] == "d.svg"
+        assert cfg.logo["light"] == "d.svg"
 
     def test_dict(self, tmp_project: Path):
         cfg = _make_config(
@@ -389,7 +434,15 @@ class TestHero:
         cfg = Config(tmp_project)
         assert cfg.hero_enabled is False
         assert cfg.hero_explicitly_disabled is False
-        assert cfg.hero == {}
+        assert cfg.hero == {
+            "enabled": None,
+            "logo": None,
+            "logo_height": "200px",
+            "name": None,
+            "tagline": None,
+            "badges": "auto",
+            "starfield": False,
+        }
 
     def test_auto_enable_with_logo(self, tmp_project: Path):
         """hero=None + logo configured → hero auto-enabled."""
@@ -408,14 +461,69 @@ class TestHero:
         assert cfg.hero_enabled is True
 
     def test_hero_dict_enabled(self, tmp_project: Path):
+        """A dict form with an explicit `enabled: true` and a customization field."""
+        cfg = _make_config(tmp_project, "hero:\n  enabled: true\n  name: My Package\n")
+        assert cfg.hero_enabled is True
+
+    def test_hero_dict_any_field_enables_for_backward_compat(self, tmp_project: Path):
+        """A hero dict without `enabled` still enables the hero (backward compat).
+
+        Not the documented go-forward contract (see user_guide/11-theming.qmd,
+        which now describes the logo-driven auto-enable model), but existing
+        configs that set hero sub-fields without `enabled` or a logo must keep
+        rendering a hero — silently preserved for compatibility.
+        """
         cfg = _make_config(tmp_project, "hero:\n  name: My Package\n")
         assert cfg.hero_enabled is True
+
+    def test_hero_logo_only_auto_enables(self, tmp_project: Path):
+        """An explicit `hero.logo`, with no top-level `logo`, still auto-enables.
+
+        The hero and navbar logos share one fallback chain (core._build_hero_section:
+        explicit hero.logo -> detected hero logo -> navbar logo -> detected navbar
+        logo), so "auto" must consider both ends of it, not just the navbar logo.
+        """
+        cfg = _make_config(tmp_project, "hero:\n  logo: x.svg\n")
+        assert cfg.hero_enabled is True
+
+    def test_empty_hero_dict_enables_for_backward_compat(self, tmp_project: Path):
+        """An empty hero dict (`hero: {}`) enables the hero.
+
+        Matches the documented `hero` summary table in user_guide/11-theming.qmd:
+        "`false` to disable; `true` to force-enable; dict to customize".
+        """
+        cfg = _make_config(tmp_project, "hero: {}\n")
+        assert cfg.hero_enabled is True
+
+    def test_hero_null_with_no_logo_stays_disabled(self, tmp_project: Path):
+        """`hero: null` is not a dict, so it falls back to logo-based auto-detection."""
+        cfg = _make_config(tmp_project, "hero: null\n")
+        assert cfg.hero_enabled is False
+
+    def test_hero_dict_with_badges_false_and_no_logo_enables(self, tmp_project: Path):
+        """Regression: `hero: {name: ..., badges: false}` without a logo still
+        enables the hero (roborev #801 finding 1).
+        """
+        cfg = _make_config(tmp_project, "hero:\n  name: My Package\n  badges: false\n")
+        assert cfg.hero_enabled is True
+        assert cfg.hero_badges is None
 
     def test_hero_dict_explicitly_disabled(self, tmp_project: Path):
         """Covers line 540 (hero dict with enabled: false)."""
         cfg = _make_config(tmp_project, "hero:\n  enabled: false\n")
         assert cfg.hero_enabled is False
         assert cfg.hero_explicitly_disabled is True
+
+    def test_hero_logo_dark_only_falls_back_to_light(self, tmp_project: Path):
+        """A dark-only hero.logo dict must still resolve a `light` asset.
+
+        Mirrors TestLogo.test_dark_only for the top-level logo — without
+        this, core.py's _build_hero_section silently drops the hero logo
+        image entirely (final-review finding on roborev #801 batch).
+        """
+        cfg = _make_config(tmp_project, "hero:\n  logo:\n    dark: hero-d.svg\n")
+        assert cfg.hero_logo["dark"] == "hero-d.svg"
+        assert cfg.hero_logo["light"] == "hero-d.svg"
 
 
 class TestHeroLogo:
@@ -487,6 +595,30 @@ class TestHeroBadges:
         """Covers line 615 (hero badges = false → None)."""
         cfg = _make_config(tmp_project, "hero:\n  badges: false\n")
         assert cfg.hero_badges is None
+
+
+class TestHeroCanonical:
+    def test_default_auto(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg["hero.logo_height"] == "200px"
+        assert cfg["hero.badges"] == "auto"
+        assert cfg.hero_enabled is False  # no logo -> auto resolves off
+        assert cfg.hero_logo_height == "200px"
+        assert cfg.hero_badges == "auto"
+
+    def test_false_disables(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "hero: false\n")
+        assert cfg.hero_enabled is False
+        assert cfg.hero_explicitly_disabled is True
+
+    def test_true_enables(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "hero: true\n")
+        assert cfg.hero_enabled is True
+
+    def test_dict_overrides(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "hero:\n  logo_height: 300px\n")
+        assert cfg.hero_logo_height == "300px"
+        assert cfg.hero_badges == "auto"  # untouched sub-default survives
 
 
 class TestFavicon:
@@ -581,6 +713,25 @@ class TestAnnouncement:
         assert cfg.announcement is None
 
 
+class TestAnnouncementCanonical:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project)["announcement.type"] == "info"
+        assert Config(tmp_project).announcement is None  # content null
+
+    def test_string_shorthand(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, 'announcement: "Heads up"\n')
+        a = cfg.announcement
+        assert a["content"] == "Heads up"
+        assert a["type"] == "info"
+        assert a["dismissable"] is True
+
+    def test_dict_partial(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "announcement:\n  content: Hi\n  type: warning\n")
+        a = cfg.announcement
+        assert a["type"] == "warning"
+        assert a["dismissable"] is True
+
+
 class TestIncludeInHeader:
     def test_default_empty(self, tmp_project: Path):
         assert Config(tmp_project).include_in_header == []
@@ -668,9 +819,26 @@ class TestFreeze:
 
     def test_string_true(self, tmp_project: Path):
         """String 'true' is normalized to boolean True."""
-        cfg = Config(tmp_project)
-        cfg._config["freeze"] = "true"
+        cfg = _make_config(tmp_project, 'freeze: "true"\n')
         assert cfg.freeze is True
+
+
+class TestFreezeCanonical:
+    def test_default_auto(self, tmp_project: Path):
+        assert Config(tmp_project)["freeze.mode"] == "auto"
+        assert Config(tmp_project).freeze == "auto"
+
+    def test_null_disables(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "freeze: null\n")
+        assert cfg.freeze is None
+
+    def test_true(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "freeze: true\n")
+        assert cfg.freeze is True
+
+    def test_pre_render_from_dict(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "freeze:\n  mode: auto\n  pre_render: cp.sh\n")
+        assert cfg.pre_render == ["cp.sh"]
 
 
 class TestPreRender:
@@ -898,6 +1066,34 @@ class TestContentStyle:
         assert cfg.content_style is None
 
 
+class TestContentStyleCanonical:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project)["content_style.pages"] == "all"
+        assert Config(tmp_project).content_style is None
+
+    def test_string_shorthand(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "content_style: sky\n")
+        assert cfg.content_style == {"preset": "sky", "pages": "all"}
+
+    def test_dict(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "content_style:\n  preset: peach\n  pages: homepage\n")
+        assert cfg.content_style == {"preset": "peach", "pages": "homepage"}
+
+
+class TestLogoCanonical:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project)["logo.show_title"] is False
+        assert Config(tmp_project).logo is None
+
+    def test_string_shorthand(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "logo: assets/logo.svg\n")
+        assert cfg.logo == {"light": "assets/logo.svg", "dark": "assets/logo.svg", "show_title": False}
+
+    def test_dict_show_title(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "logo:\n  light: a.svg\n  show_title: true\n")
+        assert cfg.logo_show_title is True
+
+
 class TestExistsAndToDict:
     def test_exists_true(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "parser: google\n")
@@ -1115,3 +1311,315 @@ class TestShouldSplitMethods:
         from great_docs.config import DEFAULT_CONFIG
 
         assert DEFAULT_CONFIG["inline_methods"] == 5
+
+
+def test_legacy_site_keys_lift_to_top_level(tmp_path: Path):
+    cfg = _make_config(tmp_path, "site:\n  show_dates: true\n  language: fr\n")
+    assert cfg.show_dates is True
+    assert cfg.language == "fr"
+    assert "show_dates" not in cfg.site
+    assert "language" not in cfg.site
+
+
+def test_explicit_top_level_wins_over_legacy_site(tmp_path: Path):
+    cfg = _make_config(tmp_path, "site:\n  show_dates: false\nshow_dates: true\n")
+    assert cfg.show_dates is True
+
+
+def test_site_quarto_excludes_css_and_legacy_keys(tmp_path: Path):
+    cfg = _make_config(
+        tmp_path,
+        "site:\n  grid: {sidebar-width: 250px}\n  css: custom.css\n  show_dates: true\n",
+    )
+    sq = cfg.site_quarto
+    assert sq["grid"] == {"sidebar-width": "250px"}
+    assert "css" not in sq
+    assert "show_dates" not in sq
+
+
+def _quarto_config_for(tmp_path: Path, gd_yaml: str) -> dict:
+    """Build _quarto.yml via GreatDocs._update_quarto_config and return it parsed."""
+    from yaml12 import read_yaml
+
+    from great_docs import GreatDocs
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "test"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "great-docs.yml").write_text(gd_yaml, encoding="utf-8")
+    docs = GreatDocs(project_path=str(tmp_path))
+    docs.project_path.mkdir(parents=True, exist_ok=True)
+    docs._update_quarto_config()
+    with open(docs.project_path / "_quarto.yml") as f:
+        return read_yaml(f)
+
+
+def test_arbitrary_site_key_reaches_format_html(tmp_path: Path):
+    cfg = _quarto_config_for(tmp_path, "site:\n  grid:\n    sidebar-width: 250px\n")
+    html = cfg["format"]["html"]
+    assert html["grid"] == {"sidebar-width": "250px"}
+    theme = html["theme"]
+    assert (theme[0] if isinstance(theme, list) else theme) == "flatly"
+
+
+def test_legacy_site_key_does_not_leak_into_format_html(tmp_path: Path):
+    cfg = _quarto_config_for(tmp_path, "site:\n  show_dates: true\n")
+    assert "show_dates" not in cfg["format"]["html"]
+
+
+class TestYamlCompleteness:
+    def test_new_keys_present(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg["bibliography"] == []
+        assert cfg["csl"] is None
+        assert cfg["cli.title"] is None
+        assert cfg["cli.desc"] is None
+        assert cfg["cli.sections"] == []
+        assert cfg["tags.location"] == "top"
+
+
+class TestTypedEmptyDefaults:
+    def test_pre_render_default_is_empty_list(self, tmp_project: Path):
+        assert Config(tmp_project)["pre_render"] == []
+        assert Config(tmp_project).pre_render == []
+
+    def test_nav_icons_default_is_empty_dict(self, tmp_project: Path):
+        assert Config(tmp_project)["nav_icons"] == {}
+        # Property still resolves empty -> None for consumers
+        assert Config(tmp_project).nav_icons is None
+
+
+class TestShorthandNormalization:
+    def test_page_status_true(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "page_status: true\n")
+        assert cfg["page_status.enabled"] is True
+        assert cfg.page_status_show_in_sidebar is True  # sub-defaults survive
+
+    def test_tags_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "tags: false\n")
+        assert cfg["tags.enabled"] is False
+        assert cfg["tags.hierarchical"] is True
+
+    def test_social_cards_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "social_cards: false\n")
+        assert cfg["social_cards.enabled"] is False
+        assert cfg.social_cards_enabled is False
+
+    def test_mcp_false(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "mcp: false\n")
+        assert cfg.mcp_enabled is False
+        assert cfg.mcp_categories == {}  # sub-defaults survive
+
+    def test_mcp_null(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "mcp:\n")
+        assert cfg.mcp_enabled is False
+        assert cfg.mcp_module is None
+
+
+class TestNonMappingConfig:
+    """A syntactically valid great-docs.yml that isn't a mapping falls back to defaults."""
+
+    def test_list_document(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        cfg = _make_config(tmp_path, "- one\n- two\n")
+        assert cfg.parser == DEFAULT_CONFIG["parser"]
+        assert cfg.hero_enabled is False
+        assert "must be a mapping" in capsys.readouterr().out
+
+    def test_scalar_document(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        cfg = _make_config(tmp_path, "just a string\n")
+        assert cfg.parser == DEFAULT_CONFIG["parser"]
+        assert "must be a mapping" in capsys.readouterr().out
+
+
+class TestSeoShorthandNormalization:
+    def test_sitemap_true_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  sitemap: true\n")
+        assert cfg["seo.sitemap.enabled"] is True
+        assert cfg.sitemap_enabled is True
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"   # full default dict, no KeyError
+        assert cfg.sitemap_priority["homepage"] == 1.0
+
+    def test_sitemap_false_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  sitemap: false\n")
+        assert cfg["seo.sitemap.enabled"] is False
+        assert cfg.sitemap_enabled is False
+
+    def test_robots_true_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  robots: true\n")
+        assert cfg["seo.robots.enabled"] is True
+        assert cfg.robots_disallow == []          # sub-defaults survive
+
+    def test_top_level_seo_false_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo: false\n")
+        assert cfg.seo_enabled is False
+
+    def test_top_level_seo_true_expands(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo: true\n")
+        assert cfg.seo_enabled is True
+        assert cfg.sitemap_enabled is True        # sub-defaults survive
+
+    def test_top_level_seo_null_keeps_defaults(self, tmp_path: Path):
+        # `seo:` with nothing under it (an empty or commented-out block) parses
+        # as None; SEO stays on, as it did before strict subscript reads.
+        cfg = _make_config(tmp_path, "seo:\n")
+        assert cfg.seo_enabled is True
+        assert cfg.sitemap_enabled is True
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"
+
+    def test_nested_seo_null_keeps_defaults(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "seo:\n  sitemap:\n")
+        assert cfg.seo_enabled is True
+        assert cfg.sitemap_enabled is True
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"
+        assert cfg.sitemap_priority["homepage"] == 1.0
+
+
+class TestNullMeansUnspecified:
+    """A bare `key:` leaves a dict-valued option at its defaults.
+
+    An empty or fully commented-out block parses as None, which must not
+    clobber the default subtree and strand the strict `key.sub` reads. The
+    `_NULL_DISABLES` options are the deliberate exception.
+    """
+
+    _KEYS = sorted(
+        k
+        for k, v in DEFAULT_CONFIG.items()
+        if isinstance(v, dict) and k not in Config._NULL_DISABLES
+    )
+    _SUB_KEYS = sorted(
+        (k, sub)
+        for k in _KEYS
+        for sub, v in DEFAULT_CONFIG[k].items()
+        if isinstance(v, dict)
+    )
+
+    @pytest.mark.parametrize("key", _KEYS)
+    def test_null_reads_as_absent(self, tmp_path: Path, key: str):
+        cfg = _make_config(tmp_path, f"{key}:\n")
+        assert cfg[key] == DEFAULT_CONFIG[key]
+
+    @pytest.mark.parametrize(("key", "sub"), _SUB_KEYS)
+    def test_null_sub_key_reads_as_absent(self, tmp_path: Path, key: str, sub: str):
+        cfg = _make_config(tmp_path, f"{key}:\n  {sub}:\n")
+        assert cfg[f"{key}.{sub}"] == DEFAULT_CONFIG[key][sub]
+
+    def test_null_disables_are_still_off(self, tmp_path: Path):
+        # The backward-compatible exceptions: on by default, off when nulled.
+        cfg = _make_config(tmp_path, "social_cards:\nmarkdown_pages:\nmcp:\nfreeze:\n")
+        assert cfg.social_cards_enabled is False
+        assert cfg.markdown_pages is False
+        assert cfg.mcp_enabled is False
+        assert cfg.freeze is None
+
+
+class TestPypiResolution:
+    """`pypi` is a tri-state: `null` picks a link by project type, any other value is obeyed.
+
+    The default carries no project-type knowledge of its own — an explicit value
+    means the same thing whether or not it happens to equal the default.
+    """
+
+    def test_default_is_the_auto_sentinel(self):
+        assert DEFAULT_CONFIG["pypi"] is None
+
+    def test_auto_links_for_python_project(self, tmp_project: Path):
+        assert Config(tmp_project).pypi is True
+
+    def test_auto_is_off_for_non_python_project(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "project_type: go\n")
+        assert cfg.pypi is False
+
+    def test_auto_links_for_mixed_project(self, tmp_path: Path):
+        cfg = _make_config(tmp_path, "project_type: [python, go]\n")
+        assert cfg.pypi is True
+
+    @pytest.mark.parametrize("project_type", ["python", "go"])
+    def test_explicit_true_is_obeyed(self, tmp_path: Path, project_type: str):
+        cfg = _make_config(tmp_path, f"project_type: {project_type}\npypi: true\n")
+        assert cfg.pypi is True
+
+    @pytest.mark.parametrize("project_type", ["python", "go"])
+    def test_explicit_false_is_obeyed(self, tmp_path: Path, project_type: str):
+        cfg = _make_config(tmp_path, f"project_type: {project_type}\npypi: false\n")
+        assert cfg.pypi is False
+
+    @pytest.mark.parametrize("project_type", ["python", "go"])
+    def test_explicit_url_is_obeyed(self, tmp_path: Path, project_type: str):
+        cfg = _make_config(
+            tmp_path,
+            f'project_type: {project_type}\npypi: "https://packages.example.com/simple/pkg"\n',
+        )
+        assert cfg.pypi == "https://packages.example.com/simple/pkg"
+
+    def test_explicit_null_is_auto(self, tmp_path: Path):
+        """An explicit `null` means auto, never a `None` leaking to the caller."""
+        cfg = _make_config(tmp_path, "project_type: go\npypi:\n")
+        assert cfg.pypi is False
+
+
+class TestSingleSourceInvariant:
+    """Guards the single-source-of-truth contract in `great_docs/config.py`.
+
+    With no user `great-docs.yml`, `DEFAULT_CONFIG` is the entire merged
+    config. Every direct passthrough property must return exactly that value,
+    and every property (direct or derived) must resolve without `KeyError` —
+    a `KeyError` here means a property reads a key `great-docs.default.yml`
+    doesn't declare, i.e. a Python-side default snuck back in.
+    """
+
+    def test_every_scalar_property_matches_yaml_default(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        # Properties that are a direct top-level passthrough must equal the YAML value.
+        direct = [
+            "parser", "dynamic", "jupyter", "language", "date_format",
+            "github_style", "homepage", "attribution",
+            "package_info_page", "back_to_top", "keyboard_nav", "dark_mode_toggle",
+            "show_dates", "show_author", "show_security",
+        ]
+        for name in direct:
+            assert getattr(cfg, name) == DEFAULT_CONFIG[name], name
+
+    def test_no_property_reads_an_undeclared_key(self, tmp_project: Path):
+        """Every property resolves without KeyError against the packaged defaults."""
+        cfg = Config(tmp_project)
+        for name in dir(Config):
+            attr = getattr(Config, name, None)
+            if isinstance(attr, property):
+                getattr(cfg, name)  # must not raise KeyError
+
+    def test_every_literal_lookup_path_is_declared(self):
+        """Every `self["dot.path"]` in config.py resolves in `DEFAULT_CONFIG`.
+
+        Complements the property sweep above, which only exercises paths that
+        the default config actually reaches: a lookup behind a disabled branch
+        (or in a method rather than a property) is invisible to it but is still
+        a strict read that must be declared in the packaged YAML.
+        """
+        import ast
+
+        source = Path(config_module.__file__).read_text(encoding="utf-8")
+        paths: set[str] = set()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Subscript):
+                continue
+            target, key = node.value, node.slice
+            is_self = isinstance(target, ast.Name) and target.id == "self"
+            if is_self and isinstance(key, ast.Constant) and isinstance(key.value, str):
+                paths.add(key.value)
+
+        assert paths, "found no literal lookups — the AST scan is broken"
+
+        undeclared = []
+        for path in sorted(paths):
+            value = DEFAULT_CONFIG
+            for part in path.split("."):
+                if isinstance(value, dict) and part in value:
+                    value = value[part]
+                else:
+                    undeclared.append(path)
+                    break
+        assert not undeclared, (
+            "config.py reads keys that great-docs.default.yml does not declare: "
+            f"{undeclared}"
+        )

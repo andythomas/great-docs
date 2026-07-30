@@ -1,427 +1,67 @@
+"""
+great-docs configuration.
+
+`great-docs.default.yml` is the single source of truth for every default; this
+module reads a user's merged config and exposes it as typed properties.
+
+Contract for adding an option — keep the single source intact:
+
+- Declare the option and its default in `great-docs.default.yml`, never here.
+  This module holds no default values.
+- Read through `config["dot.path"]`. The lookup is strict: a key absent from
+  the merged config raises `KeyError`. A user's bare `key:` (null) over a
+  dict-valued option therefore means "not specified" and keeps the defaults,
+  so such a read still resolves; see `Config._NULL_DISABLES` for the few
+  options a null switches off instead.
+- Default to a typed empty container (`[]`, `{}`) rather than `null`, unless the
+  option is an optional scalar, a genuine tri-state, or a single optional record.
+- For an option whose value is a dict of sub-fields, declare those sub-fields
+  live in the YAML and expand any scalar/bool shorthand to that dict at load.
+  Accessors must not supply sub-field defaults.
+- A property is the typed view of an option: a thin one returns `self["key"]`;
+  a richer one may coerce shape or derive from other options, but adds no
+  default value.
+"""
+
+import copy
+import io
+import re
+from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from yaml12 import read_yaml
 
-# Default configuration values
-DEFAULT_CONFIG: dict[str, Any] = {
-    # Module name (importable name, if different from project name)
-    # e.g., project 'py-yaml12' might have module 'yaml12'
-    "module": None,
-    # Display name for the site (used in navbar/title)
-    # If not provided, uses the package name as-is
-    "display_name": None,
-    # Project type — describes the primary ecosystem(s) the project belongs to.
-    # Controls which ecosystem-specific links and features are active by default.
-    #   "python"          — Python package (default); enables PyPI link
-    #   "go"              — Go CLI/library; disables PyPI link by default
-    #   ["python", "go"]  — mixed project (e.g., Python package that ships a Go sidecar)
-    "project_type": "python",
-    # Docstring parser format
-    "parser": "numpy",  # "numpy" (default), "google", or "sphinx"
-    # Dynamic introspection mode for API reference generation
-    "dynamic": True,  # True (default) or False for packages with cyclic aliases
-    # Jupyter kernel for executing code cells
-    "jupyter": "python3",  # Default kernel for Quarto computations
-    # API discovery settings
-    "exclude": [],
-    "auto_include": [],  # Names to force-include even if they match AUTO_EXCLUDE
-    "no_auto_exclude": False,  # Bypass the built-in AUTO_EXCLUDE list entirely
-    # PyPI link
-    # True (default): auto-detect package name and link to pypi.org
-    # False: disable the PyPI link entirely
-    # str: custom package index URL (e.g., "https://artifactory.example.com/packages/my-pkg")
-    "pypi": True,
-    # GitHub integration
-    "repo": None,  # GitHub repository URL override (e.g., "https://github.com/owner/repo")
-    # Site URL: the canonical address of the deployed documentation site.
-    # Used for skills page install commands, .well-known/ discovery, sitemaps,
-    # and subdirectory deployments. Also sets website.site-url in _quarto.yml.
-    "site_url": None,
-    "github_style": "widget",  # "widget" (shows stars) or "icon"
-    # Source link configuration
-    "source": {
-        "enabled": True,
-        "branch": None,  # Auto-detect from git
-        "path": None,  # Auto-detect
-        "placement": "usage",  # "usage" (default) or "title"
-    },
-    # Sidebar filter configuration
-    "sidebar_filter": {
-        "enabled": True,
-        "min_items": 20,
-    },
-    # CLI documentation configuration
-    "cli": {
-        "enabled": False,
-        "module": None,
-        "name": None,
-    },
-    # Go CLI documentation configuration
-    # Builds the Go binary and extracts the command tree via --help to generate
-    # a CLI reference section.  Works with any Go CLI (Cobra, urfave/cli, etc.)
-    # as long as the binary supports --help on subcommands.
-    "go_cli": {
-        "enabled": False,
-    },
-    # MCP server documentation configuration
-    # Auto-generates reference pages from MCP server tool/resource/prompt definitions.
-    # None/False: disabled (default)
-    # dict: {"enabled": True, "module": "package.mcp", ...}
-    "mcp": {
-        "enabled": True,
-        "module": None,  # Importable module path containing the MCP server (e.g., "sweet.mcp")
-        "server_var": None,  # Variable name of the Server instance (auto-detected if None)
-        "name": None,  # Display name override (defaults to server name)
-        "categories": {},  # Manual tool categories: {"Category Name": ["tool_a", "tool_b"]}
-    },
-    # Dark mode toggle
-    "dark_mode_toggle": True,
-    # Authors (rich author metadata)
-    "authors": [],
-    # Funding organization (copyright holder, funder)
-    # Example: {"name": "Posit Software, PBC", "roles": ["Copyright holder", "funder"], "ror": "https://ror.org/03wc8by49"}
-    "funding": None,
-    # Site settings (forwarded to _quarto.yml format.html)
-    "site": {
-        "theme": "flatly",
-        "toc": True,
-        "toc-depth": 2,
-        "html-math-method": "katex",
-        # Language for UI text (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans")
-        # Translates navbar labels, widget text, tooltips, and accessibility labels
-        "language": "en",
-        # Page metadata timestamps
-        "show_dates": False,  # Display creation/modification dates in footer
-        "date_format": "%B %d, %Y",  # Python strftime format (e.g., "March 24, 2026")
-        "show_author": True,  # Show author attribution when show_dates is enabled
-        "show_security": True,  # Show security policy page when SECURITY.md exists
-    },
-    # Team author (catch-all for auto-generated pages when authorship is shown)
-    # Example: {"name": "Great Tables Team", "image": "assets/team-avatar.png", "url": "https://..."}
-    "team_author": None,
-    # Changelog configuration (from GitHub Releases)
-    "changelog": {
-        "enabled": True,
-        "max_releases": 50,
-    },
-    # Custom sections (generic page groups: examples, tutorials, blog, etc.)
-    # Each entry: {"title": str, "dir": str, "index": bool, "index_columns": int,
-    #              "navbar_after": str | None}
-    "sections": [],
-    # Custom static HTML pages.
-    # None: auto-discover from project_root/custom/
-    # False: disable custom page discovery entirely
-    # str: one source directory, output defaults to its basename
-    # dict: {"dir": str, "output": str | None}
-    # list[str | dict]: multiple source directories
-    "custom_pages": None,
-    # Homepage mode
-    # "index" (default): separate homepage from README / index source
-    # "user_guide": first user-guide page becomes the landing page
-    "homepage": "index",
-    # User Guide configuration
-    # If None, auto-discovers from user_guide/ directory
-    # If a string, uses that as the directory path
-    # If a list of section dicts, uses explicit ordering (overrides frontmatter sections)
-    "user_guide": None,
-    # API Reference configuration (explicit section ordering)
-    # If not provided, auto-generates sections from discovered exports
-    "reference": [],
-    # Control whether class methods get their own pages or stay inline.
-    # true: always inline methods on the class page (never split)
-    # false: always give methods their own pages (always split)
-    # int: inline up to N methods, split above N (default: 5)
-    "inline_methods": 5,
-    # Logo configuration
-    # str: path to a single logo file (used for all contexts)
-    # dict: {"light": "...", "dark": "...", "alt": "...", "height": "...", "href": "...", "show_title": False}
-    # None: auto-detect from conventional paths, or skip if nothing found
-    "logo": None,
-    # Favicon configuration
-    # str: path to a single favicon file
-    # dict: {"icon": "...", "apple_touch": "...", "og_image": "..."}
-    # None: auto-generate from logo, or skip if no logo
-    "favicon": None,
-    # Hero section configuration for the landing page
-    # None: auto-enable when a logo is configured
-    # True/False: force enable/disable
-    # dict: {"enabled": bool, "logo": str|dict|false, "logo_height": str,
-    #        "name": str|false, "tagline": str|false, "badges": "auto"|list|false}
-    "hero": None,
-    # Markdown pages (.md generation + copy-page widget)
-    # True (default): generate .md pages and show the copy/view widget.
-    # False: disable both.
-    # Dict form: {"widget": False} generates .md pages but hides the widget.
-    "markdown_pages": True,
-    # Announcement banner (site-wide banner above or below the navbar)
-    # None/False: no banner (default)
-    # str: banner message text (plain text or inline HTML)
-    # dict: {"content": str, "type": "info"|"warning"|"success"|"danger",
-    #        "dismissable": bool, "url": str|None,
-    #        "position": "above-navbar"|"below-navbar"}
-    "announcement": None,
-    # Multi-version documentation
-    # None/[]: disabled (default — single-version site)
-    # list[str | dict]: ordered list of versions (newest first)
-    # Minimal: ["0.3", "0.2", "0.1"]
-    # Full: [{"tag": "0.3", "label": "0.3.0", "latest": true}, ...]
-    "versions": [],
-    # Version selector widget configuration
-    "version_selector": {
-        "enabled": True,  # Enabled automatically when versions is non-empty
-        "placement": "navbar-right",  # "navbar-right" | "navbar-left" | "sidebar-top"
-        "show_eol": True,  # Include end-of-life versions in dropdown
-        "warning_banner": True,  # Show banner on non-latest versions
-    },
-    # Floating version aliases (/v/latest/, /v/stable/, /v/dev/)
-    "version_aliases": {
-        "latest": True,  # /v/latest/ -> latest stable version
-        "stable": True,  # /v/stable/ -> same as latest
-        "dev": True,  # /v/dev/ -> prerelease version (if any)
-    },
-    # Site-wide accent color (CSS color: hex, named, etc.)
-    # Sets the --gd-accent custom property used by shortcodes (hr, etc.),
-    # gradient presets, and other accent-colored elements.
-    # str: same color for both light and dark mode
-    # dict: {"light": str, "dark": str} for per-mode colors
-    "accent_color": None,
-    # Navbar gradient preset (e.g., "sky", "peach", "lilac", etc.)
-    "navbar_style": None,
-    # Navbar solid background color (CSS color: hex, named, etc.)
-    # str: same color for both light and dark mode
-    # dict: {"light": str, "dark": str} for per-mode colors
-    # Text color is automatically chosen (light or dark) for contrast using APCA.
-    # Overridden when navbar_style (gradient) is set.
-    "navbar_color": None,
-    # Content area gradient preset (same preset names as navbar_style)
-    # Adds a subtle radial glow at the top of the main content area
-    # str: preset name (applies to all pages)
-    # dict: {"preset": str, "pages": "all"|"homepage"}
-    "content_style": None,
-    # Scale-to-fit: auto-shrink wide HTML output to fit the content container.
-    # Targets elements by CSS selector — the matched element's nearest output
-    # wrapper is scaled down (never up) to fit the page width.
-    # None/False: disabled (default)
-    # list[str]: CSS selectors for elements to auto-scale (e.g., ["#pb_tbl"])
-    # Per-page override via frontmatter: `scale-to-fit: ["#pb_tbl"]`
-    "scale_to_fit": None,
-    # Minimum scale threshold for scale-to-fit.  When scaling would shrink
-    # content beyond this limit the element is shown at full size with
-    # horizontal scrolling instead.
-    # None/False: no minimum (scale as small as needed)
-    # float (0-1): minimum scale factor, e.g. 0.4 = "don't shrink below 40%"
-    # str keyword: viewport breakpoint below which scaling is disabled:
-    #   "mobile"  → scroll on viewports ≤ 576px
-    #   "tablet"  → scroll on viewports ≤ 768px
-    #   "desktop" → scroll on viewports ≤ 992px
-    # Per-page override via frontmatter: `scale-to-fit-min-scale: "tablet"`
-    "scale_to_fit_min_scale": None,
-    # Navigation icons (Lucide icon set)
-    # Prepend icons to sidebar and navbar navigation entries.
-    # None/False: disabled (default)
-    # dict: {"navbar": {"Label": "icon-name"}, "sidebar": {"Label": "icon-name"}}
-    "nav_icons": None,
-    # Keyboard navigation & shortcuts
-    # True (default): enable keyboard shortcuts and help overlay
-    # False: disable keyboard navigation
-    "keyboard_nav": True,
-    # Package info page (auto-generated page with dependency details)
-    # True (default): generate package-info.qmd and link from homepage Meta
-    # False: disable package info page generation
-    "package_info_page": True,
-    # Back-to-top floating button
-    # True (default): show back-to-top button on all pages
-    # False: disable back-to-top button
-    "back_to_top": True,
-    # Attribution text in the footer ("Site created with Great Docs")
-    # True (default): show attribution
-    # False: hide attribution
-    "attribution": True,
-    # Custom HTML to include in the <head> of every page
-    # str: inline HTML text (e.g., a <script> or <link> tag)
-    # list[str | dict]: list of inline text strings or {"text": ...} / {"file": ...} entries
-    "include_in_header": [],
-    # Freeze configuration for Quarto code execution caching
-    # Controls whether computational documents are re-executed during builds.
-    # None/False: disabled — all documents are executed on every build
-    # "auto": re-render only when source changes (execute: freeze: auto) [default]
-    # True: never re-render during project render (execute: freeze: true)
-    # dict: {"mode": "auto"|true, "pre_render": str|list[str]}
-    #   mode: freeze mode ("auto" or true)
-    #   pre_render: script(s) to run before Quarto render (e.g., to copy _freeze/ into build dir)
-    "freeze": "auto",
-    # Pre-render scripts (alternative to freeze.pre_render)
-    # Scripts run before Quarto's render step (Quarto's native pre-render hook).
-    # str: single script path (relative to project root)
-    # list[str]: multiple script paths
-    # These are copied into the build directory and configured in _quarto.yml.
-    "pre_render": None,
-    # Agent Skills (skill.md) generation
-    # Generates a SKILL.md file conforming to the Agent Skills specification
-    # (https://agentskills.io/) so coding agents can learn to use the package.
-    "skill": {
-        "enabled": True,
-        "file": None,  # Path to a hand-written SKILL.md (overrides auto-generation)
-        "well_known": True,  # Also serve at /.well-known/agent-skills/{name}/SKILL.md + index.json
-        "gotchas": [],  # List of gotcha strings for the Gotchas section
-        "best_practices": [],  # List of best-practice strings
-        "decision_table": [],  # Manual rows: [{"need": "...", "use": "..."}]
-        "extra_body": None,  # Path to extra Markdown to append to the generated body
-        # Multiple named skills (overrides 'file' when set):
-        # skills:
-        #   - name: my-package
-        #     file: skills/my-package/SKILL.md
-        #   - name: authoring-pages
-        #     file: skills/authoring-pages/SKILL.md
-        "skills": [],
-    },
-    # Social Cards & Open Graph
-    # Auto-generate <meta> tags for social media previews (LinkedIn, Discord, Slack,
-    # Bluesky, Mastodon, X/Twitter, etc.)
-    # True: enable with defaults
-    # False/None: disable
-    # dict: fine-grained control
-    "social_cards": {
-        "enabled": True,  # Master switch for social card meta tags
-        # Default image for og:image / twitter:image (path relative to project root)
-        # None: no default image (individual pages can still set via frontmatter)
-        "image": None,
-        # Twitter/X card type: "summary", "summary_large_image"
-        # "summary_large_image" is used when an image is provided, "summary" otherwise
-        "twitter_card": None,  # None = auto-detect based on image
-        # Twitter/X @handle for the site (e.g., "@posaboron")
-        "twitter_site": None,
-    },
-    # Page Status Badges
-    # Visual indicators for page lifecycle status in sidebar navigation.
-    # Pages set `status: new` (or `deprecated`, etc.) in frontmatter.
-    # True: enable with defaults
-    # False: disable
-    # dict: fine-grained control
-    "page_status": {
-        "enabled": False,  # Master switch for page status badges
-        # Show status badges next to sidebar navigation links
-        "show_in_sidebar": True,
-        # Show status indicator below page titles (like tags)
-        "show_on_pages": True,
-        # Built-in status definitions (can be extended/overridden)
-        # Each status: {label, icon, color, description}
-        "statuses": {
-            "new": {
-                "label": "New",
-                "icon": "sparkles",
-                "color": "#10b981",  # Emerald green
-                "description": "Recently added",
-            },
-            "updated": {
-                "label": "Updated",
-                "icon": "refresh-cw",
-                "color": "#3b82f6",  # Blue
-                "description": "Recently updated",
-            },
-            "beta": {
-                "label": "Beta",
-                "icon": "flask-conical",
-                "color": "#f59e0b",  # Amber
-                "description": "Beta feature",
-            },
-            "deprecated": {
-                "label": "Deprecated",
-                "icon": "triangle-alert",
-                "color": "#ef4444",  # Red
-                "description": "May be removed in a future release",
-            },
-            "experimental": {
-                "label": "Experimental",
-                "icon": "beaker",
-                "color": "#8b5cf6",  # Purple
-                "description": "API may change without notice",
-            },
-            "upcoming": {
-                "label": "Upcoming",
-                "icon": "rocket",
-                "color": "#e63946",  # Red (Christopher Doyle palette)
-                "description": "Coming in a future release",
-            },
-        },
-    },
-    # Page Tags
-    # Categorize pages with tags for improved discoverability.
-    # Tags are added via frontmatter (`tags: [Python, Testing, API]`).
-    # True: enable with defaults
-    # False: disable
-    # dict: fine-grained control
-    "tags": {
-        "enabled": False,  # Master switch for page tags
-        # Auto-generate a tags index page listing all tags and linked pages
-        "index_page": True,
-        # Render tag pills above page titles with links to the tag index
-        "show_on_pages": True,
-        # Support hierarchical tags with "/" separator (e.g., "Python/Testing")
-        "hierarchical": True,
-        # Optional tag icons: dict mapping tag names to Lucide icon names
-        # e.g., {"Python": "code", "Tutorial": "book-open"}
-        "icons": {},
-        # Shadow tags: list of tag names hidden from public view (for internal
-        # organization only). Shadow-tagged pages are indexed but tags are not
-        # rendered on the page or shown in the tag index.
-        "shadow": [],
-        # Scoped listings: when True, section pages (user guide, recipes, etc.)
-        # show a tag cloud scoped to that section
-        "scoped": False,
-    },
-    # SEO configuration for search engine optimization
-    # Generates sitemap.xml, robots.txt, and adds metadata for better discoverability
-    "seo": {
-        "enabled": True,  # Master switch for all SEO features
-        # Sitemap configuration
-        "sitemap": {
-            "enabled": True,  # Generate sitemap.xml
-            "changefreq": {
-                # Change frequencies by page type (always|hourly|daily|weekly|monthly|yearly|never)
-                "homepage": "weekly",
-                "reference": "monthly",
-                "user_guide": "monthly",
-                "changelog": "weekly",
-                "default": "monthly",
-            },
-            "priority": {
-                # Priority values by page type (0.0 to 1.0)
-                "homepage": 1.0,
-                "reference": 0.8,
-                "user_guide": 0.9,
-                "changelog": 0.6,
-                "default": 0.5,
-            },
-        },
-        # Robots.txt configuration
-        "robots": {
-            "enabled": True,  # Generate robots.txt
-            "allow_all": True,  # Allow all crawlers by default
-            "disallow": [],  # List of paths to disallow (e.g., ["/drafts/", "/_internal/"])
-            "crawl_delay": None,  # Optional crawl delay in seconds
-            "extra_rules": [],  # Additional rules as strings (e.g., ["User-agent: GPTBot", "Disallow: /"])
-        },
-        # Canonical URL configuration
-        "canonical": {
-            "enabled": True,  # Add canonical URLs to pages
-            "base_url": None,  # Base URL (e.g., "https://example.github.io/pkg/")
-            # Auto-detected from GitHub Pages URL if not provided
-        },
-        # Page title template
-        # Supports {page_title} and {site_name} placeholders
-        "title_template": "{page_title} | {site_name}",
-        # JSON-LD structured data for software documentation
-        "structured_data": {
-            "enabled": True,  # Add JSON-LD to pages
-            "type": "SoftwareSourceCode",  # Schema.org type
-            # Additional fields auto-populated from package metadata
-        },
-        # Default meta description (used when page has no description)
-        "default_description": None,  # Falls back to package description
-    },
-}
+
+def _load_default_config() -> dict[str, Any]:
+    """Load the packaged default configuration
+
+    Returns
+    -------
+    dict
+        The parsed contents of `great-docs.default.yml`, i.e. every config
+        field at its default value.
+    """
+    text = (
+        resources.files("great_docs")
+        .joinpath("assets", "great-docs.default.yml")
+        .read_text(encoding="utf-8")
+    )
+    return read_yaml(io.StringIO(text)) or {}
+
+
+DEFAULT_CONFIG: dict[str, Any] = _load_default_config()
+
+# great-docs-owned keys that older configs placed under `site`. They are
+# top-level keys now; any found under `site` at load are lifted out so `site`
+# stays a clean Quarto passthrough.
+_LEGACY_SITE_KEYS: tuple[str, ...] = (
+    "language",
+    "show_dates",
+    "date_format",
+    "show_author",
+    "show_security",
+)
 
 
 class Config:
@@ -454,34 +94,227 @@ class Config:
         dict
             The loaded configuration merged with defaults.
         """
-        config = DEFAULT_CONFIG.copy()
+        config = copy.deepcopy(DEFAULT_CONFIG)
         self._user_config: dict[str, Any] = {}
 
         if self.config_path.exists():
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
-                    user_config = read_yaml(f) or {}
+                    user_config = read_yaml(f)
 
-                self._user_config = user_config
-                # Deep merge user config with defaults
-                config = self._merge_config(config, user_config)
+                if user_config is None:
+                    user_config = {}
+
+                if not isinstance(user_config, dict):
+                    # A valid YAML document that isn't a mapping (a list, a bare
+                    # scalar) has no config to contribute; the defaults stand.
+                    print(
+                        "Warning: great-docs.yml must be a mapping of options; "
+                        f"got {type(user_config).__name__}. Using defaults."
+                    )
+                else:
+                    self._user_config = cast("dict[str, Any]", user_config)
+                    # Deep merge user config with defaults
+                    config = self._merge(config, self._user_config)
             except ValueError as e:
                 print(f"Warning: Error parsing great-docs.yml: {e}")
-            except Exception as e:
+            except OSError as e:
                 print(f"Warning: Could not read great-docs.yml: {e}")
+
+        config = self._lift_legacy_site_keys(config)
+        config = self._normalize_shorthands(config)
+        return config
+
+    def _lift_legacy_site_keys(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Move legacy great-docs keys out of `site` to the top level
+
+        Older configs placed language/date settings under `site`; those are
+        great-docs-owned, not Quarto `format.html` keys, so they now live at
+        the top level. Any that still appear under `site` are lifted out so
+        `site` stays a clean Quarto passthrough. An explicit top-level value
+        wins over a legacy `site` value on conflict.
+
+        Parameters
+        ----------
+        config
+            The merged configuration.
+
+        Returns
+        -------
+        dict
+            The configuration with the legacy keys normalized to the top level.
+        """
+        site = config.get("site")
+        if not isinstance(site, dict):
+            return config
+
+        for key in _LEGACY_SITE_KEYS:
+            if key in site:
+                value = site.pop(key)
+                if key not in self._user_config:
+                    config[key] = value
+        return config
+
+    # Options accepting a bool shorthand that collapses their dict subtree.
+    # The bool sets `enabled`; other sub-fields fall back to the packaged
+    # defaults. Kept for backward compatibility; no longer documented.
+    _BOOL_SHORTHAND_KEYS: tuple[str, ...] = (
+        "page_status",
+        "tags",
+        "social_cards",
+        "markdown_pages",
+        "mcp",
+    )
+
+    def _normalize_shorthands(self, config: dict[str, Any]) -> dict[str, Any]:
+        """
+        Expand shorthand config values into their canonical dict form
+
+        A user may write a scalar where the canonical form is a dict (e.g.
+        `page_status: true`, or an explicit `social_cards: null`). Each such
+        value is rebuilt into the full dict, with `enabled` set from the
+        scalar, so downstream access is always a plain nested lookup.
+
+        Parameters
+        ----------
+        config
+            The merged configuration.
+
+        Returns
+        -------
+        dict
+            The configuration with shorthand values expanded.
+        """
+        for key in self._BOOL_SHORTHAND_KEYS:
+            raw = config.get(key)
+            if isinstance(raw, bool) or raw is None:
+                merged = copy.deepcopy(DEFAULT_CONFIG[key])
+                merged["enabled"] = bool(raw)
+                config[key] = merged
+
+        # `hero` is excluded from the loop above: its `enabled` sub-field
+        # defaults to `None` (auto — enable when a logo exists), which the
+        # bool-shorthand loop would collapse to `False`.
+        raw = config.get("hero")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["hero"])
+            if isinstance(raw, bool):
+                merged["enabled"] = raw
+            # raw is None -> keep enabled: null (auto)
+            config["hero"] = merged
+        else:
+            user_hero = self._user_config.get("hero")
+            if isinstance(user_hero, dict) and "enabled" not in user_hero:
+                # Backward compatibility: a user-supplied hero mapping (of any
+                # shape, even {}) used to enable the hero unconditionally, even
+                # without a logo. No longer documented (see
+                # user_guide/11-theming.qmd), but preserved silently for
+                # existing configs.
+                raw["enabled"] = True
+
+        hero_logo = config["hero"].get("logo")
+        if isinstance(hero_logo, dict) and not hero_logo.get("light") and hero_logo.get("dark"):
+            # Mirror the top-level `logo` dark-only fallback: a dark-only
+            # hero.logo must still resolve to a `light` asset, or
+            # core.py's _build_hero_section silently drops the image.
+            hero_logo["light"] = hero_logo["dark"]
+
+        # A bare `seo: true`/`seo: false` collapses the whole subtree to a bool;
+        # rebuild it into the full default dict with `enabled` set from the
+        # scalar, same as the `_BOOL_SHORTHAND_KEYS` loop above.
+        #
+        # `seo.*` nested bool shorthands (e.g. `seo:\n  sitemap: true`) collapse
+        # a dict subtree; expand each back to its full default dict so strict
+        # `seo.<sub>.*` reads resolve.
+        seo = config.get("seo")
+        if isinstance(seo, bool):
+            merged = copy.deepcopy(DEFAULT_CONFIG["seo"])
+            merged["enabled"] = seo
+            config["seo"] = merged
+            seo = merged
+        if isinstance(seo, dict):
+            for sub in ("sitemap", "robots", "canonical", "structured_data"):
+                raw = seo.get(sub)
+                if isinstance(raw, bool):
+                    merged = copy.deepcopy(DEFAULT_CONFIG["seo"][sub])
+                    merged["enabled"] = raw
+                    seo[sub] = merged
+
+        # `announcement` is also excluded from the loop above: a string shorthand
+        # sets `content`, not `enabled`.
+        raw = config.get("announcement")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["announcement"])
+            if isinstance(raw, str):
+                merged["content"] = raw
+            config["announcement"] = merged
+
+        # `content_style` is also excluded from the loop above: a string
+        # shorthand sets `preset`, not `enabled`.
+        raw = config.get("content_style")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["content_style"])
+            if isinstance(raw, str):
+                merged["preset"] = raw
+            config["content_style"] = merged
+
+        # `logo` is also excluded from the loop above: a string shorthand
+        # sets both `light` and `dark`, not `enabled`.
+        raw = config.get("logo")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["logo"])
+            if isinstance(raw, str):
+                merged["light"] = raw
+                merged["dark"] = raw
+            config["logo"] = merged
+            raw = config["logo"]
+        if isinstance(raw, dict) and not raw.get("light") and raw.get("dark"):
+            # A dark-only logo still needs a `light` asset for the primary
+            # navbar <img>; fall back to the same file (core.py:11900 assumes
+            # `light` is always present once Config.logo is not None).
+            raw["light"] = raw["dark"]
+
+        # `freeze` is also excluded from the loop above: a scalar shorthand
+        # sets `mode`, not `enabled`.
+        raw = config.get("freeze")
+        if not isinstance(raw, dict):
+            merged = copy.deepcopy(DEFAULT_CONFIG["freeze"])
+            merged["mode"] = raw  # None | True | False | "auto" | "true"
+            config["freeze"] = merged
 
         return config
 
-    def _merge_config(self, defaults: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
+    # A bare `key:` (null) switches these options off. For every other
+    # dict-valued option a null means "not specified" and `_merge` keeps the
+    # packaged defaults, so an empty or commented-out block reads the same as
+    # an absent one. These four are the exception for backward compatibility:
+    # each defaults to on, yet a null has always disabled it.
+    _NULL_DISABLES: tuple[str, ...] = (
+        "social_cards",
+        "markdown_pages",
+        "mcp",
+        "freeze",
+    )
+
+    @staticmethod
+    def _merge(defaults: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
         """
-        Deep merge user configuration with defaults.
+        Deep merge two config-shaped mappings
+
+        Values in `user` win; dicts present in both are merged recursively.
+        A `None` where the default is a dict counts as "not specified" and
+        leaves the default subtree standing, so an empty or commented-out
+        block (`seo:` with nothing under it) reads the same as an absent one;
+        `_NULL_DISABLES` names the few keys that opt out of this. `defaults`
+        is not mutated — a new mapping is returned. Also used to overlay the
+        `site` subtree onto `_quarto.yml` `format.html`.
 
         Parameters
         ----------
         defaults
-            Default configuration values.
+            Base configuration values.
         user
-            User-provided configuration values.
+            Overriding configuration values (take precedence).
 
         Returns
         -------
@@ -491,54 +324,58 @@ class Config:
         result = defaults.copy()
 
         for key, value in user.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = self._merge_config(result[key], value)
+            if key not in result or not isinstance(result[key], dict):
+                result[key] = value
+            elif isinstance(value, dict):
+                result[key] = Config._merge(result[key], value)
+            elif value is None and key not in Config._NULL_DISABLES:
+                pass  # keep the default subtree
             else:
                 result[key] = value
 
         return result
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def __getitem__(self, key: str) -> Any:
         """
-        Get a configuration value.
+        Return the configuration value at a dot-separated key
 
         Parameters
         ----------
         key
-            The configuration key (supports dot notation for nested keys).
-        default
-            Default value if key is not found.
+            A dot-path such as `"seo.sitemap.enabled"`.
 
         Returns
         -------
         Any
-            The configuration value or default.
+            The value in the merged configuration at that path.
+
+        Raises
+        ------
+        KeyError
+            If any segment is absent or traversal reaches a non-mapping.
         """
-        keys = key.split(".")
-        value = self._config
-
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
+        value: Any = self._config
+        for part in key.split("."):
+            if isinstance(value, dict) and part in value:
+                value = value[part]
             else:
-                return default
-
+                raise KeyError(key)
         return value
 
     @property
     def exclude(self) -> list[str]:
         """Get the list of items to exclude."""
-        return self.get("exclude", [])
+        return self["exclude"]
 
     @property
     def auto_include(self) -> list[str]:
         """Get names to force-include even if they match AUTO_EXCLUDE."""
-        return self.get("auto_include", [])
+        return self["auto_include"]
 
     @property
     def no_auto_exclude(self) -> bool:
         """Check if the built-in AUTO_EXCLUDE list should be bypassed."""
-        return self.get("no_auto_exclude", False)
+        return self["no_auto_exclude"]
 
     @property
     def project_type(self) -> list[str]:
@@ -551,7 +388,7 @@ class Config:
         list[str]
             Always a list, e.g. `["python"]`, `["go"]`, or `["python", "go"]` for mixed projects.
         """
-        val = self.get("project_type", "python")
+        val = self["project_type"]
         if isinstance(val, list):
             return [str(t).lower() for t in val]
         return [str(val).lower()]
@@ -568,78 +405,75 @@ class Config:
         Returns
         -------
         bool | str
-            - True: auto-detect package name and link to pypi.org (default for Python projects)
+            - True: auto-detect package name and link to pypi.org
             - False: disable the PyPI link entirely
             - str: custom package index URL
         """
-        # If the user has explicitly set pypi in great-docs.yml, honour it regardless of
-        # project_type
-        if "pypi" in self._user_config:
-            return self._user_config["pypi"]
-        # Non-Python projects default to no PyPI link
-        if not self.is_python_project:
-            return False
-        return True
+        value = self["pypi"]
+        if value is None:
+            # Auto: a PyPI link makes sense only for a Python project.
+            return self.is_python_project
+        return value
 
     @property
     def repo(self) -> str | None:
         """Get the GitHub repository URL override."""
-        return self.get("repo")
+        return self["repo"]
 
     @property
     def site_url(self) -> str | None:
         """Get the site URL for subdirectory deployments."""
-        return self.get("site_url")
+        return self["site_url"]
 
     @property
     def github_style(self) -> str:
         """Get the GitHub link style."""
-        return self.get("github_style", "widget")
+        return self["github_style"]
 
     @property
     def source_enabled(self) -> bool:
         """Check if source links are enabled."""
-        return self.get("source.enabled", True)
+        return self["source.enabled"]
 
     @property
     def source_branch(self) -> str | None:
         """Get the source link branch."""
-        return self.get("source.branch")
+        return self["source.branch"]
 
     @property
     def source_path(self) -> str | None:
         """Get the custom source path."""
-        return self.get("source.path")
+        return self["source.path"]
 
     @property
     def source_placement(self) -> str:
         """Get the source link placement."""
-        return self.get("source.placement", "usage")
+        return self["source.placement"]
 
     @property
     def sidebar_filter_enabled(self) -> bool:
         """Check if sidebar filter is enabled."""
-        return self.get("sidebar_filter.enabled", True)
+        return self["sidebar_filter.enabled"]
 
     @property
     def sidebar_filter_min_items(self) -> int:
         """Get the minimum items for sidebar filter."""
-        return self.get("sidebar_filter.min_items", 20)
+        return self["sidebar_filter.min_items"]
 
     @property
     def cli_enabled(self) -> bool:
         """Check if CLI documentation is enabled."""
-        return self.get("cli.enabled", False)
+        return self["cli.enabled"]
 
     @property
     def cli_module(self) -> str | None:
         """Get the CLI module path."""
-        return self.get("cli.module")
+        return self["cli.module"]
 
     @property
     def cli_name(self) -> str | None:
         """Get the CLI command name."""
-        return self.get("cli.name")
+        return self["cli.name"]
 
     @property
     def cli_title(self) -> str | None:
@@ -648,7 +482,7 @@ class Config:
         Supports `cli: {title: "Custom Title"}` in great-docs.yml. Returns `None` when no custom
         title is configured (the caller falls back to a translated default).
         """
-        return self.get("cli.title")
+        return self["cli.title"]
 
     @property
     def cli_desc(self) -> str | None:
@@ -657,7 +491,7 @@ class Config:
         Supports `cli: {desc: "Intro text..."}` in great-docs.yml. Returns `None` when no
         description is configured.
         """
-        return self.get("cli.desc")
+        return self["cli.desc"]
 
     @property
     def cli_sections(self) -> list[dict[str, Any]]:
@@ -674,7 +508,7 @@ class Config:
         Each `contents` entry is a top-level command name (string). Returns an empty list when no
         explicit sections are configured (triggering auto-grouping by command group).
         """
-        val = self.get("cli.sections", [])
+        val = self["cli.sections"]
         if isinstance(val, list):
             return val
         return []
@@ -686,67 +520,67 @@ class Config:
         When `True`, great-docs will detect the Go CLI project at the package root, compile it, and
         extract the command tree via `--help` to generate a CLI reference section.
         """
-        return self.get("go_cli.enabled", False)
+        return self["go_cli.enabled"]
 
     @property
     def mcp_enabled(self) -> bool:
         """Check if MCP server documentation is enabled."""
-        return self.get("mcp.enabled", False)
+        return self["mcp.enabled"]
 
     @property
     def mcp_module(self) -> str | None:
         """Get the MCP server module path."""
-        return self.get("mcp.module")
+        return self["mcp.module"]
 
     @property
     def mcp_server_var(self) -> str | None:
         """Get the MCP server variable name."""
-        return self.get("mcp.server_var")
+        return self["mcp.server_var"]
 
     @property
     def mcp_name(self) -> str | None:
         """Get the MCP server display name override."""
-        return self.get("mcp.name")
+        return self["mcp.name"]
 
     @property
     def mcp_categories(self) -> dict:
         """Get manual MCP tool categories."""
-        return self.get("mcp.categories", {})
+        return self["mcp.categories"]
 
     @property
     def skill_enabled(self) -> bool:
         """Check if skill.md generation is enabled."""
-        return self.get("skill.enabled", True)
+        return self["skill.enabled"]
 
     @property
     def skill_file(self) -> str | None:
         """Get the path to a hand-written SKILL.md override."""
-        return self.get("skill.file")
+        return self["skill.file"]
 
     @property
     def skill_well_known(self) -> bool:
         """Check if .well-known/agent-skills/ discovery files should be generated."""
-        return self.get("skill.well_known", True)
+        return self["skill.well_known"]
 
     @property
     def skill_gotchas(self) -> list[str]:
         """Get the list of gotcha strings for the SKILL.md Gotchas section."""
-        return self.get("skill.gotchas", [])
+        return self["skill.gotchas"]
 
     @property
     def skill_best_practices(self) -> list[str]:
         """Get the list of best-practice strings for the SKILL.md."""
-        return self.get("skill.best_practices", [])
+        return self["skill.best_practices"]
 
     @property
     def skill_decision_table(self) -> list[dict]:
         """Get manual decision table rows for the SKILL.md."""
-        return self.get("skill.decision_table", [])
+        return self["skill.decision_table"]
 
     @property
     def skill_extra_body(self) -> str | None:
         """Get the path to extra Markdown to append to the generated SKILL.md body."""
-        return self.get("skill.extra_body")
+        return self["skill.extra_body"]
 
     @property
     def skill_skills(self) -> list[dict]:
@@ -755,22 +589,22 @@ class Config:
         Each entry should have `name` and `file` keys. When non-empty, this overrides the single
         `skill.file` setting.
         """
-        return self.get("skill.skills", [])
+        return self["skill.skills"]
 
     @property
     def changelog_enabled(self) -> bool:
         """Check if changelog generation from GitHub Releases is enabled."""
-        return self.get("changelog.enabled", True)
+        return self["changelog.enabled"]
 
     @property
     def changelog_max_releases(self) -> int:
         """Get the maximum number of GitHub Releases to include."""
-        return self.get("changelog.max_releases", 50)
+        return self["changelog.max_releases"]
 
     @property
     def sections(self) -> list[dict]:
         """Get the custom sections configuration."""
-        return self.get("sections", [])
+        return self["sections"]
 
     @property
     def custom_pages(self) -> list[dict[str, str]]:
@@ -785,7 +619,7 @@ class Config:
         - When `custom_pages` is a dict, it may specify `dir` and optional `output`.
         - When `custom_pages` is a list, each entry may be a string or dict.
         """
-        raw = self.get("custom_pages")
+        raw = self["custom_pages"]
 
         if raw is None:
             return [{"dir": "custom", "output": "custom"}]
@@ -823,48 +657,42 @@ class Config:
     @property
     def dark_mode_toggle(self) -> bool:
         """Check if dark mode toggle is enabled."""
-        return self.get("dark_mode_toggle", True)
+        return self["dark_mode_toggle"]
 
     @property
     def keyboard_nav(self) -> bool:
         """Check if keyboard navigation shortcuts are enabled."""
-        return self.get("keyboard_nav", True)
+        return self["keyboard_nav"]
 
     @property
     def package_info_page(self) -> bool:
         """Check if package info page generation is enabled."""
-        return self.get("package_info_page", True)
+        return self["package_info_page"]
 
     @property
     def back_to_top(self) -> bool:
         """Check if back-to-top button is enabled."""
-        return self.get("back_to_top", True)
+        return self["back_to_top"]
 
     @property
     def markdown_pages(self) -> bool:
-        """Check if Markdown page generation is enabled."""
-        val = self.get("markdown_pages", True)
-        if isinstance(val, dict):
-            return val.get("enabled", True)
-        return bool(val)
+        """Whether Markdown companion pages are generated"""
+        return bool(self["markdown_pages.enabled"])
 
     @property
     def markdown_pages_widget(self) -> bool:
-        """Check if the copy-page widget is shown (requires markdown_pages)."""
-        val = self.get("markdown_pages", True)
-        if isinstance(val, dict):
-            return val.get("widget", True) and val.get("enabled", True)
-        return bool(val)
+        """Whether the copy-page widget is shown (requires markdown_pages)"""
+        return bool(self["markdown_pages.widget"]) and self.markdown_pages
 
     @property
     def parser(self) -> str:
         """Get the docstring parser format (numpy, google, or sphinx)."""
-        return self.get("parser", "numpy")
+        return self["parser"]
 
     @property
     def dynamic(self) -> bool:
         """Get the dynamic introspection mode for API reference generation."""
-        return self.get("dynamic", True)
+        return self["dynamic"]
 
     @property
     def module(self) -> str | None:
@@ -874,7 +702,7 @@ class Config:
         Use this when the importable module name differs from the project name,
         e.g., project 'py-yaml12' with module 'yaml12'.
         """
-        return self.get("module")
+        return self["module"]
 
     @property
     def display_name(self) -> str | None:
@@ -884,7 +712,7 @@ class Config:
         Use this to customize how the package name appears in the navbar/title,
         e.g., 'Great Docs' instead of 'great_docs' or 'great-docs'.
         """
-        return self.get("display_name")
+        return self["display_name"]
 
     @property
     def homepage(self) -> str:
@@ -896,7 +724,7 @@ class Config:
             The validated homepage mode. Falls back to 'index' if an
             invalid value is configured.
         """
-        value = self.get("homepage", "index")
+        value = self["homepage"]
         if value not in ("index", "user_guide"):
             print(f"Warning: Invalid homepage value '{value}', defaulting to 'index'")
             return "index"
@@ -913,17 +741,17 @@ class Config:
             - str: custom directory path for user guide files
             - list: explicit section ordering (list of section dicts)
         """
-        return self.get("user_guide")
+        return self["user_guide"]
 
     @property
     def user_guide_is_explicit(self) -> bool:
         """Check if user guide uses explicit section ordering."""
-        return isinstance(self.get("user_guide"), list)
+        return isinstance(self["user_guide"], list)
 
     @property
     def user_guide_dir(self) -> str | None:
         """Get the user guide directory path (only when it's a string)."""
-        val = self.get("user_guide")
+        val = self["user_guide"]
         return val if isinstance(val, str) else None
 
     @property
@@ -932,7 +760,7 @@ class Config:
 
         Returns `False` when the config contains `reference: false`. Defaults to `True`.
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if val is False:
             return False
         return True
@@ -961,7 +789,7 @@ class Config:
         Returns the list of section dicts, or an empty list when no
         explicit sections are configured (triggering auto-discovery).
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if isinstance(val, list):
             return val
         if isinstance(val, dict):
@@ -977,7 +805,7 @@ class Config:
         Supports `reference: {title: "Custom Title"}` in great-docs.yml. Returns `None` when no
         custom title is configured.
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if isinstance(val, dict):
             return val.get("title")
         return None
@@ -989,7 +817,7 @@ class Config:
         Supports `reference: {desc: "Description text..."}` in great-docs.yml. Returns `None` when
         no description is configured.
         """
-        val = self.get("reference", [])
+        val = self["reference"]
         if isinstance(val, dict):
             return val.get("desc")
         return None
@@ -1006,7 +834,7 @@ class Config:
         """
         if method_count == 0:
             return False
-        val = self.get("inline_methods", 5)
+        val = self["inline_methods"]
         if val is True:
             return False
         if val is False:
@@ -1014,12 +842,12 @@ class Config:
         try:
             return method_count > int(val)
         except (TypeError, ValueError):
-            return method_count > 5
+            return method_count > int(DEFAULT_CONFIG["inline_methods"])
 
     @property
     def authors(self) -> list[dict[str, Any]]:
         """Get the rich author metadata."""
-        return self.get("authors", [])
+        return self["authors"]
 
     @property
     def funding(self) -> dict[str, Any] | None:
@@ -1029,37 +857,54 @@ class Config:
         Returns a dict with keys: name, roles (list), ror (ROR URL).
         Example: {"name": "Posit Software, PBC", "roles": ["Copyright holder", "funder"], "ror": "https://ror.org/03wc8by49"}
         """
-        return self.get("funding")
+        return self["funding"]
 
     @property
     def site(self) -> dict[str, Any]:
-        """Get the site settings (forwarded to _quarto.yml format.html)."""
-        return self.get("site", {})
+        """Get the site settings — a pure Quarto passthrough into format.html."""
+        return self["site"]
+
+    @property
+    def site_quarto(self) -> dict[str, Any]:
+        """Get the `site` subtree destined for `_quarto.yml` `format.html`
+
+        Legacy great-docs keys are already normalized out of `site` at load;
+        `css` is removed here because great-docs copies the file and references
+        it by basename separately.
+
+        Returns
+        -------
+        dict
+            The site settings safe to merge blindly into `format.html`.
+        """
+        site = dict(self.site)
+        site.pop("css", None)
+        return site
 
     @property
     def show_dates(self) -> bool:
         """Whether to show page metadata timestamps in the footer."""
-        return bool(self.site.get("show_dates", False))
+        return bool(self["show_dates"])
 
     @property
     def date_format(self) -> str:
         """Get the date format string (Python strftime format)."""
-        return self.site.get("date_format", "%B %d, %Y")
+        return self["date_format"]
 
     @property
     def show_author(self) -> bool:
         """Whether to show author attribution when dates are enabled."""
-        return bool(self.site.get("show_author", True))
+        return bool(self["show_author"])
 
     @property
     def show_security(self) -> bool:
         """Whether to show the security policy page when SECURITY.md exists."""
-        return bool(self.site.get("show_security", True))
+        return bool(self["show_security"])
 
     @property
     def language(self) -> str:
-        """Get the site UI language (BCP 47 code, default: 'en')."""
-        return self.site.get("language", "en")
+        """Get the site UI language (BCP 47 code, default 'en')."""
+        return self["language"]
 
     @property
     def team_author(self) -> dict[str, Any] | None:
@@ -1071,7 +916,7 @@ class Config:
             A dict with keys: name (str), image (str|None), url (str|None).
             Returns None when not configured.
         """
-        raw = self.get("team_author")
+        raw = self["team_author"]
         if raw is None:
             return None
         if isinstance(raw, dict) and raw.get("name"):
@@ -1085,103 +930,52 @@ class Config:
     @property
     def jupyter(self) -> str:
         """Get the Jupyter kernel for executing code cells."""
-        return self.get("jupyter", "python3")
+        return self["jupyter"]
 
     @property
     def logo(self) -> dict[str, Any] | None:
-        """Get the normalized logo configuration.
-
-        Returns
-        -------
-        dict | None
-            Normalized logo dict with at least `light` key, or `None` if no logo is configured. A
-            bare string in `great-docs.yml` is expanded to `{"light": "<path>", "dark": "<path>"}`.
-        """
-        raw = self.get("logo")
-        if raw is None:
+        """The logo config, or None when no logo is set"""
+        if not (self["logo.light"] or self["logo.dark"]):
             return None
-        if isinstance(raw, str):
-            return {"light": raw, "dark": raw}
-        if isinstance(raw, dict):
-            return raw
-        return None
+        return self["logo"]
 
     @property
     def logo_show_title(self) -> bool:
-        """Whether to show the text title alongside the logo."""
-        logo = self.logo
-        if isinstance(logo, dict):
-            return bool(logo.get("show_title", False))
-        return False
-
-    @property
-    def hero_enabled(self) -> bool:
-        """Whether the hero section is enabled.
-
-        Auto-enables when a logo is configured and `hero` is not explicitly set to `False`.
-        """
-        raw = self.get("hero")
-        if raw is False:
-            return False
-        if raw is True or isinstance(raw, dict):
-            if isinstance(raw, dict) and raw.get("enabled") is False:
-                return False
-            return True
-        # None (default): auto-enable when logo exists
-        return self.logo is not None
-
-    @property
-    def hero_explicitly_disabled(self) -> bool:
-        """Whether the hero was explicitly turned off by the user."""
-        raw = self.get("hero")
-        if raw is False:
-            return True
-        if isinstance(raw, dict) and raw.get("enabled") is False:
-            return True
-        return False
+        """Whether the text title is shown alongside the logo"""
+        return bool(self["logo.show_title"]) if self.logo else False
 
     @property
     def hero(self) -> dict[str, Any]:
-        """Get the resolved hero configuration dict.
+        """Resolved hero configuration"""
+        return self["hero"]
 
-        Returns a dict with keys: enabled, logo, logo_height, name, tagline, badges. Missing keys
-        are filled with defaults.
-        """
-        raw = self.get("hero")
-        if isinstance(raw, dict):
-            return raw
-        return {}
+    @property
+    def hero_enabled(self) -> bool:
+        """Whether the hero section is shown"""
+        enabled = self["hero.enabled"]
+        if enabled is None:
+            return self.logo is not None or self["hero.logo"] not in (None, False)
+        return bool(enabled)
+
+    @property
+    def hero_explicitly_disabled(self) -> bool:
+        """Whether the hero was turned off explicitly"""
+        return self["hero.enabled"] is False
 
     @property
     def hero_logo(self) -> str | dict | None | bool:
-        """Get the explicit hero logo config.
-
-        Returns the hero-specific logo value only. Returns `False` when explicitly suppressed,
-        `None` when not configured. The full fallback chain (auto-detected hero logos, navbar logo)
-        is handled in `core._build_hero_section`.
-        """
-        hero = self.hero
-        val = hero.get("logo") if hero else None
-        if val is False:
-            return False
-        if val is not None:
-            return val
-        return None
+        """The hero-specific logo, or `False` when suppressed"""
+        return self["hero.logo"]
 
     @property
     def hero_logo_height(self) -> str:
-        """Get the hero logo max-height CSS value."""
-        hero = self.hero
-        return hero.get("logo_height", "200px") if hero else "200px"
+        """The hero logo max-height CSS value"""
+        return self["hero.logo_height"]
 
     @property
     def hero_name(self) -> str | bool | None:
-        """Get the hero name, falling back to display_name.
-
-        Returns `None` when explicitly suppressed (`false`).
-        """
-        hero = self.hero
-        val = hero.get("name") if hero else None
+        """The hero name, falling back to the display name"""
+        val = self["hero.name"]
         if val is False:
             return False
         if val is not None:
@@ -1190,38 +984,20 @@ class Config:
 
     @property
     def hero_tagline(self) -> str | None:
-        """Get the hero tagline.
-
-        Returns `None` when explicitly suppressed (`false`). Auto-resolved from package metadata in
-        core.py.
-        """
-        hero = self.hero
-        val = hero.get("tagline") if hero else None
-        if val is False:
-            return None
-        return val
+        """The hero tagline, or `None` when suppressed"""
+        val = self["hero.tagline"]
+        return None if val is False else val
 
     @property
     def hero_starfield(self) -> bool:
-        """Whether the interactive starfield animation is enabled on the hero."""
-        hero = self.hero
-        return bool(hero.get("starfield", False)) if hero else False
+        """Whether the starfield animation is enabled"""
+        return bool(self["hero.starfield"])
 
     @property
     def hero_badges(self) -> str | list | None:
-        """Get the hero badges config.
-
-        Returns `"auto"` (default, extract from README), an explicit list of badge dicts, or `None`
-        (disabled).
-        """
-        hero = self.hero
-        val = hero.get("badges") if hero else None
-        if val is False:
-            return None
-        if val is not None:
-            return val
-        # Default: auto-extract from README
-        return "auto"
+        """The hero badges config (`'auto'`, an explicit list, or `None`)"""
+        val = self["hero.badges"]
+        return None if val is False else val
 
     @property
     def favicon(self) -> dict[str, Any] | None:
@@ -1233,7 +1009,7 @@ class Config:
             Normalized favicon dict with at least `icon` key, or `None` if no favicon is explicitly
             configured (auto-generation may still produce one from the logo).
         """
-        raw = self.get("favicon")
+        raw = self["favicon"]
         if raw is None:
             return None
         if isinstance(raw, str):
@@ -1244,47 +1020,26 @@ class Config:
 
     @property
     def announcement(self) -> dict[str, Any] | None:
-        """Get the normalized announcement banner configuration.
-
-        Returns
-        -------
-        dict | None
-            Normalized dict with keys: `content`, `type`, `dismissable`, `url`, `style`,
-            `position`. Returns `None` if no announcement is configured.
-        """
-        raw = self.get("announcement")
-        if raw is None or raw is False:
+        """The announcement banner config, or None when there is no content"""
+        content = self["announcement.content"]
+        if not content:
             return None
-        if isinstance(raw, str):
-            return {
-                "content": raw,
-                "type": "info",
-                "dismissable": True,
-                "url": None,
-                "style": None,
-                "position": "above-navbar",
-            }
-        if isinstance(raw, dict):
-            content = raw.get("content")
-            if not content:
-                return None
-            position = raw.get("position", "above-navbar")
-            if position not in ("above-navbar", "below-navbar"):
-                position = "above-navbar"
-            return {
-                "content": content,
-                "type": raw.get("type", "info"),
-                "dismissable": raw.get("dismissable", True),
-                "url": raw.get("url"),
-                "style": raw.get("style"),
-                "position": position,
-            }
-        return None
+        position = self["announcement.position"]
+        if position not in ("above-navbar", "below-navbar"):
+            position = "above-navbar"
+        return {
+            "content": content,
+            "type": self["announcement.type"],
+            "dismissable": self["announcement.dismissable"],
+            "url": self["announcement.url"],
+            "style": self["announcement.style"],
+            "position": position,
+        }
 
     @property
     def versions(self) -> list:
         """Get the raw versions list from config."""
-        return self.get("versions", [])
+        return self["versions"]
 
     @property
     def has_versions(self) -> bool:
@@ -1296,22 +1051,22 @@ class Config:
         """Whether the version selector widget is enabled."""
         if not self.has_versions:
             return False
-        return self.get("version_selector.enabled", True)
+        return self["version_selector.enabled"]
 
     @property
     def version_selector_placement(self) -> str:
         """Get the version selector placement."""
-        return self.get("version_selector.placement", "navbar-right")
+        return self["version_selector.placement"]
 
     @property
     def version_warning_banner(self) -> bool:
         """Whether to show warning banners on non-latest versions."""
-        return self.get("version_selector.warning_banner", True)
+        return self["version_selector.warning_banner"]
 
     @property
     def version_aliases(self) -> dict:
         """Get the version aliases configuration."""
-        return self.get("version_aliases", {"latest": True, "stable": True, "dev": True})
+        return self["version_aliases"]
 
     @property
     def include_in_header(self) -> list[dict[str, str]]:
@@ -1320,7 +1075,7 @@ class Config:
         Returns a list of Quarto-compatible include-in-header items (each a dict with either a
         "text" or "file" key).
         """
-        raw = self.get("include_in_header", [])
+        raw = self["include_in_header"]
         if raw is None:
             return []
         if isinstance(raw, str):
@@ -1337,59 +1092,33 @@ class Config:
 
     @property
     def freeze(self) -> str | bool | None:
-        """Get the freeze mode for Quarto code execution caching.
-
-        Returns
-        -------
-        str | bool | None
-            - None or False: freeze disabled
-            - "auto": re-render only when source changes
-            - True: never re-render during project render
-        """
-        raw = self.get("freeze")
-        if raw is None or raw is False:
+        """The Quarto freeze mode (None disabled, 'auto', or True)"""
+        mode = self["freeze.mode"]
+        if mode is None or mode is False:
             return None
-        if isinstance(raw, dict):
-            return raw.get("mode", "auto")
-        if raw is True or raw == "auto":
-            return raw
-        # Accept string "true" as True
-        if isinstance(raw, str) and raw.lower() == "true":
+        if mode is True or mode == "auto":
+            return mode
+        if isinstance(mode, str) and mode.lower() == "true":
             return True
         return None
 
     @property
     def pre_render(self) -> list[str]:
-        """Get the normalized list of pre-render script paths.
-
-        Combines scripts from both ``freeze.pre_render`` and the top-level ``pre_render`` key.
-
-        Returns
-        -------
-        list[str]
-            List of script paths relative to the project root.
-        """
+        """Normalized pre-render script paths from freeze.pre_render and pre_render"""
         scripts: list[str] = []
-
-        # Check freeze dict form for pre_render
-        raw_freeze = self.get("freeze")
-        if isinstance(raw_freeze, dict):
-            freeze_scripts = raw_freeze.get("pre_render")
-            if isinstance(freeze_scripts, str):
-                scripts.append(freeze_scripts)
-            elif isinstance(freeze_scripts, list):
-                scripts.extend(s for s in freeze_scripts if isinstance(s, str))
-
-        # Check top-level pre_render
-        raw_pre = self.get("pre_render")
-        if isinstance(raw_pre, str):
-            if raw_pre not in scripts:
-                scripts.append(raw_pre)
-        elif isinstance(raw_pre, list):
-            for s in raw_pre:
+        fr = self["freeze.pre_render"]
+        if isinstance(fr, str):
+            scripts.append(fr)
+        elif isinstance(fr, list):
+            scripts.extend(s for s in fr if isinstance(s, str))
+        pr = self["pre_render"]
+        if isinstance(pr, str):
+            if pr not in scripts:
+                scripts.append(pr)
+        elif isinstance(pr, list):
+            for s in pr:
                 if isinstance(s, str) and s not in scripts:
                     scripts.append(s)
-
         return scripts
 
     @property
@@ -1404,7 +1133,7 @@ class Config:
         list[str]
             List of bibliography (`.bib`) file paths, or an empty list if none.
         """
-        raw = self.get("bibliography")
+        raw = self["bibliography"]
         if isinstance(raw, str):
             return [raw]
         if isinstance(raw, list):
@@ -1420,7 +1149,7 @@ class Config:
         str | None
             Path to the `.csl` file relative to the project root, or `None`.
         """
-        raw = self.get("csl")
+        raw = self["csl"]
         if isinstance(raw, str):
             return raw
         return None
@@ -1454,7 +1183,7 @@ class Config:
             A dict with optional `navbar` and `sidebar` keys, each mapping navigation label text to
             a Lucide icon name. Returns `None` when not configured.
         """
-        raw = self.get("nav_icons")
+        raw = self["nav_icons"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, dict):
@@ -1485,7 +1214,7 @@ class Config:
     @property
     def attribution(self) -> bool:
         """Whether to show Great Docs attribution in the footer."""
-        return bool(self.get("attribution", True))
+        return bool(self["attribution"])
 
     @property
     def accent_color(self) -> dict[str, str] | None:
@@ -1497,7 +1226,7 @@ class Config:
             A dict with `"light"` and/or `"dark"` keys mapping to CSS color strings. Returns `None`
             when not configured.
         """
-        raw = self.get("accent_color")
+        raw = self["accent_color"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
@@ -1514,7 +1243,7 @@ class Config:
     @property
     def navbar_style(self) -> str | None:
         """Get the navbar gradient preset name."""
-        raw = self.get("navbar_style")
+        raw = self["navbar_style"]
         if raw and isinstance(raw, str):
             return raw
         return None
@@ -1531,7 +1260,7 @@ class Config:
         """
         if self.navbar_style:
             return None
-        raw = self.get("navbar_color")
+        raw = self["navbar_color"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
@@ -1547,26 +1276,19 @@ class Config:
 
     @property
     def content_style(self) -> dict[str, str] | None:
-        """Get the normalized content area gradient configuration."""
-        raw = self.get("content_style")
-        if raw is None or raw is False:
+        """The content-area gradient config, or None when no preset is set"""
+        preset = self["content_style.preset"]
+        if not preset or not isinstance(preset, str):
             return None
-        if isinstance(raw, str):
-            return {"preset": raw, "pages": "all"}
-        if isinstance(raw, dict):
-            preset = raw.get("preset")
-            if not preset or not isinstance(preset, str):
-                return None
-            pages = raw.get("pages", "all")
-            if pages not in ("all", "homepage"):
-                pages = "all"
-            return {"preset": preset, "pages": pages}
-        return None
+        pages = self["content_style.pages"]
+        if pages not in ("all", "homepage"):
+            pages = "all"
+        return {"preset": preset, "pages": pages}
 
     @property
     def scale_to_fit(self) -> list[str] | None:
         """Get the list of CSS selectors for auto-scale-to-fit."""
-        raw = self.get("scale_to_fit")
+        raw = self["scale_to_fit"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, list):
@@ -1585,7 +1307,7 @@ class Config:
 
         Returns a float (0-1), a keyword (`"mobile"`, `"tablet"`, `"desktop"`), or `None`.
         """
-        raw = self.get("scale_to_fit_min_scale")
+        raw = self["scale_to_fit_min_scale"]
         if raw is None or raw is False:
             return None
         if isinstance(raw, str):
@@ -1603,216 +1325,167 @@ class Config:
 
     @property
     def social_cards_enabled(self) -> bool:
-        """Check if social card meta tags are enabled."""
-        raw = self.get("social_cards")
-        if raw is None or raw is False:
-            return False
-        if raw is True:
-            return True
-        if isinstance(raw, dict):
-            return raw.get("enabled", True)
-        return True
+        """Whether social card meta tags are enabled"""
+        return bool(self["social_cards.enabled"])
 
     @property
     def social_cards_image(self) -> str | None:
-        """Get the default social card image path."""
-        raw = self.get("social_cards")
-        if isinstance(raw, dict):
-            return raw.get("image")
-        return None
+        """Default social card image path"""
+        return self["social_cards.image"]
 
     @property
     def social_cards_twitter_card(self) -> str | None:
-        """Get the Twitter card type override."""
-        raw = self.get("social_cards")
-        if isinstance(raw, dict):
-            return raw.get("twitter_card")
-        return None
+        """Twitter card type override"""
+        return self["social_cards.twitter_card"]
 
     @property
     def social_cards_twitter_site(self) -> str | None:
-        """Get the Twitter site @handle."""
-        raw = self.get("social_cards")
-        if isinstance(raw, dict):
-            return raw.get("twitter_site")
-        return None
+        """Twitter site `@handle`"""
+        return self["social_cards.twitter_site"]
 
     # ── Page Status Properties ────────────────────────────────────────────
 
     @property
     def page_status_enabled(self) -> bool:
-        """Check if page status badges are enabled."""
-        raw = self.get("page_status")
-        if raw is None or raw is False:
-            return False
-        if raw is True:
-            return True
-        if isinstance(raw, dict):
-            return raw.get("enabled", False)
-        return False
+        """Whether page status badges are enabled"""
+        return bool(self["page_status.enabled"])
 
     @property
     def page_status_show_in_sidebar(self) -> bool:
-        """Check if status badges should appear in the sidebar."""
-        return self.page_status_enabled and self.get("page_status.show_in_sidebar", True)
+        """Whether status badges appear in the sidebar"""
+        return self.page_status_enabled and self["page_status.show_in_sidebar"]
 
     @property
     def page_status_show_on_pages(self) -> bool:
-        """Check if status indicators should appear below page titles."""
-        return self.page_status_enabled and self.get("page_status.show_on_pages", True)
+        """Whether status indicators appear below page titles"""
+        return self.page_status_enabled and self["page_status.show_on_pages"]
 
     @property
     def page_status_definitions(self) -> dict[str, dict[str, str]]:
-        """Get the status definitions (built-in + custom overrides)."""
-        defs = self.get("page_status.statuses")
-        if defs and isinstance(defs, dict):
-            return defs
-        # Shorthand `page_status: true` replaces the entire dict with a bool,
-        # so fall back to the built-in defaults.
-        return DEFAULT_CONFIG.get("page_status", {}).get("statuses", {})
+        """Status definitions (built-in plus any user overrides)"""
+        return self["page_status.statuses"]
 
     # ── Page Tags Properties ─────────────────────────────────────────────
 
     @property
     def tags_enabled(self) -> bool:
-        """Check if page tags are enabled."""
-        raw = self.get("tags")
-        if raw is None or raw is False:
-            return False
-        if raw is True:
-            return True
-        if isinstance(raw, dict):
-            return raw.get("enabled", False)
-        return False
+        """Whether page tags are enabled"""
+        return bool(self["tags.enabled"])
 
     @property
     def tags_index_page(self) -> bool:
-        """Check if a tags index page should be generated."""
-        return self.tags_enabled and self.get("tags.index_page", True)
+        """Whether a tags index page is generated"""
+        return self.tags_enabled and self["tags.index_page"]
 
     @property
     def tags_show_on_pages(self) -> bool:
-        """Check if tags should be rendered above page titles."""
-        return self.tags_enabled and self.get("tags.show_on_pages", True)
+        """Whether tags are rendered above page titles"""
+        return self.tags_enabled and self["tags.show_on_pages"]
 
     @property
     def tags_location(self) -> str:
-        """Get the default tag pill placement: ``"top"`` or ``"bottom"``."""
-        val = self.get("tags.location", "top")
+        """Default tag pill placement, `"top"` or `"bottom"`"""
+        val = self["tags.location"]
         if val in ("top", "bottom"):
             return val
         return "top"
 
     @property
     def tags_hierarchical(self) -> bool:
-        """Check if hierarchical tags (using '/') are supported."""
-        return self.get("tags.hierarchical", True)
+        """Whether hierarchical tags (using '/') are supported"""
+        return self["tags.hierarchical"]
 
     @property
     def tags_icons(self) -> dict[str, str]:
-        """Get the tag-to-icon mapping."""
-        return self.get("tags.icons", {})
+        """Tag-to-icon mapping"""
+        return self["tags.icons"]
 
     @property
     def tags_shadow(self) -> list[str]:
-        """Get the list of shadow tags (hidden from public view)."""
-        return self.get("tags.shadow", [])
+        """Shadow tags, hidden from public view"""
+        return self["tags.shadow"]
 
     @property
     def tags_scoped(self) -> bool:
-        """Check if scoped tag listings per section are enabled."""
-        return self.get("tags.scoped", False)
+        """Whether scoped tag listings per section are enabled"""
+        return self["tags.scoped"]
 
     # ── SEO Configuration Properties ─────────────────────────────────────────
 
     @property
     def seo_enabled(self) -> bool:
         """Check if SEO features are enabled."""
-        return self.get("seo.enabled", True)
+        return self["seo.enabled"]
 
     @property
     def sitemap_enabled(self) -> bool:
         """Check if sitemap.xml generation is enabled."""
-        return self.seo_enabled and self.get("seo.sitemap.enabled", True)
+        return self.seo_enabled and self["seo.sitemap.enabled"]
 
     @property
     def sitemap_changefreq(self) -> dict[str, str]:
-        """Get the sitemap change frequency by page type."""
-        defaults = {
-            "homepage": "weekly",
-            "reference": "monthly",
-            "user_guide": "monthly",
-            "changelog": "weekly",
-            "default": "monthly",
-        }
-        return {**defaults, **self.get("seo.sitemap.changefreq", {})}
+        """Sitemap change frequency by page type"""
+        return self["seo.sitemap.changefreq"]
 
     @property
     def sitemap_priority(self) -> dict[str, float]:
-        """Get the sitemap priority by page type."""
-        defaults = {
-            "homepage": 1.0,
-            "reference": 0.8,
-            "user_guide": 0.9,
-            "changelog": 0.6,
-            "default": 0.5,
-        }
-        return {**defaults, **self.get("seo.sitemap.priority", {})}
+        """Sitemap priority by page type"""
+        return self["seo.sitemap.priority"]
 
     @property
     def robots_enabled(self) -> bool:
         """Check if robots.txt generation is enabled."""
-        return self.seo_enabled and self.get("seo.robots.enabled", True)
+        return self.seo_enabled and self["seo.robots.enabled"]
 
     @property
     def robots_allow_all(self) -> bool:
         """Check if robots.txt should allow all crawlers."""
-        return self.get("seo.robots.allow_all", True)
+        return self["seo.robots.allow_all"]
 
     @property
     def robots_disallow(self) -> list[str]:
         """Get the list of paths to disallow in robots.txt."""
-        return self.get("seo.robots.disallow", [])
+        return self["seo.robots.disallow"]
 
     @property
     def robots_crawl_delay(self) -> int | None:
         """Get the optional crawl delay in seconds."""
-        return self.get("seo.robots.crawl_delay")
+        return self["seo.robots.crawl_delay"]
 
     @property
     def robots_extra_rules(self) -> list[str]:
         """Get additional robots.txt rules."""
-        return self.get("seo.robots.extra_rules", [])
+        return self["seo.robots.extra_rules"]
 
     @property
     def canonical_enabled(self) -> bool:
         """Check if canonical URLs are enabled."""
-        return self.seo_enabled and self.get("seo.canonical.enabled", True)
+        return self.seo_enabled and self["seo.canonical.enabled"]
 
     @property
     def canonical_base_url(self) -> str | None:
         """Get the canonical base URL."""
-        return self.get("seo.canonical.base_url")
+        return self["seo.canonical.base_url"]
 
     @property
     def seo_title_template(self) -> str:
         """Get the page title template."""
-        return self.get("seo.title_template", "{page_title} | {site_name}")
+        return self["seo.title_template"]
 
     @property
     def structured_data_enabled(self) -> bool:
         """Check if JSON-LD structured data is enabled."""
-        return self.seo_enabled and self.get("seo.structured_data.enabled", True)
+        return self.seo_enabled and self["seo.structured_data.enabled"]
 
     @property
     def structured_data_type(self) -> str:
         """Get the Schema.org type for structured data."""
-        return self.get("seo.structured_data.type", "SoftwareSourceCode")
+        return self["seo.structured_data.type"]
 
     @property
     def seo_default_description(self) -> str | None:
         """Get the default meta description."""
-        return self.get("seo.default_description")
+        return self["seo.default_description"]
 
     def exists(self) -> bool:
         """Check if the configuration file exists."""
@@ -1847,262 +1520,79 @@ def load_config(project_root: Path | str) -> Config:
     return Config(Path(project_root))
 
 
-def create_default_config() -> str:
+_TOP_LEVEL_KEY = re.compile(r"^([A-Za-z_][\w-]*):")
+
+
+def create_default_config(overrides: dict[str, str] | None = None) -> str:
     """
-    Generate a default great-docs.yml configuration file content.
+    Generate great-docs.yml content from the shipped default template
+
+    The `great-docs.default.yml` template is emitted with every live value line
+    commented out, so a fresh file documents every option without overriding
+    the packaged defaults. A whole live block is commented as one unit: the
+    top-level key and every line beneath it — nested keys *and* any interleaved
+    prose comments — are prefixed with `# ` at column 0. Interleaved prose thus
+    carries a second `#`, so a user can uncomment a whole block (strip one
+    `# `) and get valid YAML with the prose still commented. Section headers and
+    pure example blocks (comment-only, no live key) are left untouched. Any
+    top-level key named in `overrides` is emitted live, with its default (and
+    any indented block body) replaced by the supplied text.
+
+    Parameters
+    ----------
+    overrides
+        Maps a top-level key to pre-rendered YAML text that replaces the
+        commented default for that key. Used by `great-docs init` to splice in
+        detected values (`parser`, `dynamic`, `module`, `authors`, `reference`).
 
     Returns
     -------
     str
-        YAML content for a default configuration file.
+        The rendered great-docs.yml content.
     """
-    return """# Great Docs Configuration
-# See https://posit-dev.github.io/great-docs/user-guide/configuration.html
+    text = (
+        resources.files("great_docs")
+        .joinpath("assets", "great-docs.default.yml")
+        .read_text(encoding="utf-8")
+    )
+    overrides = overrides or {}
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    in_block = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
 
-# Display Name
-# ------------
-# Custom display name for your package in the site navbar/title.
-# If not provided, uses the actual package name (e.g., 'my_package' or 'my-package').
-# Use this to provide a marketing/presentation name (e.g., 'My Package').
-# display_name: My Package
+        if not line.strip():
+            out.append(line)  # blank line — preserve, stay in the current block
+            continue
 
-# Docstring Parser
-# ----------------
-# The docstring format used in your package (numpy, google, or sphinx)
-# This is auto-detected during initialization, but can be overridden here.
-# parser: numpy
+        body = line.lstrip(" ")
+        indented = body != line
 
-# Dynamic Introspection
-# ---------------------
-# When true, the renderer uses runtime introspection (more accurate for complex packages).
-# When false, uses static analysis only (better for packages with cyclic aliases).
-# This is auto-detected during initialization based on what works for your package.
-# dynamic: true
+        if indented:
+            # Inside a live block, comment every line (nested keys and
+            # interleaved prose alike) at column 0; outside one, leave example
+            # bodies untouched.
+            out.append(f"# {line}" if in_block else line)
+            continue
 
-# Exclusions
-# ----------
-# Items to exclude from auto-documentation (affects 'init' and 'scan')
-# exclude:
-#   - InternalClass
-#   - helper_function
+        if body.startswith("#"):
+            out.append(line)  # section header / doc / pure example key
+            in_block = False
+            continue
 
-# Logo & Favicon
-# ---------------
-# Point to a single logo file (replaces the text title in the navbar):
-# logo: assets/logo.svg
-#
-# For light/dark variants:
-# logo:
-#   light: assets/logo-light.svg
-#   dark: assets/logo-dark.svg
-#
-# To show the text title alongside the logo, add: show_title: true
-
-# GitHub Integration
-# ------------------
-# GitHub link style: "widget" (shows stars count) or "icon" (simple icon)
-# github_style: widget
-
-# Source Link Configuration
-# -------------------------
-# source:
-#   enabled: true              # Enable/disable source links (default: true)
-#   branch: main               # Git branch/tag to link to (default: auto-detect)
-#   path: src/package          # Custom source path for monorepos (default: auto-detect)
-#   placement: usage           # Where to place the link: "usage" (default) or "title"
-
-# Sidebar Filter
-# --------------
-# sidebar_filter:
-#   enabled: true              # Enable/disable filter (default: true)
-#   min_items: 20              # Minimum items before showing filter (default: 20)
-
-# CLI Documentation
-# -----------------
-# cli:
-#   enabled: false             # Enable CLI documentation (default: false)
-#   module: my_package.cli     # Module containing Click commands (auto-detected)
-#   name: cli                  # Name of the Click command object (auto-detected)
-#   title: CLI Reference       # Optional title for the CLI index page + sidebar section
-#   desc: >-                   # Optional intro paragraph shown atop the CLI index page
-#     Command-line interface for my-package.
-#   sections:                  # Optional explicit grouping/ordering for the CLI index page.
-#     - title: Project setup   # When omitted, commands are auto-grouped in code order
-#       desc: Create and configure a project.
-#       contents: [init, config]
-#     - title: Building
-#       contents: [build, preview]
-
-# Changelog (GitHub Releases)
-# ---------------------------
-# Auto-generate a Changelog page from GitHub Releases.
-# changelog:
-#   enabled: true              # Enable/disable changelog (default: true)
-#   max_releases: 50           # Max releases to include (default: 50)
-
-# Custom Sections
-# ---------------
-# Add custom page groups (examples, tutorials, blog, etc.) to the site.
-# Each section gets a navbar link and a sidebar. An auto-generated
-# card-based index page is created only when ``index: true`` is set;
-# otherwise the navbar links directly to the first page in the section.
-# If you provide your own index.qmd in the directory it is always used.
-#
-# sections:
-#   - title: Examples            # Navbar link text
-#     dir: examples              # Source directory (relative to project root)
-#     index: true                # Generate card-based index page (default: false)
-#     index_columns: 2           # Columns for image cards: 1 or 2 (default: 2)
-#     navbar_after: User Guide   # Place after this navbar item (optional)
-#   - title: Tutorials
-#     dir: tutorials             # No index — navbar links to first page
-#   - title: Blog                # Blog section using Quarto's listing directive
-#     dir: blog
-#     type: blog                 # "blog" for Quarto listing, omit for card grid
-
-# Custom Static Pages
-# -------------------
-# Add hand-written HTML pages that Great Docs should either wrap with the site
-# shell (layout: passthrough) or copy through unchanged (layout: raw).
-#
-# Omit `custom_pages` to use the conventional `custom/` directory.
-# Set `custom_pages: false` to disable discovery.
-#
-# custom_pages:
-#   - dir: marketing             # Source directory (relative to project root)
-#     output: py                 # URL/output prefix (optional; defaults to dir basename)
-#   - dir: playgrounds
-#     output: demos
-#
-# Short form for a single directory:
-# custom_pages: marketing
-
-# Dark Mode Toggle
-# ----------------
-# Enable/disable the dark mode toggle in navbar (default: true)
-# dark_mode_toggle: true
-
-# Markdown Pages
-# --------------
-# Generate .md companions for every HTML page and show a copy/view-as-Markdown
-# widget on each page.  Set to false to disable both (default: true).
-# markdown_pages: true
-#
-# To generate .md pages but hide the widget:
-# markdown_pages:
-#   widget: false
-
-# User Guide
-# ----------
-# Custom directory for User Guide .qmd files (relative to project root).
-# If not provided, looks for user_guide/ in the project root.
-# user_guide: docs/guides
-#
-# For explicit control over section ordering and grouping:
-# user_guide:
-#   - section: "Get Started"
-#     contents:
-#       - text: "Welcome"
-#         href: index.qmd
-#       - quickstart.qmd
-#       - installation.qmd
-#   - section: "Advanced Topics"
-#     contents:
-#       - advanced-config.qmd
-#       - extending.qmd
-#
-# File paths are relative to the user guide directory (no user_guide/ prefix).
-# When using explicit ordering, numeric filename prefixes are preserved as-is.
-
-# Author Information
-# ------------------
-# Author metadata for display in the landing page sidebar and page attribution
-# authors:
-#   - name: Your Name
-#     email: you@example.com
-#     role: Lead Developer
-#     affiliation: Organization
-#     github: yourusername
-#     homepage: https://yoursite.com
-#     orcid: 0000-0002-1234-5678
-#     image: https://github.com/yourusername.png  # Avatar (GitHub URL or local path)
-
-# Team Author
-# -----------
-# Optional catch-all author for auto-generated pages (reference, changelog, etc.)
-# team_author:
-#   name: "Project Team"
-#   image: "assets/team-avatar.png"
-#   url: "https://github.com/org/project"
-
-# Site Settings
-# -------------
-# These settings are forwarded to _quarto.yml (format.html section)
-# site:
-#   theme: flatly              # Quarto theme (default: flatly)
-#   toc: true                  # Show table of contents (default: true)
-#   toc-depth: 2               # TOC heading depth (default: 2)
-#   html-math-method: katex    # HTML math renderer (default: katex; e.g., mathjax)
-#   toc-title: On this page    # TOC title (default: "On this page")
-#   show_dates: false          # Show page timestamps in footer
-#   date_format: "%B %d, %Y"   # Date format (Python strftime)
-#   show_author: true          # Show author attribution with dates
-#   show_security: true        # Show security policy page (from SECURITY.md)
-
-# Social Cards & Open Graph
-# -------------------------
-# Auto-generate <meta> tags for social media previews (LinkedIn, Discord, Slack,
-# Bluesky, Mastodon, X/Twitter, and other platforms). Enabled by default.
-# social_cards: true           # Enable with defaults (same as omitting the key)
-# social_cards: false          # Disable social card meta tags
-#
-# Fine-grained control:
-# social_cards:
-#   enabled: true
-#   image: assets/social-card.png   # Default og:image for all pages
-#   twitter_site: "@myhandle"       # Twitter/X site @handle
-#   twitter_card: summary_large_image  # "summary" or "summary_large_image"
-
-# Jupyter Kernel
-# --------------
-# Jupyter kernel to use for executing code cells in .qmd files.
-# This is set at the project level so it applies to all pages, including
-# auto-generated API reference pages. Can be overridden in individual .qmd
-# file frontmatter if needed for special cases.
-# jupyter: python3             # Default: python3
-
-# Bibliography & Citations
-# ------------------------
-# Project-level bibliography for [@citation-key] syntax. Paths are relative to
-# the project root; the file(s) are copied into the build directory and wired
-# into _quarto.yml so every page can cite without per-page frontmatter.
-# bibliography: docs/references.bib       # single file
-# bibliography:                           # or multiple files
-#   - docs/references.bib
-#   - docs/software.bib
-# csl: docs/nature.csl                    # optional citation style
-
-# API Reference Structure
-# -----------------------
-# Explicit control over API reference sections. If not provided, sections are
-# auto-generated from discovered exports. Each section has a title, description,
-# and list of contents.
-#
-# For classes, use `members: true` (default) to document methods inline on the
-# class page, or `members: false` to exclude methods (you can place them
-# explicitly elsewhere in the reference if needed).
-#
-# reference:
-#   - title: Core Classes
-#     desc: Main classes for working with the package
-#     contents:
-#       - name: MyClass
-#         members: false       # Don't document methods here
-#       - SimpleClass          # Methods documented inline (default)
-#
-#   - title: Utility Functions
-#     desc: Helper functions for common tasks
-#     contents:
-#       - helper_func
-#       - another_func
-"""
+        # Column-0 live key: opens a block whose indented body follows.
+        match = _TOP_LEVEL_KEY.match(line)
+        key = match.group(1) if match else None
+        if key is not None and key in overrides:
+            out.append(overrides[key] + "\n")
+            # Drop the replaced key's old block body (indented lines).
+            while i < len(lines) and lines[i].strip() and lines[i][:1] in (" ", "\t"):
+                i += 1
+            in_block = False
+        else:
+            out.append(f"# {line}")
+            in_block = True
+    return "".join(out)

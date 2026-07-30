@@ -538,11 +538,11 @@ async def _handle_status(arguments: dict) -> list[TextContent]:
             features.append("CLI docs")
         if cfg.mcp_enabled:
             features.append("MCP docs")
-        if cfg.get("user_guide"):
+        if cfg["user_guide"]:
             features.append("User Guide")
         if cfg.sections:
             features.append(f"{len(cfg.sections)} custom section(s)")
-        if cfg.get("versions"):
+        if cfg["versions"]:
             features.append("Multi-version")
         if features:
             lines.append(f"Features: {', '.join(features)}")
