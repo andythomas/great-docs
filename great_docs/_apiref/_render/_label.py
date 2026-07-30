@@ -79,7 +79,11 @@ def get_label(obj: gf.Alias | gf.Object) -> str:
         label = _function_label(obj)  # pyright: ignore[reportArgumentType]
     elif obj.is_class:
         label = _class_label(obj)  # pyright: ignore[reportArgumentType]
-    elif obj.is_attribute or obj.is_type_alias:
+    elif obj.is_type_alias:
+        # A PEP 695 alias has no `annotation`, and may arrive as an `Alias`
+        # proxy rather than a `TypeAlias`, so decide it here by predicate.
+        label = "typealias"
+    elif obj.is_attribute:
         label = _attribute_label(obj)  # pyright: ignore[reportArgumentType]
     elif obj.is_module:
         label = "module"
@@ -88,12 +92,7 @@ def get_label(obj: gf.Alias | gf.Object) -> str:
     return label
 
 
-def _attribute_label(obj: gf.Attribute | gf.TypeAlias) -> str:
-    # A PEP 695 alias (`type X = ...`) is a `TypeAlias`, which has no
-    # `annotation`, so this must precede any use of one.
-    if isinstance(obj, gf.TypeAlias):
-        return "typealias"
-
+def _attribute_label(obj: gf.Attribute) -> str:
     annotation = str(obj.annotation) if obj.annotation else ""
 
     if "TypeAlias" in annotation:

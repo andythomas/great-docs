@@ -32350,14 +32350,46 @@ def test_get_label_attribute_constant():
     assert get_label(obj) == "constant"
 
 
-def test_attribute_label_typealias():
-    """_attribute_label returns 'typealias' for a type alias."""
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias():
+    """get_label returns 'typealias' for a real PEP 695 alias."""
 
-    obj = MagicMock(spec=gf.Attribute)
-    obj.kind.value = "type alias"
-    obj.annotation = None
-    obj.labels = set()
-    assert _attribute_label(obj) == "typealias"
+    with gf.temporary_visited_package("pkg", {"__init__.py": "type Contract = int | str\n"}) as pkg:
+        assert get_label(pkg["Contract"]) == "typealias"
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias_reexported():
+    """A re-exported alias reaches get_label as an Alias proxy, not a raw TypeAlias.
+
+    This is the regression guard for a crash where `isinstance(obj, gf.TypeAlias)`
+    missed the proxy and fell through to code that reads `obj.annotation`, which
+    a type alias does not have.
+    """
+    with gf.temporary_visited_package(
+        "pkg",
+        {
+            "__init__.py": "from ._impl import Contract\n",
+            "_impl.py": "type Contract = int | str\n",
+        },
+    ) as pkg:
+        obj = pkg["Contract"]
+        assert isinstance(obj, gf.Alias)
+        assert get_label(obj) == "typealias"
+
+
+def test_get_label_typealias_legacy_spelling():
+    """get_label returns 'typealias' for the legacy `X: TypeAlias = ...` spelling."""
+
+    code = "from typing import TypeAlias\nContract: TypeAlias = int | str\n"
+    with gf.temporary_visited_package("pkg", {"__init__.py": code}) as pkg:
+        assert get_label(pkg["Contract"]) == "typealias"
 
 
 def test_attribute_label_typevar():
@@ -32855,13 +32887,17 @@ def test_label_unknown_kind_raises():
         get_label(obj)
 
 
-def test_attribute_label_typealias_kind():
-    """_attribute_label returns 'typealias' for type alias kind."""
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias_kind():
+    """get_label returns 'typealias' for a real griffe TYPE_ALIAS-kind object."""
 
-    obj = gf.Attribute(name="MyType", lineno=1)
-    obj.kind = gf.Kind.TYPE_ALIAS
-
-    assert _attribute_label(obj) == "typealias"
+    with gf.temporary_visited_package("pkg", {"__init__.py": "type MyType = int\n"}) as pkg:
+        obj = pkg["MyType"]
+        assert obj.kind is gf.Kind.TYPE_ALIAS
+        assert get_label(obj) == "typealias"
 
 
 def test_attribute_label_typevar_annotation():

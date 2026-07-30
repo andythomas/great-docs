@@ -30,6 +30,7 @@ class __RenderBase(Block):
         content.DocClass
         | content.DocFunction
         | content.DocAttribute
+        | content.DocTypeAlias
         | content.DocModule
         | content.Page
         | content.Section
