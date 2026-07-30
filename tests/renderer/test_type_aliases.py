@@ -329,6 +329,42 @@ def test_inventory_roles_never_contain_spaces():
         assert " " not in entry["role"]
 
 
+def test_api_reference_builds_with_a_type_alias(monkeypatch, tmp_path):
+    """The full issue #288 path: APIReference.build() over a package with an alias
+
+    `APIReference.build` writes to disk and returns `None` rather than handing
+    back pages, so the build is proven by the files it writes and by the
+    `type alias` kind showing up among the collected `items` — not by a
+    return value.
+    """
+    from great_docs._apiref.api_reference import APIReference
+
+    pkg = tmp_path / "gdta_build"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(
+        "from typing import Literal\n\n"
+        'type Contract = Literal["a", "b"]\n'
+        '"""A contract kind."""\n\n\n'
+        "def f(c: Contract) -> None:\n"
+        '    """Do a thing."""\n'
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    ref = APIReference(
+        {
+            "package": "gdta_build",
+            "sections": [{"title": "All", "desc": "d", "contents": ["Contract", "f"]}],
+        }
+    )
+    ref.build()
+
+    assert (tmp_path / "reference" / "index.qmd").exists()
+    assert (tmp_path / "reference" / "Contract.qmd").exists()
+    kinds = {item.obj.kind.value for item in ref.items}
+    assert "type alias" in kinds
+
+
 def test_inventory_roles_unchanged_for_other_kinds():
     from great_docs._apiref.inventory import InventoryItem, _create_inventory_item
 

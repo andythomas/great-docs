@@ -59,21 +59,21 @@ class __RenderDocMembersMixin(RenderDoc):
     """
 
     show_members: bool = True
-    """All members (attributes, classes and functions) """
+    """All members (type aliases, attributes, classes and functions) """
     show_attributes: bool = True
     show_classes: bool = True
     show_functions: bool = True
     show_type_aliases: bool = True
 
     show_members_summary: bool = True
-    """All member (attribute, class and function) summaries"""
+    """All member (type alias, attribute, class and function) summaries"""
     show_attributes_summary: bool = True
     show_classes_summary: bool = True
     show_functions_summary: bool = True
     show_type_aliases_summary: bool = True
 
     show_members_body: bool = True
-    """All member (attribute, class and function) bodies"""
+    """All member (type alias, attribute, class and function) bodies"""
     show_attributes_body: bool = True
     show_classes_body: bool = True
     show_functions_body: bool = True

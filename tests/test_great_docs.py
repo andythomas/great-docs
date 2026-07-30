@@ -110,6 +110,7 @@ from great_docs._apiref.content import (
     DocClass,
     DocFunction,
     DocModule,
+    DocTypeAlias,
     Link,
     MemberPage,
     Page,
@@ -30618,6 +30619,62 @@ def test_mixin_render_member_pages_show_members_false():
     render.show_members = False
 
     assert render.render_member_pages() == []
+
+
+def _build_class_with_member_pages_and_type_alias():
+    """Build a griffe Class with MemberPage members, including a type alias."""
+    cls_obj, doc_cls = _build_class_with_member_pages()
+    alias_obj = gf.TypeAlias(name="Inline", value=gf.ExprName("int"), lineno=5)
+    cls_obj.set_member("Inline", alias_obj)
+
+    doc_alias = DocTypeAlias(name="Inline", obj=alias_obj)
+    page_alias = MemberPage(path="Inline", contents=[doc_alias])
+    doc_cls.members.append(page_alias)
+    return cls_obj, doc_cls
+
+
+def test_mixin_type_alias_member_pages_property():
+    """type_alias_member_pages filters MemberPage members by is_type_alias."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    pages = render.type_alias_member_pages
+    assert len(pages) == 1
+    assert pages[0].path == "Inline"
+
+
+def test_mixin_render_type_alias_member_pages():
+    """render_type_alias_member_pages returns RenderedMemberPagesGroup."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    result = render.render_type_alias_member_pages()
+    assert isinstance(result, RenderedMemberPagesGroup)
+    assert "Type Aliases" in str(result.title)
+
+
+def test_mixin_render_type_alias_member_pages_show_false():
+    """render_type_alias_member_pages returns None when show_type_aliases=False."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+    render.show_type_aliases = False
+
+    assert render.render_type_alias_member_pages() is None
+
+
+def test_mixin_render_member_pages_includes_type_alias_group():
+    """render_member_pages fills the type-alias slot when a MemberPage alias exists."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    pages = render.render_member_pages()
+    assert len(pages) == 4
+    assert isinstance(pages[0], RenderedMemberPagesGroup)
+    assert "Type Aliases" in str(pages[0].title)
 
 
 def test_mixin_attributes_property():
