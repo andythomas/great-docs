@@ -215,3 +215,96 @@ def test_valueless_alias_omits_default_clause():
 
     assert "None" not in qmd
     assert "doc-parameter-default-sep" not in qmd
+
+
+def test_type_alias_group_renders_in_a_class():
+    """A type alias declared in a class must not be silently dropped"""
+    import textwrap
+
+    from great_docs._apiref._tools import render_code_variable
+
+    source = textwrap.dedent('''
+        class Holder:
+            """A holder."""
+
+            type Inner = int
+            """An inner alias."""
+
+            size: int = 3
+            """The size."""
+    ''')
+    qmd = render_code_variable(source, "Holder")
+
+    assert "Inner" in qmd
+    assert "An inner alias." in qmd
+
+
+def test_type_alias_group_has_its_own_heading():
+    import textwrap
+
+    from great_docs._apiref._tools import render_code_variable
+
+    source = textwrap.dedent('''
+        class Holder:
+            """A holder."""
+
+            type Inner = int
+            """An inner alias."""
+    ''')
+    qmd = render_code_variable(source, "Holder")
+
+    assert "Type Aliases" in qmd
+    assert "doc-type-aliases" in qmd
+
+
+def test_type_alias_group_precedes_attributes():
+    import textwrap
+
+    from great_docs._apiref._tools import render_code_variable
+
+    source = textwrap.dedent('''
+        class Holder:
+            """A holder."""
+
+            type Inner = int
+            """An inner alias."""
+
+            size: int = 3
+            """The size."""
+    ''')
+    qmd = render_code_variable(source, "Holder")
+
+    assert qmd.index("Type Aliases") < qmd.index("Attributes")
+
+
+def test_existing_group_headings_unchanged():
+    """The shared title expression must not alter the other groups' headings"""
+    import textwrap
+
+    from great_docs._apiref._tools import render_code_variable
+
+    source = textwrap.dedent('''
+        class Holder:
+            """A holder."""
+
+            size: int = 3
+            """The size."""
+
+            def go(self) -> None:
+                """Go."""
+    ''')
+    qmd = render_code_variable(source, "Holder")
+
+    assert "Attributes" in qmd
+    assert "Methods" in qmd
+    assert "Type Aliases" not in qmd
+
+
+def test_module_level_type_alias_group():
+    from great_docs._apiref._tools import render_code_variable
+
+    source = 'type Contract = int | str\n"""A contract."""\n'
+    qmd = render_code_variable(source, None)
+
+    assert "Type Aliases" in qmd
+    assert "Contract" in qmd

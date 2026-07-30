@@ -30573,14 +30573,16 @@ def test_mixin_render_body_invalid_member_type_raises():
 
 
 def test_mixin_render_members_returns_groups():
-    """render_members returns [attributes, classes, functions] groups."""
+    """render_members returns [type aliases, attributes, classes, functions] groups."""
 
     _, doc_cls = _build_class_with_members()
     render = RenderDocClass(doc_cls, level=1)
 
     members = render.render_members()
-    assert len(members) == 3
-    for m in members:
+    assert len(members) == 4
+    # No type alias members in this fixture, so that slot is None.
+    assert members[0] is None
+    for m in members[1:]:
         assert isinstance(m, RenderedMembersGroup)
 
 
@@ -30595,14 +30597,16 @@ def test_mixin_render_members_show_members_false():
 
 
 def test_mixin_render_member_pages_returns_groups():
-    """render_member_pages returns [attributes, classes, functions] page groups."""
+    """render_member_pages returns [type aliases, attributes, classes, functions] page groups."""
 
     _, doc_cls = _build_class_with_member_pages()
     render = RenderDocClass(doc_cls, level=1)
 
     pages = render.render_member_pages()
-    assert len(pages) == 3
-    for p in pages:
+    assert len(pages) == 4
+    # No type alias members in this fixture, so that slot is None.
+    assert pages[0] is None
+    for p in pages[1:]:
         assert isinstance(p, RenderedMemberPagesGroup)
 
 
@@ -31131,7 +31135,7 @@ def test_mixin_render_members_module_uses_functions_slug():
     render = RenderDocModule(doc_mod, level=1)
 
     members = render.render_members()
-    assert len(members) == 3
+    assert len(members) == 4
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
         body_str = str(render.render_body())
