@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import griffe as gf
+
 if TYPE_CHECKING:
-    import griffe as gf
+    pass
 
 ENUMS = {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum", "EnumCheck"}
 EXCEPTIONS = {
@@ -94,7 +96,7 @@ def get_label(obj: gf.Alias | gf.Object) -> str:
 def _attribute_label(obj: gf.Attribute | gf.TypeAlias) -> str:
     # A PEP 695 alias (`type X = ...`) is a `TypeAlias`, which has no
     # `annotation`, so this must precede any use of one.
-    if obj.kind.value == "type alias":
+    if isinstance(obj, gf.TypeAlias):
         return "typealias"
 
     annotation = str(obj.annotation) if obj.annotation else ""

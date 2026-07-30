@@ -67,11 +67,12 @@ def test_label_legacy_spelling():
     assert get_label(obj) == "typealias"
 
 
-def test_label_typevar_still_works():
+def test_label_bare_typevar_is_constant():
+    """A bare `T = TypeVar("T")` has no annotation, so it labels as a constant"""
     from great_docs._apiref._render._label import get_label
 
     code = 'from typing import TypeVar\nT = TypeVar("T")\n'
-    assert get_label(_load_member(code, "T")) == "typevar"
+    assert get_label(_load_member(code, "T")) == "constant"
 
 
 def test_label_plain_constant_still_works():
