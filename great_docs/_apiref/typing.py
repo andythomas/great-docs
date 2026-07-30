@@ -19,6 +19,7 @@ from .content import (
     DocClass,
     DocFunction,
     DocModule,
+    DocTypeAlias,
     MemberPage,
     Page,
     Section,
@@ -49,7 +50,9 @@ DocstringDefinitionType: TypeAlias = (
     | gf.DocstringWarn
 )
 
-Documentable: TypeAlias = DocClass | DocFunction | DocAttribute | DocModule | Page | Section
+Documentable: TypeAlias = (
+    DocClass | DocFunction | DocAttribute | DocTypeAlias | DocModule | Page | Section
+)
 
 RenderObjType: TypeAlias = (
     RenderDoc

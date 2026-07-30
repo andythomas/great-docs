@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import griffe as gf
-
-if TYPE_CHECKING:
-    pass
 
 ENUMS = {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum", "EnumCheck"}
 EXCEPTIONS = {

@@ -55,7 +55,7 @@ def _load_member(code: str, name: str):
 def test_label_pep695_spelling():
     from great_docs._apiref._render._label import get_label
 
-    obj = _load_member('type Contract = int | str', "Contract")
+    obj = _load_member("type Contract = int | str", "Contract")
     assert get_label(obj) == "typealias"
 
 
@@ -79,3 +79,15 @@ def test_label_plain_constant_still_works():
     from great_docs._apiref._render._label import get_label
 
     assert get_label(_load_member("MAX: int = 3\n", "MAX")) == "constant"
+
+
+def test_from_griffe_builds_a_type_alias_node():
+    from great_docs._apiref.content import DocTypeAlias, Doc
+
+    obj = _load_member("type Contract = int | str", "Contract")
+    doc = Doc.from_griffe("Contract", obj)
+
+    assert isinstance(doc, DocTypeAlias)
+    assert doc.kind == "type alias"
+    assert doc.name == "Contract"
+    assert doc.anchor == "package.Contract"

@@ -36,7 +36,7 @@ class Doc(Walkable):
         anchor: str | None = None,
         flat: bool = False,
         signature_name: str = "relative",
-    ) -> DocFunction | DocAttribute | DocClass | DocModule:
+    ) -> DocFunction | DocAttribute | DocTypeAlias | DocClass | DocModule:
         if members is None:
             members = []
 
@@ -54,6 +54,8 @@ class Doc(Walkable):
             return DocFunction(**kwargs)
         elif kind == "attribute":
             return DocAttribute(**kwargs)
+        elif kind == "type alias":
+            return DocTypeAlias(**kwargs)
         elif kind == "class":
             return DocClass(members=members, flat=flat, **kwargs)
         elif kind == "module":
@@ -74,8 +76,8 @@ class DocClass(Doc):
     """Documentation node for a Python class, including its member list"""
 
     kind: str = "class"
-    members: list[DocClass | DocFunction | DocAttribute] = field(
-        default_factory=list["DocClass | DocFunction | DocAttribute"]
+    members: list[DocClass | DocFunction | DocAttribute | DocTypeAlias] = field(
+        default_factory=list["DocClass | DocFunction | DocAttribute | DocTypeAlias"]
     )
     flat: bool = False
 
@@ -88,12 +90,19 @@ class DocAttribute(Doc):
 
 
 @dataclass
+class DocTypeAlias(Doc):
+    """Documentation node for a PEP 695 type alias"""
+
+    kind: str = "type alias"
+
+
+@dataclass
 class DocModule(Doc):
     """Documentation node for a Python module, including its member list"""
 
     kind: str = "module"
-    members: list[DocClass | DocFunction | DocAttribute | DocModule] = field(
-        default_factory=list["DocClass | DocFunction | DocAttribute | DocModule"]
+    members: list[DocClass | DocFunction | DocAttribute | DocTypeAlias | DocModule] = field(
+        default_factory=list["DocClass | DocFunction | DocAttribute | DocTypeAlias | DocModule"]
     )
     flat: bool = False
 
@@ -114,8 +123,8 @@ class Page(Walkable):
     path: str = ""
     summary: SummaryItem | None = None
     flatten: bool = False
-    contents: list[DocClass | DocFunction | DocAttribute | DocModule] = field(
-        default_factory=list[DocClass | DocFunction | DocAttribute | DocModule]
+    contents: list[DocClass | DocFunction | DocAttribute | DocTypeAlias | DocModule] = field(
+        default_factory=list[DocClass | DocFunction | DocAttribute | DocTypeAlias | DocModule]
     )
 
     @property
