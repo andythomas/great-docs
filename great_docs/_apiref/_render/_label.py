@@ -96,11 +96,19 @@ def get_label(obj: gf.Alias | gf.Object) -> str:
 
 
 def _attribute_label(obj: gf.Attribute) -> str:
-    annotation = str(obj.annotation) if obj.annotation else ""
+    annotation = obj.annotation
+    annotation_path = (
+        annotation.canonical_path if annotation and not isinstance(annotation, str) else annotation
+    )
 
-    if "TypeAlias" in annotation:
+    if annotation_path in {"TypeAlias", "typing.TypeAlias"}:
         return "typealias"
-    elif "TypeVar" in annotation or "ParamSpec" in annotation or "TypeVarTuple" in annotation:
+    annotation_text = str(annotation) if annotation else ""
+    if (
+        "TypeVar" in annotation_text
+        or "ParamSpec" in annotation_text
+        or "TypeVarTuple" in annotation_text
+    ):
         return "typevar"
     elif "property" in obj.labels:
         return "property"

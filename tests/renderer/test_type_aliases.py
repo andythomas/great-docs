@@ -90,6 +90,14 @@ def test_label_plain_constant_still_works():
     assert get_label(_load_member("MAX: int = 3\n", "MAX")) == "constant"
 
 
+@pytest.mark.parametrize("annotation", ["TypeAliasRegistry", "MyTypeAlias"])
+def test_label_similarly_named_annotation_is_constant(annotation: str):
+    from great_docs._apiref._render._label import get_label
+
+    source = f"class {annotation}: pass\nvalue: {annotation}\n"
+    assert get_label(_load_member(source, "value")) == "constant"
+
+
 def test_from_griffe_builds_a_type_alias_node():
     from great_docs._apiref.content import Doc, DocTypeAlias
 
