@@ -100,7 +100,10 @@ class Config:
         if self.config_path.exists():
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
-                    user_config = read_yaml(f) or {}
+                    user_config = read_yaml(f)
+
+                if user_config is None:
+                    user_config = {}
 
                 if not isinstance(user_config, dict):
                     # A valid YAML document that isn't a mapping (a list, a bare
