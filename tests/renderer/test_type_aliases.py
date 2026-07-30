@@ -10,6 +10,10 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 12),
     reason="PEP 695 `type` statement requires Python 3.12+",
 )
+requires_pep696 = pytest.mark.skipif(
+    sys.version_info < (3, 13),
+    reason="PEP 696 type parameter defaults require Python 3.13+",
+)
 
 
 def _load_type_parameters(code: str, name: str):
@@ -29,7 +33,12 @@ def _load_type_parameters(code: str, name: str):
         ("type Constrained[S: (str, bytes)] = list[S]", "Constrained", "[S: (str, bytes)]"),
         ("type Variadic[T, *Ts] = tuple[T, *Ts]", "Variadic", "[T, *Ts]"),
         ("type Callback[**P] = dict[P, int]", "Callback", "[**P]"),
-        ("type WithDefault[T = int] = list[T]", "WithDefault", "[T = int]"),
+        pytest.param(
+            "type WithDefault[T = int] = list[T]",
+            "WithDefault",
+            "[T = int]",
+            marks=requires_pep696,
+        ),
     ],
 )
 def test_render_type_parameters(source: str, name: str, expected: str):
@@ -153,12 +162,13 @@ def test_reported_crash_no_longer_raises():
             " [=]{.doc-parameter-default-sep .op}"
             " [tuple[T, *Ts]]{.doc-parameter-default}",
         ),
-        (
+        pytest.param(
             "type WithDefault[T = int] = list[T]\n",
             "WithDefault",
             "[type]{.doc-type-alias-keyword .kw} [WithDefault[T = int]]{.doc-parameter-name}"
             " [=]{.doc-parameter-default-sep .op}"
             " [list[T]]{.doc-parameter-default}",
+            marks=requires_pep696,
         ),
     ],
 )
