@@ -1,10 +1,9 @@
 # Great Docs Configuration
 # See https://posit-dev.github.io/great-docs/user-guide/configuration.html
 #
-# This file ships inside the great-docs package and declares every setting at
-# its default value. It is the single source of truth for those defaults: the
-# in-memory DEFAULT_CONFIG is parsed from this file, and the commented template
-# written by `great-docs init` is this file with the value lines commented out.
+# Every option appears below at its default value, with the values it accepts
+# documented above it. Set only what you want to change: an option you leave
+# out or commented out keeps its default.
 
 # Module Name
 # -----------
