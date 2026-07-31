@@ -117,7 +117,7 @@ from great_docs._apiref.content import (
     SummaryItem,
 )
 from great_docs._apiref.introspect import (
-    _is_valueless,
+    _has_no_value,
     dynamic_alias,
     get_object,
     get_parser_defaults,
@@ -28030,6 +28030,14 @@ def test_split_path_separates_the_object_part():
     assert _split_path("pkg.mod:A.b") == ("pkg.mod", "A.b")
 
 
+def test_same_path_ignores_the_separator():
+    """The `:` in an access path is a module boundary, not part of the name."""
+    from great_docs._apiref.introspect import _same_path
+
+    assert _same_path("pkg:SETTINGS", "pkg.SETTINGS")
+    assert not _same_path("pkg._conf:SETTINGS", "pkg.SETTINGS")
+
+
 def test_canonical_path_module():
     """_canonical_path for a module returns module name."""
     from great_docs._apiref.introspect import _canonical_path
@@ -28103,56 +28111,56 @@ def test_canonical_path_class_no_module():
     assert result is None
 
 
-def test_is_valueless_class_attribute_no_value():
-    """_is_valueless returns True for class-attribute with no value."""
+def test_has_no_value_class_attribute_no_value():
+    """_has_no_value returns True for class-attribute with no value."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_instance_attribute():
-    """_is_valueless returns True for instance-attribute."""
+def test_has_no_value_instance_attribute():
+    """_has_no_value returns True for instance-attribute."""
 
     attr = gf.Attribute(name="x", lineno=1)
     attr.labels.add("instance-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_class_attribute_with_value():
-    """_is_valueless returns False for class-attribute with a value."""
+def test_has_no_value_class_attribute_with_value():
+    """_has_no_value returns False for class-attribute with a value."""
 
     attr = gf.Attribute(name="x", lineno=1, value="42")
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_unlabelled_attribute():
-    """_is_valueless returns False for an attribute with none of the labels."""
+def test_has_no_value_unlabelled_attribute():
+    """_has_no_value returns False for an attribute with none of the labels."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_function():
-    """_is_valueless returns False for a function."""
+def test_has_no_value_function():
+    """_has_no_value returns False for a function."""
 
     func = gf.Function(name="f", lineno=1)
 
-    assert _is_valueless(func) is False
+    assert _has_no_value(func) is False
 
 
-def test_is_valueless_module_attribute_no_value():
-    """_is_valueless returns True for module-attribute with no value."""
+def test_has_no_value_module_attribute_no_value():
+    """_has_no_value returns True for module-attribute with no value."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("module-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
 def test_insert_contents_list():
