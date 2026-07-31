@@ -117,7 +117,7 @@ from great_docs._apiref.content import (
     SummaryItem,
 )
 from great_docs._apiref.introspect import (
-    _is_valueless,
+    _has_no_value,
     dynamic_alias,
     get_object,
     get_parser_defaults,
@@ -27812,11 +27812,34 @@ def test_get_object_dynamic_mode():
     assert obj.name == "dumps"
 
 
+def test_get_object_rejects_a_path_for_dynamic():
+    with pytest.raises(ValueError, match="accepts true or false"):
+        get_object("json:dumps", dynamic="json:dumps")
+
+
+def test_get_object_warns_when_parser_is_ignored():
+    """A parser cannot apply to a loader that already carries one."""
+    from great_docs._apiref.introspect import make_loader
+
+    with pytest.warns(UserWarning, match="Ignoring parser"):
+        get_object("json:dumps", parser="numpy", loader=make_loader("numpy"))
+
+
+def test_get_object_does_not_warn_for_parser_or_loader_alone():
+    """Either argument on its own is unambiguous."""
+    from great_docs._apiref.introspect import make_loader
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        get_object("json:dumps", loader=make_loader("numpy"))
+        get_object("json:dumps", parser="numpy")
+
+
 def test_get_object_alias_loads_target_module():
-    """get_object with load_aliases=True loads the target module for aliases."""
+    """get_object loads the target module for aliases."""
 
     # os.path is typically an alias to posixpath or ntpath
-    obj = get_object("os:path", load_aliases=True)
+    obj = get_object("os:path")
     assert obj is not None
 
 
@@ -28015,6 +28038,29 @@ def test_replace_docstring_enum_no_member_docstrings():
             sys.modules.pop("introtest_enum_nodoc", None)
 
 
+def test_split_path_without_a_colon_is_all_module():
+    """`resolve_alias` re-loads targets by dotted path, with no object part."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("pkg.mod.func") == ("pkg.mod.func", None)
+
+
+def test_split_path_separates_the_object_part():
+    """Only the first colon separates; the object part keeps its dots."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("json:dumps") == ("json", "dumps")
+    assert _split_path("pkg.mod:A.b") == ("pkg.mod", "A.b")
+
+
+def test_same_path_ignores_the_separator():
+    """The `:` in an access path is a module boundary, not part of the name."""
+    from great_docs._apiref.introspect import _same_path
+
+    assert _same_path("pkg:SETTINGS", "pkg.SETTINGS")
+    assert not _same_path("pkg._conf:SETTINGS", "pkg.SETTINGS")
+
+
 def test_canonical_path_module():
     """_canonical_path for a module returns module name."""
     from great_docs._apiref.introspect import _canonical_path
@@ -28024,13 +28070,13 @@ def test_canonical_path_module():
     assert result == "json"
 
 
-def test_canonical_path_module_with_qualname():
-    """_canonical_path for a module with qualname appends suffix."""
+def test_canonical_path_module_reports_no_home_for_a_member():
+    """A module knows its own name but not where its members were defined."""
     from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json, "dumps")
 
-    assert result == "json:dumps"
+    assert result is None
 
 
 def test_canonical_path_function():
@@ -28088,56 +28134,56 @@ def test_canonical_path_class_no_module():
     assert result is None
 
 
-def test_is_valueless_class_attribute_no_value():
-    """_is_valueless returns True for class-attribute with no value."""
+def test_has_no_value_class_attribute_no_value():
+    """_has_no_value returns True for class-attribute with no value."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_instance_attribute():
-    """_is_valueless returns True for instance-attribute."""
+def test_has_no_value_instance_attribute():
+    """_has_no_value returns True for instance-attribute."""
 
     attr = gf.Attribute(name="x", lineno=1)
     attr.labels.add("instance-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_class_attribute_with_value():
-    """_is_valueless returns False for class-attribute with a value."""
+def test_has_no_value_class_attribute_with_value():
+    """_has_no_value returns False for class-attribute with a value."""
 
     attr = gf.Attribute(name="x", lineno=1, value="42")
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_unlabelled_attribute():
-    """_is_valueless returns False for an attribute with none of the labels."""
+def test_has_no_value_unlabelled_attribute():
+    """_has_no_value returns False for an attribute with none of the labels."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_function():
-    """_is_valueless returns False for a function."""
+def test_has_no_value_function():
+    """_has_no_value returns False for a function."""
 
     func = gf.Function(name="f", lineno=1)
 
-    assert _is_valueless(func) is False
+    assert _has_no_value(func) is False
 
 
-def test_is_valueless_module_attribute_no_value():
-    """_is_valueless returns True for module-attribute with no value."""
+def test_has_no_value_module_attribute_no_value():
+    """_has_no_value returns True for module-attribute with no value."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("module-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
 def test_insert_contents_list():
@@ -28257,14 +28303,6 @@ def test_dynamic_alias_nested_class_method():
     assert obj is not None
 
 
-def test_dynamic_alias_with_target():
-    """dynamic_alias with explicit target uses that target."""
-
-    obj = dynamic_alias("json:dumps", target="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
-
-
 def test_dynamic_alias_nonexistent_attr_raises():
     """dynamic_alias raises KeyError for nonexistent attributes in a real module."""
 
@@ -28355,12 +28393,19 @@ def test_dynamic_alias_reexported_creates_alias():
             sys.modules.pop("introtest_reexp.sub", None)
 
 
-def test_get_object_dynamic_string_target():
-    """get_object with dynamic=<string> passes target to dynamic_alias."""
+def test_spec_object_rejects_a_path_for_dynamic():
+    """`dynamic` selects how an object is inspected, so only a bool will do."""
+    from great_docs._apiref.spec import SpecObject
 
-    obj = get_object("json:dumps", dynamic="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecObject(**{"name": "dumps", "dynamic": "json:dumps"})
+
+
+def test_spec_options_replace_rejects_a_path_for_dynamic():
+    from great_docs._apiref.spec import SpecOptions
+
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecOptions().replace(dynamic="json:dumps")
 
 
 def _make_api_ref(**block):

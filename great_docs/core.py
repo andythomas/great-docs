@@ -7821,9 +7821,7 @@ class GreatDocs:
                 from great_docs._apiref.introspect import make_loader
 
                 _shared_loader = make_loader("numpy")
-                gd_get_object = partial(
-                    qd_get_object, dynamic=True, parser="numpy", loader=_shared_loader
-                )
+                gd_get_object = partial(qd_get_object, dynamic=True, loader=_shared_loader)
             except ImportError:  # pragma: no cover
                 pass  # pragma: no cover
 

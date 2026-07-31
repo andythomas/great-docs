@@ -41,9 +41,9 @@ def test_canonical_path_returns_none_for_plain_value():
 
 
 def test_canonical_path_module():
-    """Modules continue to resolve to their dotted name."""
+    """A module reports a home for itself only, never for its members."""
     assert _canonical_path(sys, "") == "sys"
-    assert _canonical_path(sys, "path") == "sys:path"
+    assert _canonical_path(sys, "path") is None
 
 
 def _make_facade_with_builtin(monkeypatch):
