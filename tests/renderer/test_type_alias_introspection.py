@@ -235,3 +235,66 @@ def test_legacy_spelling_docstring_overwritten(monkeypatch, tmp_path):
 
     assert obj.docstring is not None
     assert obj.docstring.value == "Legacy docstring."
+
+
+@requires_pep695
+def test_facade_reexport_resolves_without_cyclic_alias(monkeypatch, tmp_path):
+    """A facade re-exported alias resolves and keeps its own docstring"""
+    from great_docs._apiref.introspect import get_object
+
+    root = _write_package(
+        tmp_path,
+        "gdta_facade",
+        {
+            "__init__.py": '''
+                """Facade."""
+                from ._impl import Contract
+
+                __all__ = ["Contract"]
+            ''',
+            "_impl.py": '''
+                """Impl."""
+                type Contract = int | str
+                """Real docstring."""
+            ''',
+        },
+    )
+    _install(monkeypatch, root)
+
+    obj = get_object("gdta_facade:Contract", dynamic=True)
+
+    assert obj.kind.value == "type alias"
+    assert obj.docstring is not None
+    assert obj.docstring.value == "Real docstring."
+
+
+@requires_pep695
+def test_plain_alias_still_resolves_dynamically(monkeypatch, tmp_path):
+    """The plain, non-re-exported case keeps working"""
+    from great_docs._apiref.introspect import get_object
+
+    root = _write_package(
+        tmp_path,
+        "gdta_plain",
+        {
+            "__init__.py": '''
+                """Package."""
+                type Contract = int | str
+                """Plain docstring."""
+            '''
+        },
+    )
+    _install(monkeypatch, root)
+
+    obj = get_object("gdta_plain:Contract", dynamic=True)
+
+    assert obj.kind.value == "type alias"
+    assert obj.docstring is not None
+    assert obj.docstring.value == "Plain docstring."
+
+
+def test_non_alias_canonical_paths_unchanged():
+    from great_docs._apiref.introspect import _canonical_path
+
+    assert _canonical_path(len, "") == "builtins:len"
+    assert _canonical_path(42, "") is None
