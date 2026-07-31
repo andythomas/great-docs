@@ -409,6 +409,7 @@ ALL_PACKAGES: list[str] = [
     "gdtest_code_include",  # 202
     # 203: Mixed root files and subdirectories with numeric prefix interleaving
     "gdtest_ug_mixed_subdir_order",  # 203
+    "gdtest_type_aliases",  # 204
 ]
 
 
@@ -460,6 +461,7 @@ DIMENSIONS: dict[str, dict[str, str]] = {
     "C22": {"axis": "objects", "label": "Decorator functions"},
     "C23": {"axis": "objects", "label": "Custom exceptions"},
     "C24": {"axis": "objects", "label": "Re-exported symbols"},
+    "C25": {"axis": "objects", "label": "PEP 695 type aliases"},
     "D1": {"axis": "docstrings", "label": "NumPy"},
     "D2": {"axis": "docstrings", "label": "Google"},
     "D3": {"axis": "docstrings", "label": "Sphinx"},
@@ -650,6 +652,15 @@ DIMENSIONS: dict[str, dict[str, str]] = {
 # exercises and why it matters. Displayed on the hub card and detail pages.
 
 PACKAGE_DESCRIPTIONS: dict[str, str] = {
+    "gdtest_type_aliases": (
+        "A package whose public API is mostly PEP 695 `type X = ...` aliases: "
+        "generic, bounded, constrained, variadic, ParamSpec, recursive, and a long "
+        "Literal. On the Reference page you should see a 'Type Aliases' section "
+        "listing them, each signature rendered in its source form with the `type` "
+        "keyword. The Ledger class declares an alias in its own body, which should "
+        "appear under its own 'Type Aliases' heading rather than being dropped. "
+        "Requires Python 3.12+."
+    ),
     "gdtest_minimal": (
         "The simplest possible package: two functions (greet, add) with NumPy "
         "docstrings in a flat layout. On the Reference page you should see a "
