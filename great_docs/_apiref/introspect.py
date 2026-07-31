@@ -12,6 +12,7 @@ from __future__ import annotations
 import enum
 import importlib
 import inspect
+import warnings
 from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
@@ -73,11 +74,12 @@ def make_loader(parser: str = "numpy") -> gf.GriffeLoader:
 
 def get_object(
     path: str,
-    parser: str = "numpy",
+    parser: str | None = None,
     dynamic: bool | str = False,
     loader: gf.GriffeLoader | None = None,
 ) -> gf.Object | gf.Alias:
-    """Get the griffe object at the given import path.
+    """
+    Get the griffe object at the given import path
 
     Parameters
     ----------
@@ -85,7 +87,8 @@ def get_object(
         An import path to the object. This should have the form `path.to.module:object`.
         For example, `my_package:get_object` or `my_package:MyClass.render`.
     parser :
-        A docstring parser to use.
+        A docstring parser to configure a new loader with. Ignored, with a warning,
+        when `loader` is given, since the loader already carries a parser.
     dynamic :
         Whether to dynamically import object. Useful if docstring is not hard-coded,
         but was set on object by running python code.
@@ -99,7 +102,14 @@ def get_object(
         reaches it through a re-export.
     """
     if loader is None:
-        loader = make_loader(parser)
+        loader = make_loader(parser or "numpy")
+    elif parser is not None:
+        warnings.warn(
+            f"Ignoring parser {parser!r} because `loader` was given; "
+            "the loader already carries a docstring parser.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     module_path, object_path = _split_path(path)
 

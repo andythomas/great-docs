@@ -27812,6 +27812,24 @@ def test_get_object_dynamic_mode():
     assert obj.name == "dumps"
 
 
+def test_get_object_warns_when_parser_is_ignored():
+    """A parser cannot apply to a loader that already carries one."""
+    from great_docs._apiref.introspect import make_loader
+
+    with pytest.warns(UserWarning, match="Ignoring parser"):
+        get_object("json:dumps", parser="numpy", loader=make_loader("numpy"))
+
+
+def test_get_object_does_not_warn_for_parser_or_loader_alone():
+    """Either argument on its own is unambiguous."""
+    from great_docs._apiref.introspect import make_loader
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        get_object("json:dumps", loader=make_loader("numpy"))
+        get_object("json:dumps", parser="numpy")
+
+
 def test_get_object_alias_loads_target_module():
     """get_object loads the target module for aliases."""
 
