@@ -26,15 +26,37 @@ DEFAULT_OPTIONS: dict[str, dict[str, object]] = {}
 
 
 def get_parser_defaults(name: str) -> dict[str, object]:
-    """Get the default parser options registered for the named docstring style.
+    """
+    Get the default parser options registered for the named docstring style
 
-    Returns an empty dict when no defaults have been registered for `name`.
+    Parameters
+    ----------
+    name :
+        Name of a docstring style, e.g. `numpy` or `google`.
+
+    Returns
+    -------
+    :
+        The registered options, or an empty dict when the style has none.
     """
     return DEFAULT_OPTIONS.get(name, {})
 
 
 def make_loader(parser: str = "numpy") -> gf.GriffeLoader:
-    """Configure a griffe loader with the defaults for a docstring parser"""
+    """
+    Configure a griffe loader with the defaults for a docstring parser
+
+    Parameters
+    ----------
+    parser :
+        Name of the docstring style the loader parses with.
+
+    Returns
+    -------
+    :
+        A loader with its own module and line collections, so it shares no
+        cached state with any other loader.
+    """
     raw_defaults = get_parser_defaults(parser)
     docstring_options = cast("DocstringOptions", raw_defaults) if raw_defaults else None
     return gf.GriffeLoader(
@@ -71,40 +93,68 @@ def get_object(
         but was set on object by running python code.
     loader :
         An existing griffe loader to reuse. A fresh loader is created when omitted.
+
+    Returns
+    -------
+    :
+        The node griffe models at `path` — an object, or an alias when the path
+        reaches it through a re-export.
     """
     if loader is None:
         loader = make_loader(parser)
 
-    try:
-        module, object_path = path.split(":", 1)
-    except ValueError:
-        module, object_path = path, None
+    module_path, object_path = _split_path(path)
 
-    # load the module if it hasn't been already.
-    root_mod = module.split(".", 1)[0]
+    root_mod = module_path.split(".", 1)[0]
     if root_mod not in loader.modules_collection:
-        _ = loader.load(module)
+        _ = loader.load(module_path)
 
-    # griffe uses only periods for the path
-    griffe_path = f"{module}.{object_path}" if object_path else module
-
-    # Case 1: dynamic loading
     if dynamic:
         if isinstance(dynamic, str):
             return dynamic_alias(path, target=dynamic, loader=loader)
 
         return dynamic_alias(path, loader=loader)
 
-    # Case 2: static loading an object
-    parent = loader.modules_collection[griffe_path.rsplit(".", 1)[0]]
+    return _static_object(module_path, object_path, loader, load_aliases)
+
+
+def _split_path(path: str) -> tuple[str, str | None]:
+    """
+    Split a `module:object` path into its module part and its object part
+
+    Parameters
+    ----------
+    path :
+        A path of the form `path.to.module:object`, or `path.to.module` alone.
+
+    Returns
+    -------
+    :
+        The module part, and the object part or `None` when the path names a
+        module only.
+    """
+    module_path, _, object_path = path.partition(":")
+    return module_path, object_path or None
+
+
+def _static_object(
+    module_path: str,
+    object_path: str | None,
+    loader: gf.GriffeLoader,
+    load_aliases: bool,
+) -> gf.Object | gf.Alias:
+    """The griffe object at a path, as griffe's static analysis models it"""
+    # griffe uses only periods for the path
+    griffe_path = f"{module_path}.{object_path}" if object_path else module_path
     obj = loader.modules_collection[griffe_path]
+    parent = loader.modules_collection[griffe_path.rsplit(".", 1)[0]]
 
     if isinstance(parent, gf.Alias) and isinstance(obj, (gf.Function, gf.Attribute)):
         obj = gf.Alias(obj.name, obj, parent=parent)
 
     if isinstance(obj, gf.Alias) and load_aliases:
         target_mod = obj.target_path.split(".")[0]
-        if target_mod != module:
+        if target_mod != module_path:
             _ = loader.load(target_mod)
 
     return obj
@@ -119,6 +169,19 @@ def resolve_alias(
     Follows `Alias.target` links until a non-alias node is reached. An
     unresolved link is re-loaded through `get_object` when one is provided;
     otherwise the `AliasResolutionError` propagates.
+
+    Parameters
+    ----------
+    obj :
+        The node to resolve. One that is not an alias is returned unchanged.
+    get_object :
+        Callable used to re-load a link whose target is absent from the
+        collection. When omitted, such a link raises instead.
+
+    Returns
+    -------
+    :
+        The concrete object at the end of the chain.
 
     Raises
     ------
@@ -204,6 +267,17 @@ def _locate_runtime_object(obj: gf.Object) -> object | None:
     A member of a (possibly nested) class is reached by walking the class
     chain, e.g. `Node.add_child` inside `Tree` resolves to
     `mod.Tree.Node.add_child`.
+
+    Parameters
+    ----------
+    obj :
+        The documented node whose runtime counterpart is wanted.
+
+    Returns
+    -------
+    :
+        The imported object, or `None` when the class chain or the attribute
+        itself cannot be reached at runtime.
     """
     mod = importlib.import_module(obj.module.canonical_path)
 
@@ -235,6 +309,16 @@ def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
 
     The function carries the runtime signature when it is recoverable, so
     the member renders function-style instead of attribute-style.
+
+    Parameters
+    ----------
+    obj :
+        The attribute to replace on its parent.
+    f :
+        The runtime callable the attribute holds. Its signature is copied when
+        `inspect` can read it, and omitted when it cannot.
+    doc :
+        Docstring for the replacement function.
     """
     assert obj.parent is not None
 
@@ -270,7 +354,24 @@ def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
 def _clone_docstring(
     old: gf.Docstring | None, value: str, parent: gf.Object | None
 ) -> gf.Docstring:
-    """Clone a docstring with a new value, keeping the old one's position and parser"""
+    """
+    Clone a docstring with a new value, keeping the old one's position and parser
+
+    Parameters
+    ----------
+    old :
+        Docstring to copy the position and parser settings from. `None` yields
+        a docstring with no position.
+    value :
+        Text of the new docstring.
+    parent :
+        Node the new docstring belongs to.
+
+    Returns
+    -------
+    :
+        A docstring carrying `value`.
+    """
     return gf.Docstring(
         value=value,
         lineno=getattr(old, "lineno", None),
@@ -298,11 +399,7 @@ def dynamic_alias(
     loader :
         An existing griffe loader to reuse. A fresh loader is created when omitted.
     """
-    try:
-        mod_name, object_path = path.split(":", 1)
-    except ValueError:
-        mod_name, object_path = path, None
-
+    mod_name, object_path = _split_path(path)
     mod = importlib.import_module(mod_name)
 
     if object_path is None:
@@ -347,6 +444,27 @@ def _locate_runtime_attr(
 
     Returns the statically-loaded griffe object instead when the path names a
     declaration-only attribute (one that carries no runtime value).
+
+    Parameters
+    ----------
+    module :
+        The already-imported module the walk starts from.
+    module_path :
+        Dotted path `module` was imported by.
+    object_path :
+        Dotted path of the attribute within the module, or `None` for the
+        module itself.
+    path :
+        The full path as written, used in error messages.
+    loader :
+        Loader to read the static model through when the walk finds no runtime
+        value.
+
+    Returns
+    -------
+    :
+        The attribute together with the paths it is known by, or the static node
+        when the path names a declaration that holds no runtime value.
 
     Raises
     ------

@@ -28015,6 +28015,21 @@ def test_replace_docstring_enum_no_member_docstrings():
             sys.modules.pop("introtest_enum_nodoc", None)
 
 
+def test_split_path_without_a_colon_is_all_module():
+    """`resolve_alias` re-loads targets by dotted path, with no object part."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("pkg.mod.func") == ("pkg.mod.func", None)
+
+
+def test_split_path_separates_the_object_part():
+    """Only the first colon separates; the object part keeps its dots."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("json:dumps") == ("json", "dumps")
+    assert _split_path("pkg.mod:A.b") == ("pkg.mod", "A.b")
+
+
 def test_canonical_path_module():
     """_canonical_path for a module returns module name."""
     from great_docs._apiref.introspect import _canonical_path
