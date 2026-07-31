@@ -12,7 +12,13 @@ from great_docs.pandoc.blocks import (
 )
 from great_docs.pandoc.components import Attr
 
-from .._type_checks import griffe_to_doc, is_doc_attribute, is_doc_class, is_doc_function
+from .._type_checks import (
+    griffe_to_doc,
+    is_doc_attribute,
+    is_doc_class,
+    is_doc_function,
+    is_doc_type_alias,
+)
 from ..content import Doc, DocClass, MemberPage
 from .doc import RenderDoc
 from .html_table import html_table
@@ -22,7 +28,7 @@ if TYPE_CHECKING:
 
     import griffe as gf
 
-    from ..content import DocAttribute, DocFunction, DocModule
+    from ..content import DocAttribute, DocFunction, DocModule, DocTypeAlias
 
 
 @dataclass
@@ -53,22 +59,25 @@ class __RenderDocMembersMixin(RenderDoc):
     """
 
     show_members: bool = True
-    """All members (attributes, classes and functions) """
+    """All members (type aliases, attributes, classes and functions) """
     show_attributes: bool = True
     show_classes: bool = True
     show_functions: bool = True
+    show_type_aliases: bool = True
 
     show_members_summary: bool = True
-    """All member (attribute, class and function) summaries"""
+    """All member (type alias, attribute, class and function) summaries"""
     show_attributes_summary: bool = True
     show_classes_summary: bool = True
     show_functions_summary: bool = True
+    show_type_aliases_summary: bool = True
 
     show_members_body: bool = True
-    """All member (attribute, class and function) bodies"""
+    """All member (type alias, attribute, class and function) bodies"""
     show_attributes_body: bool = True
     show_classes_body: bool = True
     show_functions_body: bool = True
+    show_type_aliases_body: bool = True
 
     def __post_init__(self):
         super().__post_init__()
@@ -100,11 +109,13 @@ class __RenderDocMembersMixin(RenderDoc):
         """
         Render the docs of member objects
 
-        The member objects are attributes, classes and functions/methods
+        The member objects are type aliases, attributes, classes and
+        functions/methods
         """
         if not self.show_members:
             return []
         return [
+            self.render_type_aliases(),
             self.render_attributes(),
             self.render_classes(),
             self.render_functions(),
@@ -114,11 +125,13 @@ class __RenderDocMembersMixin(RenderDoc):
         """
         Render the docs of member objects
 
-        The member objects are attributes, classes and functions/methods
+        The member objects are type aliases, attributes, classes and
+        functions/methods
         """
         if not self.show_members:
             return []
         return [
+            self.render_type_alias_member_pages(),
             self.render_attribute_member_pages(),
             self.render_class_member_pages(),
             self.render_function_member_pages(),
@@ -188,6 +201,20 @@ class __RenderDocMembersMixin(RenderDoc):
         return [x for x in self.doc.members if is_doc_function(x) and x.name not in exclude]
 
     @cached_property
+    def type_aliases(self) -> list[DocTypeAlias]:
+        """
+        Members that are PEP 695 type aliases
+        """
+        from .._globals import EXCLUSIONS
+
+        exclude = EXCLUSIONS.type_aliases.get(self.obj.path, ())
+        if isinstance(exclude, str):
+            exclude = (exclude,)
+        exclude = set(exclude)
+
+        return [x for x in self.doc.members if is_doc_type_alias(x) and x.name not in exclude]
+
+    @cached_property
     def attribute_member_pages(self) -> list[MemberPage]:
         """
         Member pages of attributes
@@ -247,6 +274,25 @@ class __RenderDocMembersMixin(RenderDoc):
         pages = cast("list[MemberPage]", self.doc.members)
         return [p for p in pages if has_function(p) and p.obj.name not in exclude]
 
+    @cached_property
+    def type_alias_member_pages(self) -> list[MemberPage]:
+        """
+        Member pages of type aliases
+        """
+        from .._globals import EXCLUSIONS
+
+        exclude = EXCLUSIONS.type_aliases.get(self.obj.path, ())
+        if isinstance(exclude, str):
+            exclude = (exclude,)
+        exclude = set(exclude)
+
+        def has_type_alias(p: MemberPage) -> bool:
+            obj = p.obj
+            return cast("gf.Object", obj).is_type_alias
+
+        pages = cast("list[MemberPage]", self.doc.members)
+        return [p for p in pages if has_type_alias(p) and p.obj.name not in exclude]
+
     def render_classes(self) -> RenderedMembersGroup | None:
         """
         Render the class members of the Doc
@@ -264,6 +310,12 @@ class __RenderDocMembersMixin(RenderDoc):
         Render the attribute members of the Doc
         """
         return self._render_members_group("attributes") if self.show_attributes else None
+
+    def render_type_aliases(self) -> RenderedMembersGroup | None:
+        """
+        Render the type alias members of the Doc
+        """
+        return self._render_members_group("type-aliases") if self.show_type_aliases else None
 
     def render_class_member_pages(self) -> RenderedMemberPagesGroup | None:
         """
@@ -283,12 +335,18 @@ class __RenderDocMembersMixin(RenderDoc):
         """
         return self._render_member_pages_group("attributes") if self.show_attributes else None
 
+    def render_type_alias_member_pages(self) -> RenderedMemberPagesGroup | None:
+        """
+        Render the member pages of type aliases
+        """
+        return self._render_member_pages_group("type-aliases") if self.show_type_aliases else None
+
     def _render_members_group(
         self,
-        group: Literal["classes", "functions", "attributes"],
+        group: Literal["type-aliases", "classes", "functions", "attributes"],
     ) -> RenderedMembersGroup | None:
         """
-        Render all of class, function or attribute members
+        Render all of type alias, class, function or attribute members
 
         Parameters
         ----------
@@ -298,11 +356,15 @@ class __RenderDocMembersMixin(RenderDoc):
         member_group
             An identifier for the type of the members.
         """
-        from . import RenderDocAttribute, RenderDocClass, RenderDocFunction
+        from . import RenderDocAttribute, RenderDocClass, RenderDocFunction, RenderDocTypeAlias
 
         slug = group
 
-        if group == "classes":
+        if group == "type-aliases":
+            docables, Render = self.type_aliases, RenderDocTypeAlias
+            show_summary = self.show_type_aliases_summary
+            show_body = self.show_type_aliases_body
+        elif group == "classes":
             docables, Render = self.classes, RenderDocClass
             show_summary = self.show_classes_summary
             show_body = self.show_classes_body
@@ -322,7 +384,7 @@ class __RenderDocMembersMixin(RenderDoc):
 
         title = Header(
             self.level + 1,
-            slug.title(),
+            slug.replace("-", " ").title(),
             Attr(classes=[f"doc-{slug}"]),
         )
 
@@ -339,10 +401,10 @@ class __RenderDocMembersMixin(RenderDoc):
 
     def _render_member_pages_group(
         self,
-        group: Literal["classes", "functions", "attributes"],
+        group: Literal["type-aliases", "classes", "functions", "attributes"],
     ) -> RenderedMemberPagesGroup | None:
         """
-        Render all of the class, function or attribute member pages
+        Render all of the type alias, class, function or attribute member pages
 
         Parameters
         ----------
@@ -352,11 +414,14 @@ class __RenderDocMembersMixin(RenderDoc):
         member_group
             An identifier for the type of the members.
         """
-        from . import RenderDocAttribute, RenderDocClass, RenderDocFunction
+        from . import RenderDocAttribute, RenderDocClass, RenderDocFunction, RenderDocTypeAlias
 
         slug = group
 
-        if group == "classes":
+        if group == "type-aliases":
+            pages, Render = self.type_alias_member_pages, RenderDocTypeAlias
+            show_summary = self.show_type_aliases_summary
+        elif group == "classes":
             pages, Render = self.class_member_pages, RenderDocClass
             show_summary = self.show_classes_summary
         elif group == "attributes":
@@ -373,7 +438,7 @@ class __RenderDocMembersMixin(RenderDoc):
 
         title = Header(
             self.level + 1,
-            slug.title(),
+            slug.replace("-", " ").title(),
             Attr(classes=[f"doc-{slug}", "doc-pages"]),
         )
 

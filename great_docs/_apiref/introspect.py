@@ -12,6 +12,7 @@ from __future__ import annotations
 import enum
 import importlib
 import inspect
+import sys
 import warnings
 from dataclasses import dataclass
 from types import ModuleType
@@ -21,6 +22,11 @@ import griffe as gf
 
 if TYPE_CHECKING:
     from griffe import DocstringOptions
+
+if sys.version_info >= (3, 12):
+    from typing import TypeAliasType
+else:  # Python 3.11 has no PEP 695 runtime support
+    TypeAliasType = None
 
 # Parser defaults ==============================================================
 
@@ -264,6 +270,13 @@ def replace_docstring(obj: gf.Object | gf.Alias, runtime_obj: object = None) -> 
         runtime_obj = _locate_runtime_object(obj)
         if runtime_obj is None:
             return
+
+    # A PEP 695 alias inherits `__doc__` from the `TypeAliasType` class, so the
+    # runtime docstring is CPython's prose about the `type` statement rather
+    # than the author's. Keep griffe's statically-parsed docstring; when there
+    # is none the alias correctly shows no docstring rather than boilerplate.
+    if TypeAliasType is not None and isinstance(runtime_obj, TypeAliasType):
+        return
 
     if getattr(runtime_obj, "__doc__", None) is None:
         return

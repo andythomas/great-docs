@@ -223,6 +223,7 @@ h2.doc-attributes,
 h2.doc-functions,
 h2.doc-methods,
 h2.doc-classes,
+h2.doc-type-aliases,
 h2.doc-group {
   font-size: 22px;
   border-bottom: none;
@@ -726,7 +727,7 @@ dt a.doc-method-name::after {
   }
 
   // Attribute signature (uses <p><code> rather than div.sourceCode)
-  .doc-signature.doc-attribute {
+  .doc-signature:is(.doc-attribute, .doc-type-alias) {
     code {
       background-color: #2d3748 !important;
       color: #e2e8f0 !important;

@@ -83,6 +83,11 @@ def is_doc_attribute(el: DocMemberType) -> TypeGuard[content.DocAttribute]:
     return el.obj.is_attribute
 
 
+def is_doc_type_alias(el: DocMemberType) -> TypeGuard[content.DocTypeAlias]:
+    """Whether the member documents a type alias"""
+    return el.obj.is_type_alias
+
+
 def griffe_to_doc(
     obj: gf.Object | gf.Alias,
     *,
