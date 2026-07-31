@@ -75,7 +75,7 @@ def make_loader(parser: str = "numpy") -> gf.GriffeLoader:
 def get_object(
     path: str,
     parser: str | None = None,
-    dynamic: bool | str = False,
+    dynamic: bool = False,
     loader: gf.GriffeLoader | None = None,
 ) -> gf.Object | gf.Alias:
     """
@@ -90,8 +90,8 @@ def get_object(
         A docstring parser to configure a new loader with. Ignored, with a warning,
         when `loader` is given, since the loader already carries a parser.
     dynamic :
-        Whether to dynamically import object. Useful if docstring is not hard-coded,
-        but was set on object by running python code.
+        Whether to dynamically import the object. Useful when the docstring is not
+        hard-coded, but was set on the object by running python code.
     loader :
         An existing griffe loader to reuse. A fresh loader is created when omitted.
 
@@ -101,6 +101,8 @@ def get_object(
         The node griffe models at `path` — an object, or an alias when the path
         reaches it through a re-export.
     """
+    _validate_dynamic(dynamic)
+
     if loader is None:
         loader = make_loader(parser or "numpy")
     elif parser is not None:
@@ -118,9 +120,6 @@ def get_object(
         _ = loader.load(module_path)
 
     if dynamic:
-        if isinstance(dynamic, str):
-            return dynamic_alias(path, target=dynamic, loader=loader)
-
         return dynamic_alias(path, loader=loader)
 
     return _static_object(module_path, object_path, loader)
@@ -422,7 +421,6 @@ def _clone_docstring(
 
 def dynamic_alias(
     path: str,
-    target: str | None = None,
     loader: gf.GriffeLoader | None = None,
 ) -> gf.Object | gf.Alias:
     """Resolve a griffe object for `path` via a dynamic import.
@@ -431,9 +429,6 @@ def dynamic_alias(
     ----------
     path :
         Full path to the object. E.g. `my_package.get_object`.
-    target :
-        Optional path to the ultimate alias target. By default, this is
-        inferred using the `__module__` attribute of the imported object.
     loader :
         An existing griffe loader to reuse. A fresh loader is created when omitted.
     """
@@ -444,7 +439,7 @@ def dynamic_alias(
     if isinstance(located, _DeclarationOnly):
         return located.obj
 
-    documented = _load_documenting_object(located, target, loader)
+    documented = _load_documenting_object(located, loader)
     replace_docstring(documented.obj, located.value)
 
     if _same_path(documented.path, located.access_path):
@@ -588,7 +583,6 @@ def _locate_declaration(
 
 def _load_documenting_object(
     located: _LocatedAttr,
-    target: str | None,
     loader: gf.GriffeLoader | None,
 ) -> _Documented:
     """
@@ -614,9 +608,6 @@ def _load_documenting_object(
         Callers compare that path against the access path to decide whether the
         attribute still needs re-exposing.
     """
-    if target:
-        return _Documented(get_object(target, loader=loader), target)
-
     if located.canonical_path is not None:
         try:
             obj = get_object(located.canonical_path, loader=loader)
@@ -734,3 +725,12 @@ def _has_no_value(obj: gf.Object | gf.Alias) -> bool:
             return True
 
     return False
+
+
+def _validate_dynamic(value: object, *, allow_none: bool = False) -> None:
+    if isinstance(value, bool) or (allow_none and value is None):
+        return
+    raise ValueError(
+        f"`dynamic` accepts true or false, got {value!r}. "
+        "It selects how an object is inspected, not what it points to."
+    )

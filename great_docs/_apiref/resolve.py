@@ -326,7 +326,7 @@ class _Resolver:
         obj: gf.Object | gf.Alias,
         *,
         path: str,
-        dynamic: bool | str,
+        dynamic: bool,
     ) -> list[object]:
         """Resolve the members of `obj`, each wrapped per the entry's children style"""
         # Member precedence: the member's own name, then `member_options`,

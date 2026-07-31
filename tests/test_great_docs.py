@@ -27812,6 +27812,11 @@ def test_get_object_dynamic_mode():
     assert obj.name == "dumps"
 
 
+def test_get_object_rejects_a_path_for_dynamic():
+    with pytest.raises(ValueError, match="accepts true or false"):
+        get_object("json:dumps", dynamic="json:dumps")
+
+
 def test_get_object_warns_when_parser_is_ignored():
     """A parser cannot apply to a loader that already carries one."""
     from great_docs._apiref.introspect import make_loader
@@ -28298,14 +28303,6 @@ def test_dynamic_alias_nested_class_method():
     assert obj is not None
 
 
-def test_dynamic_alias_with_target():
-    """dynamic_alias with explicit target uses that target."""
-
-    obj = dynamic_alias("json:dumps", target="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
-
-
 def test_dynamic_alias_nonexistent_attr_raises():
     """dynamic_alias raises KeyError for nonexistent attributes in a real module."""
 
@@ -28396,12 +28393,19 @@ def test_dynamic_alias_reexported_creates_alias():
             sys.modules.pop("introtest_reexp.sub", None)
 
 
-def test_get_object_dynamic_string_target():
-    """get_object with dynamic=<string> passes target to dynamic_alias."""
+def test_spec_object_rejects_a_path_for_dynamic():
+    """`dynamic` selects how an object is inspected, so only a bool will do."""
+    from great_docs._apiref.spec import SpecObject
 
-    obj = get_object("json:dumps", dynamic="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecObject(**{"name": "dumps", "dynamic": "json:dumps"})
+
+
+def test_spec_options_replace_rejects_a_path_for_dynamic():
+    from great_docs._apiref.spec import SpecOptions
+
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecOptions().replace(dynamic="json:dumps")
 
 
 def _make_api_ref(**block):
