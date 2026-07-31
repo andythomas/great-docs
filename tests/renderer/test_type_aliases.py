@@ -82,7 +82,7 @@ def test_label_plain_constant_still_works():
 
 
 def test_from_griffe_builds_a_type_alias_node():
-    from great_docs._apiref.content import DocTypeAlias, Doc
+    from great_docs._apiref.content import Doc, DocTypeAlias
 
     obj = _load_member("type Contract = int | str", "Contract")
     doc = Doc.from_griffe("Contract", obj)
@@ -255,6 +255,41 @@ def test_type_alias_group_has_its_own_heading():
 
     assert "Type Aliases" in qmd
     assert "doc-type-aliases" in qmd
+
+
+def test_exclude_type_aliases_removes_the_member_from_the_output():
+    """`exclude_type_aliases` must keep an excluded alias out of the rendered qmd"""
+    import textwrap
+
+    from great_docs._apiref._globals import EXCLUSIONS
+    from great_docs._apiref._render.extending import exclude_type_aliases
+    from great_docs._apiref._tools import render_code_variable
+
+    source = textwrap.dedent('''
+        class Holder:
+            """A holder."""
+
+            type Kept = str
+            """A kept alias."""
+
+            type Dropped = int
+            """A dropped alias."""
+    ''')
+
+    # Without the exclusion both aliases are rendered
+    assert "Dropped" in render_code_variable(source, "Holder")
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({"package.Holder": "Dropped"})
+        qmd = render_code_variable(source, "Holder")
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
+
+    assert "A kept alias." in qmd
+    assert "Dropped" not in qmd
+    assert "A dropped alias." not in qmd
 
 
 def test_type_alias_group_precedes_attributes():

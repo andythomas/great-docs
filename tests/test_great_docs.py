@@ -74,6 +74,7 @@ from great_docs._apiref._render.extending import (
     exclude_classes,
     exclude_functions,
     exclude_parameters,
+    exclude_type_aliases,
     extend_base_class,
     set_class_attr,
 )
@@ -30642,6 +30643,33 @@ def test_mixin_type_alias_member_pages_property():
     pages = render.type_alias_member_pages
     assert len(pages) == 1
     assert pages[0].path == "Inline"
+
+
+def test_mixin_type_alias_member_pages_honours_exclusions():
+    """exclude_type_aliases drops a type alias from type_alias_member_pages."""
+
+    cls_obj, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({cls_obj.path: "Inline"})
+        assert render.type_alias_member_pages == []
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
+
+
+def test_exclude_type_aliases_updates_globals():
+    """exclude_type_aliases updates the EXCLUSIONS.type_aliases global dict."""
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({"test.MyClass": "Contract"})
+        assert EXCLUSIONS.type_aliases["test.MyClass"] == "Contract"
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
 
 
 def test_mixin_render_type_alias_member_pages():

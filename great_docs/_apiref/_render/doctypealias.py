@@ -19,10 +19,6 @@ if TYPE_CHECKING:
 
     from .. import content
 
-# `obj.kind.value` is "type alias", with a space; used bare it would split into
-# two CSS classes, the second colliding with the `alias` kind.
-_KIND_SLUG = "type-alias"
-
 
 @dataclass
 class __RenderDocTypeAlias(RenderDoc):
@@ -60,7 +56,7 @@ class __RenderDocTypeAlias(RenderDoc):
         declared = f"{name}{render_type_parameters(self.obj.type_parameters)}"
 
         items: list[InlineContentItem] = [
-            Span("type", Attr(classes=[f"doc-{_KIND_SLUG}-keyword", "kw"])),
+            Span("type", Attr(classes=[f"doc-{self.kind_slug}-keyword", "kw"])),
             " ",
             Span(declared, Attr(classes=["doc-parameter-name"])),
         ]
@@ -78,7 +74,7 @@ class __RenderDocTypeAlias(RenderDoc):
 
         return Div(
             Code(str(Inlines0(items))).html,
-            Attr(classes=["doc-signature", f"doc-{_KIND_SLUG}"]),
+            Attr(classes=["doc-signature", f"doc-{self.kind_slug}"]),
         )
 
     def render_description(self) -> BlockContent:

@@ -269,6 +269,45 @@ def test_facade_reexport_resolves_without_cyclic_alias(monkeypatch, tmp_path):
 
 
 @requires_pep695
+def test_class_nested_alias_is_not_shadowed_by_a_module_level_one(monkeypatch, tmp_path):
+    """A class-nested alias must resolve to itself, not to a same-named module-level alias
+
+    A `TypeAliasType` reports no `__qualname__`, so nothing about the runtime
+    object distinguishes the nested alias from the module-level one of the same
+    name. Only the enclosing-class walk does, which makes this the case that
+    catches a canonical path guessed from `__module__` + `__name__`.
+    """
+    from great_docs._apiref.introspect import get_object
+
+    root = _write_package(
+        tmp_path,
+        "gdta_shadow",
+        {
+            "__init__.py": '''
+                """Package."""
+                type Inner = str
+                """Module-level alias."""
+
+
+                class Holder:
+                    """A holder."""
+
+                    type Inner = int
+                    """Inner alias."""
+            '''
+        },
+    )
+    _install(monkeypatch, root)
+
+    obj = get_object("gdta_shadow:Holder.Inner", dynamic=True)
+
+    assert obj.canonical_path == "gdta_shadow.Holder.Inner"
+    assert str(obj.value) == "int"
+    assert obj.docstring is not None
+    assert obj.docstring.value == "Inner alias."
+
+
+@requires_pep695
 def test_plain_alias_still_resolves_dynamically(monkeypatch, tmp_path):
     """The plain, non-re-exported case keeps working"""
     from great_docs._apiref.introspect import get_object
