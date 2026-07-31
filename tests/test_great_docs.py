@@ -27813,10 +27813,10 @@ def test_get_object_dynamic_mode():
 
 
 def test_get_object_alias_loads_target_module():
-    """get_object with load_aliases=True loads the target module for aliases."""
+    """get_object loads the target module for aliases."""
 
     # os.path is typically an alias to posixpath or ntpath
-    obj = get_object("os:path", load_aliases=True)
+    obj = get_object("os:path")
     assert obj is not None
 
 

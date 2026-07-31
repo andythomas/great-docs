@@ -74,7 +74,6 @@ def make_loader(parser: str = "numpy") -> gf.GriffeLoader:
 def get_object(
     path: str,
     parser: str = "numpy",
-    load_aliases: bool = True,
     dynamic: bool | str = False,
     loader: gf.GriffeLoader | None = None,
 ) -> gf.Object | gf.Alias:
@@ -87,8 +86,6 @@ def get_object(
         For example, `my_package:get_object` or `my_package:MyClass.render`.
     parser :
         A docstring parser to use.
-    load_aliases :
-        For aliases that were imported from other modules, should we load that module?
     dynamic :
         Whether to dynamically import object. Useful if docstring is not hard-coded,
         but was set on object by running python code.
@@ -116,7 +113,7 @@ def get_object(
 
         return dynamic_alias(path, loader=loader)
 
-    return _static_object(module_path, object_path, loader, load_aliases)
+    return _static_object(module_path, object_path, loader)
 
 
 def _split_path(path: str) -> tuple[str, str | None]:
@@ -142,9 +139,36 @@ def _static_object(
     module_path: str,
     object_path: str | None,
     loader: gf.GriffeLoader,
-    load_aliases: bool,
 ) -> gf.Object | gf.Alias:
-    """The griffe object at a path, as griffe's static analysis models it"""
+    """
+    The griffe object at a path, as griffe's static analysis models it
+
+    An alias imported from elsewhere brings its target's module along, so the
+    target can be resolved.
+
+    Parameters
+    ----------
+    module_path :
+        Dotted path of the module to read from.
+    object_path :
+        Dotted path of the object within that module, or `None` for the module
+        itself.
+    loader :
+        Loader whose collection the module has already been loaded into.
+
+    Returns
+    -------
+    :
+        The node at the path. An imported name comes back as an alias, and a
+        function or attribute reached through an aliased parent keeps that
+        parent.
+
+    Raises
+    ------
+    KeyError
+        When the static model holds nothing at the path. The key names the
+        object that was asked for, which callers turn into a user-facing error.
+    """
     # griffe uses only periods for the path
     griffe_path = f"{module_path}.{object_path}" if object_path else module_path
     obj = loader.modules_collection[griffe_path]
@@ -153,7 +177,7 @@ def _static_object(
     if isinstance(parent, gf.Alias) and isinstance(obj, (gf.Function, gf.Attribute)):
         obj = gf.Alias(obj.name, obj, parent=parent)
 
-    if isinstance(obj, gf.Alias) and load_aliases:
+    if isinstance(obj, gf.Alias):
         target_mod = obj.target_path.split(".")[0]
         if target_mod != module_path:
             _ = loader.load(target_mod)
