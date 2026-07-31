@@ -102,6 +102,16 @@ def test_instance_defined_in_the_accessing_module_keeps_the_access_path(monkeypa
     assert obj.canonical_path == "gdta_local_singleton.SETTINGS"
 
 
+def test_trailing_colon_module_path_does_not_self_alias():
+    """A degenerate `module:` path resolves the module, not a self-referential alias."""
+    from great_docs._apiref.introspect import get_object
+
+    obj = get_object("json.decoder:", dynamic=True)
+
+    if isinstance(obj, gf.Alias):
+        assert obj.target_path != obj.path
+
+
 def test_a_genuine_alias_cycle_still_raises(monkeypatch, tmp_path):
     """A cycle the package really authored is reported, not silently absorbed."""
     from great_docs._apiref.introspect import get_object

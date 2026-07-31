@@ -419,34 +419,6 @@ def _clone_docstring(
     )
 
 
-def dynamic_alias(
-    path: str,
-    loader: gf.GriffeLoader | None = None,
-) -> gf.Object | gf.Alias:
-    """Resolve a griffe object for `path` via a dynamic import.
-
-    Parameters
-    ----------
-    path :
-        Full path to the object. E.g. `my_package.get_object`.
-    loader :
-        An existing griffe loader to reuse. A fresh loader is created when omitted.
-    """
-    module_path, object_path = _split_path(path)
-    module = importlib.import_module(module_path)
-
-    located = _locate_runtime_attr(module, module_path, object_path, path, loader)
-    if isinstance(located, _DeclarationOnly):
-        return located.obj
-
-    documented = _load_documenting_object(located, loader)
-    replace_docstring(documented.obj, located.value)
-
-    if _same_path(documented.path, located.access_path):
-        return documented.obj
-    return _alias_into_parent(located, documented.obj, loader)
-
-
 @dataclass(frozen=True)
 class _LocatedAttr:
     """
@@ -478,8 +450,56 @@ class _Documented:
 
 
 def _same_path(one: str, other: str) -> bool:
-    """Whether two paths name the same object, ignoring the `:` / `.` separator"""
+    """
+    Whether two paths name the same object, ignoring the `:` / `.` separator
+
+    Parameters
+    ----------
+    one, other :
+        Paths to compare, each in either `module:object` or dotted form.
+
+    Returns
+    -------
+    :
+        True when both name the same object.
+    """
     return one.replace(":", ".") == other.replace(":", ".")
+
+
+def dynamic_alias(
+    path: str,
+    loader: gf.GriffeLoader | None = None,
+) -> gf.Object | gf.Alias:
+    """
+    Resolve a griffe object for `path` via a dynamic import
+
+    Parameters
+    ----------
+    path :
+        Full path to the object. E.g. `my_package.get_object`.
+    loader :
+        An existing griffe loader to reuse. A fresh loader is created when omitted.
+
+    Returns
+    -------
+    :
+        The node griffe models at `path`, carrying the runtime docstring. It
+        comes back as an alias member of the thing it was accessed through only
+        when it lives somewhere else.
+    """
+    module_path, object_path = _split_path(path)
+    module = importlib.import_module(module_path)
+
+    located = _locate_runtime_attr(module, module_path, object_path, path, loader)
+    if isinstance(located, _DeclarationOnly):
+        return located.obj
+
+    documented = _load_documenting_object(located, loader)
+    replace_docstring(documented.obj, located.value)
+
+    if _same_path(documented.path, located.access_path):
+        return documented.obj
+    return _alias_into_parent(located, documented.obj, loader)
 
 
 def _locate_runtime_attr(
@@ -515,11 +535,18 @@ def _locate_runtime_attr(
 
     Raises
     ------
+    KeyError
+        When the path names neither a runtime attribute nor a declaration,
+        from the static lookup that `_locate_declaration` falls back to.
+    ImportError
+        When that static lookup needs a module that cannot be loaded.
     AttributeError
-        When the path names neither a runtime attribute nor a declaration.
+        The narrower case of a missing runtime attribute: raised only when
+        the static model DOES carry a value for it, so the absence is a
+        genuine error rather than a declaration to fall back to.
     """
     if object_path is None:
-        return _LocatedAttr(module, module_path.rsplit(".", 1)[-1], path, module.__name__)
+        return _LocatedAttr(module, module_path.rsplit(".", 1)[-1], module_path, module.__name__)
 
     names = object_path.split(".")
     value: object = module
