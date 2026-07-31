@@ -497,7 +497,7 @@ def _locate_runtime_attr(
     canonical_path: str | None = None
 
     for index, name in enumerate(names):
-        home = _probe_canonical_path(value, ".".join(names[index:]))
+        home = _canonical_path(value, ".".join(names[index:]))
         if home is not None:
             canonical_path = home
 
@@ -506,7 +506,7 @@ def _locate_runtime_attr(
         except AttributeError:
             return _locate_declaration(canonical_path or path, name, path, loader)
 
-    home = _probe_canonical_path(value, "")
+    home = _canonical_path(value, "")
     if home is not None:
         canonical_path = home
 
@@ -637,46 +637,42 @@ def _alias_into_parent(
     return gf.Alias(located.name, obj)
 
 
-def _probe_canonical_path(part: object, qualname: str) -> str | None:
-    """Probe for the canonical path of `part`, returning `None` when it does not expose one"""
-    try:
-        return _canonical_path(part, qualname)
-    except AttributeError:
+def _canonical_path(current_part: object, qualname: str) -> str | None:
+    """
+    The path at which `current_part` reports it lives, extended by `qualname`
+
+    `None` when the object reports no home. A module knows its own `__name__`
+    but not where its members were defined, so it reports a home only for
+    itself. Plain instances carry no `__qualname__` of their own.
+
+    Parameters
+    ----------
+    current_part :
+        The runtime object to ask.
+    qualname :
+        Dotted names to append to the reported home, empty for the object
+        itself.
+
+    Returns
+    -------
+    :
+        The reported path in `module:qualname` form, or `None` when the object
+        reports no home.
+    """
+    if isinstance(current_part, ModuleType):
+        return None if qualname else current_part.__name__
+
+    module = getattr(current_part, "__module__", None)
+    qualified = getattr(current_part, "__qualname__", None)
+
+    # `callable` rather than `inspect.isfunction` so that PyO3 / C-extension
+    # callables (`builtin_function_or_method`, `method-wrapper`) report their
+    # canonical home too.
+    if not (module and qualified and callable(current_part)):
         return None
 
-
-def _canonical_path(current_part: object, qualname: str) -> str | None:
-    """Build the canonical import path for `current_part`, extended by `qualname`.
-
-    Returns `None` when no canonical path can be determined (e.g. for
-    plain data objects that carry no `__module__` or `__qualname__`).
-    """
-    suffix = (":" + qualname) if qualname else ""
-    if isinstance(current_part, ModuleType):
-        return current_part.__name__ + suffix
-
-    if inspect.isclass(current_part) or inspect.isfunction(current_part):
-        _mod = getattr(current_part, "__module__", None)
-
-        if _mod is None:
-            return None
-
-        qual_parts = [] if not qualname else qualname.split(".")
-        return _mod + ":" + ".".join([current_part.__qualname__, *qual_parts])
-
-    # PyO3 / C-extension callables (e.g. `builtin_function_or_method`,
-    # `method-wrapper`) don't satisfy `inspect.isfunction` but they do carry
-    # `__module__` / `__qualname__` attributes. Treat them as function-like
-    # so `dynamic_alias` can resolve them to their canonical home rather than
-    # building a self-referential alias on the re-exporting facade module
-    # (which produces `CyclicAliasError` downstream).
-    _mod = getattr(current_part, "__module__", None)
-    _qn = getattr(current_part, "__qualname__", None)
-    if _mod and _qn and callable(current_part):
-        qual_parts = [] if not qualname else qualname.split(".")
-        return _mod + ":" + ".".join([_qn, *qual_parts])
-
-    return None
+    qual_parts = qualname.split(".") if qualname else []
+    return module + ":" + ".".join([qualified, *qual_parts])
 
 
 def _has_no_value(obj: gf.Object | gf.Alias) -> bool:

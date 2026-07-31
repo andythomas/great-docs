@@ -28047,13 +28047,13 @@ def test_canonical_path_module():
     assert result == "json"
 
 
-def test_canonical_path_module_with_qualname():
-    """_canonical_path for a module with qualname appends suffix."""
+def test_canonical_path_module_reports_no_home_for_a_member():
+    """A module knows its own name but not where its members were defined."""
     from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json, "dumps")
 
-    assert result == "json:dumps"
+    assert result is None
 
 
 def test_canonical_path_function():
