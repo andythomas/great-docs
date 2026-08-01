@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -32,8 +33,34 @@ from pydantic import AnyUrl
 
 server = Server("great-docs")
 
+# ---------------------------------------------------------------------------
+# mcp v1/v2 compatibility
+# ---------------------------------------------------------------------------
+
+# mcp v2 removed the decorator API from Server; handlers are now passed as
+# constructor kwargs (on_list_tools=...) instead.
+_MCP_V1 = hasattr(server, "list_tools")
+_V2_HANDLERS: dict[str, Any] = {}
+
+
+def _handler(name: str) -> Any:
+    """Return a decorator that registers a handler on the MCP server.
+
+    mcp v1 uses the decorator API; mcp v2 collects handlers for later
+    constructor-based registration at the bottom of this module.
+    """
+    if _MCP_V1:
+        return getattr(server, name)()
+
+    def _collect(func: Any) -> Any:
+        _V2_HANDLERS[name] = func
+        return func
+
+    return _collect
+
+
 # Server-level instructions — displayed to the AI at connection time
-server.instructions = (
+_INSTRUCTIONS = (
     "You are connected to the Great Docs MCP server. Great Docs is a Python "
     "documentation generator that produces Quarto-based reference sites from "
     "package introspection.\n\n"
@@ -47,6 +74,8 @@ server.instructions = (
     "Start with `gd_status` to understand the current project state, then use "
     "tools and prompts to accomplish documentation tasks."
 )
+if _MCP_V1:
+    server.instructions = _INSTRUCTIONS
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +105,7 @@ def _get_great_docs(project_path: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-@server.list_tools()
+@_handler("list_tools")
 async def list_tools() -> list[Tool]:
     """List all available Great Docs tools."""
     return [
@@ -293,7 +322,7 @@ async def list_tools() -> list[Tool]:
 # ---------------------------------------------------------------------------
 
 
-@server.call_tool()
+@_handler("call_tool")
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Dispatch tool calls to their implementations."""
     try:
@@ -684,7 +713,7 @@ async def _handle_api_diff(arguments: dict) -> list[TextContent]:
 # ---------------------------------------------------------------------------
 
 
-@server.list_prompts()
+@_handler("list_prompts")
 async def list_prompts() -> list[Prompt]:
     """List pre-built prompt templates for documentation workflows."""
     return [
@@ -776,7 +805,7 @@ async def list_prompts() -> list[Prompt]:
     ]
 
 
-@server.get_prompt()
+@_handler("get_prompt")
 async def get_prompt(name: str, arguments: dict[str, str] | None) -> GetPromptResult:
     """Return the expanded prompt messages for a given prompt template."""
     args = arguments or {}
@@ -925,7 +954,7 @@ async def get_prompt(name: str, arguments: dict[str, str] | None) -> GetPromptRe
 # ---------------------------------------------------------------------------
 
 
-@server.list_resources()
+@_handler("list_resources")
 async def list_resources() -> list[Resource]:
     """List available documentation resources."""
     resources = []
@@ -997,7 +1026,7 @@ async def list_resources() -> list[Resource]:
     return resources
 
 
-@server.read_resource()
+@_handler("read_resource")
 async def read_resource(uri: AnyUrl) -> str:
     """Read the contents of a documentation resource."""
     uri_str = str(uri)
@@ -1107,7 +1136,7 @@ async def read_resource(uri: AnyUrl) -> str:
 # ---------------------------------------------------------------------------
 
 
-@server.list_resource_templates()
+@_handler("list_resource_templates")
 async def list_resource_templates() -> list[ResourceTemplate]:
     """List dynamic resource templates."""
     return [
@@ -1137,7 +1166,7 @@ async def list_resource_templates() -> list[ResourceTemplate]:
 # ---------------------------------------------------------------------------
 
 
-@server.completion()
+@_handler("completion")
 async def handle_completion(
     ref: PromptReference | ResourceTemplateReference,
     argument: CompletionArgument,
@@ -1216,6 +1245,65 @@ async def handle_completion(
 
 
 # ---------------------------------------------------------------------------
+# mcp v2: rebuild server with handlers as constructor kwargs
+# ---------------------------------------------------------------------------
+
+# On mcp v2 the decorator API is gone; reconstruct the server now that all
+# handler functions have been collected in _V2_HANDLERS.
+if not _MCP_V1 and _V2_HANDLERS:
+    _raw = _V2_HANDLERS
+
+    async def _on_list_tools(ctx: Any, params: Any = None) -> Any:
+        return await _raw["list_tools"]()
+
+    async def _on_call_tool(ctx: Any, params: Any) -> Any:
+        return await _raw["call_tool"](
+            getattr(params, "name", ""),
+            getattr(params, "arguments", {}) or {},
+        )
+
+    async def _on_list_prompts(ctx: Any, params: Any = None) -> Any:
+        return await _raw["list_prompts"]()
+
+    async def _on_get_prompt(ctx: Any, params: Any) -> Any:
+        return await _raw["get_prompt"](
+            getattr(params, "name", ""),
+            getattr(params, "arguments", None),
+        )
+
+    async def _on_list_resources(ctx: Any, params: Any = None) -> Any:
+        return await _raw["list_resources"]()
+
+    async def _on_read_resource(ctx: Any, params: Any) -> Any:
+        return await _raw["read_resource"](getattr(params, "uri", ""))
+
+    async def _on_list_resource_templates(ctx: Any, params: Any = None) -> Any:
+        return await _raw["list_resource_templates"]()
+
+    async def _on_completion(ctx: Any, params: Any) -> Any:
+        return await _raw["completion"](
+            getattr(params, "ref", None),
+            getattr(params, "argument", None),
+        )
+
+    server = Server(
+        name="great-docs",
+        on_list_tools=_on_list_tools,
+        on_call_tool=_on_call_tool,
+        on_list_prompts=_on_list_prompts,
+        on_get_prompt=_on_get_prompt,
+        on_list_resources=_on_list_resources,
+        on_read_resource=_on_read_resource,
+        on_list_resource_templates=_on_list_resource_templates,
+        on_completion=_on_completion,
+    )
+    try:
+        server.instructions = _INSTRUCTIONS
+    except AttributeError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Server entry point
 # ---------------------------------------------------------------------------
 
@@ -1223,7 +1311,12 @@ async def handle_completion(
 async def run_mcp_server():
     """Run the Great Docs MCP server over stdio."""
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        if _MCP_V1:
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
+        else:
+            await server.run(read_stream, write_stream)
 
 
 if __name__ == "__main__":
