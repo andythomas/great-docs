@@ -40,14 +40,10 @@ class __RenderDocAttribute(RenderDoc):
         annotation = self.obj.annotation if self.show_signature_annotation else None
         default = getattr(self.obj, "value", None)
 
-        # For a TypeAlias, the name is the title and we can do without the annotation
-        if "type" in self.kind:
-            name, annotation = None, None
-
         term = self.render_variable_definition(name, annotation, default)
         return Div(
             Code(str(term)).html,
-            Attr(classes=["doc-signature", f"doc-{self.kind}"]),
+            Attr(classes=["doc-signature", f"doc-{self.kind_slug}"]),
         )
 
     def render_description(self) -> BlockContent:

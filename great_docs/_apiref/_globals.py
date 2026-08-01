@@ -21,14 +21,15 @@ class Exclusions:
 
     Each mapping is keyed by a parent object's path (as shown on the API
     page); the value names the member — or members — of that object to
-    leave out: parameters of a callable, or attributes, functions, and
-    classes of a class or module.
+    leave out: parameters of a callable, or attributes, functions, classes,
+    and type aliases of a class or module.
     """
 
     parameters: ExclusionMap = field(default_factory=ExclusionMap)
     attributes: ExclusionMap = field(default_factory=ExclusionMap)
     functions: ExclusionMap = field(default_factory=ExclusionMap)
     classes: ExclusionMap = field(default_factory=ExclusionMap)
+    type_aliases: ExclusionMap = field(default_factory=ExclusionMap)
 
 
 EXCLUSIONS = Exclusions()

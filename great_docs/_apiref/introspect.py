@@ -12,6 +12,9 @@ from __future__ import annotations
 import enum
 import importlib
 import inspect
+import sys
+import warnings
+from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
 
@@ -20,21 +23,48 @@ import griffe as gf
 if TYPE_CHECKING:
     from griffe import DocstringOptions
 
+if sys.version_info >= (3, 12):
+    from typing import TypeAliasType
+else:  # Python 3.11 has no PEP 695 runtime support
+    TypeAliasType = None
+
 # Parser defaults ==============================================================
 
 DEFAULT_OPTIONS: dict[str, dict[str, object]] = {}
 
 
 def get_parser_defaults(name: str) -> dict[str, object]:
-    """Get the default parser options registered for the named docstring style.
+    """
+    Get the default parser options registered for the named docstring style
 
-    Returns an empty dict when no defaults have been registered for `name`.
+    Parameters
+    ----------
+    name :
+        Name of a docstring style, e.g. `numpy` or `google`.
+
+    Returns
+    -------
+    :
+        The registered options, or an empty dict when the style has none.
     """
     return DEFAULT_OPTIONS.get(name, {})
 
 
 def make_loader(parser: str = "numpy") -> gf.GriffeLoader:
-    """Configure a griffe loader with the defaults for a docstring parser"""
+    """
+    Configure a griffe loader with the defaults for a docstring parser
+
+    Parameters
+    ----------
+    parser :
+        Name of the docstring style the loader parses with.
+
+    Returns
+    -------
+    :
+        A loader with its own module and line collections, so it shares no
+        cached state with any other loader.
+    """
     raw_defaults = get_parser_defaults(parser)
     docstring_options = cast("DocstringOptions", raw_defaults) if raw_defaults else None
     return gf.GriffeLoader(
@@ -50,12 +80,12 @@ def make_loader(parser: str = "numpy") -> gf.GriffeLoader:
 
 def get_object(
     path: str,
-    parser: str = "numpy",
-    load_aliases: bool = True,
-    dynamic: bool | str = False,
+    parser: str | None = None,
+    dynamic: bool = False,
     loader: gf.GriffeLoader | None = None,
 ) -> gf.Object | gf.Alias:
-    """Get the griffe object at the given import path.
+    """
+    Get the griffe object at the given import path
 
     Parameters
     ----------
@@ -63,48 +93,108 @@ def get_object(
         An import path to the object. This should have the form `path.to.module:object`.
         For example, `my_package:get_object` or `my_package:MyClass.render`.
     parser :
-        A docstring parser to use.
-    load_aliases :
-        For aliases that were imported from other modules, should we load that module?
+        A docstring parser to configure a new loader with. Ignored, with a warning,
+        when `loader` is given, since the loader already carries a parser.
     dynamic :
-        Whether to dynamically import object. Useful if docstring is not hard-coded,
-        but was set on object by running python code.
+        Whether to dynamically import the object. Useful when the docstring is not
+        hard-coded, but was set on the object by running python code.
     loader :
         An existing griffe loader to reuse. A fresh loader is created when omitted.
+
+    Returns
+    -------
+    :
+        The node griffe models at `path` — an object, or an alias when the path
+        reaches it through a re-export.
     """
+    _validate_dynamic(dynamic)
+
     if loader is None:
-        loader = make_loader(parser)
+        loader = make_loader(parser or "numpy")
+    elif parser is not None:
+        warnings.warn(
+            f"Ignoring parser {parser!r} because `loader` was given; "
+            "the loader already carries a docstring parser.",
+            UserWarning,
+            stacklevel=2,
+        )
 
-    try:
-        module, object_path = path.split(":", 1)
-    except ValueError:
-        module, object_path = path, None
+    module_path, object_path = _split_path(path)
 
-    # load the module if it hasn't been already.
-    root_mod = module.split(".", 1)[0]
+    root_mod = module_path.split(".", 1)[0]
     if root_mod not in loader.modules_collection:
-        _ = loader.load(module)
+        _ = loader.load(module_path)
 
-    # griffe uses only periods for the path
-    griffe_path = f"{module}.{object_path}" if object_path else module
-
-    # Case 1: dynamic loading
     if dynamic:
-        if isinstance(dynamic, str):
-            return dynamic_alias(path, target=dynamic, loader=loader)
-
         return dynamic_alias(path, loader=loader)
 
-    # Case 2: static loading an object
-    parent = loader.modules_collection[griffe_path.rsplit(".", 1)[0]]
+    return _static_object(module_path, object_path, loader)
+
+
+def _split_path(path: str) -> tuple[str, str | None]:
+    """
+    Split a `module:object` path into its module part and its object part
+
+    Parameters
+    ----------
+    path :
+        A path of the form `path.to.module:object`, or `path.to.module` alone.
+
+    Returns
+    -------
+    :
+        The module part, and the object part or `None` when the path names a
+        module only.
+    """
+    module_path, _, object_path = path.partition(":")
+    return module_path, object_path or None
+
+
+def _static_object(
+    module_path: str,
+    object_path: str | None,
+    loader: gf.GriffeLoader,
+) -> gf.Object | gf.Alias:
+    """
+    The griffe object at a path, as griffe's static analysis models it
+
+    An alias imported from elsewhere brings its target's module along, so the
+    target can be resolved.
+
+    Parameters
+    ----------
+    module_path :
+        Dotted path of the module to read from.
+    object_path :
+        Dotted path of the object within that module, or `None` for the module
+        itself.
+    loader :
+        Loader whose collection the module has already been loaded into.
+
+    Returns
+    -------
+    :
+        The node at the path. An imported name comes back as an alias, and a
+        function or attribute reached through an aliased parent keeps that
+        parent.
+
+    Raises
+    ------
+    KeyError
+        When the static model holds nothing at the path. The key names the
+        object that was asked for, which callers turn into a user-facing error.
+    """
+    # griffe uses only periods for the path
+    griffe_path = f"{module_path}.{object_path}" if object_path else module_path
     obj = loader.modules_collection[griffe_path]
+    parent = loader.modules_collection[griffe_path.rsplit(".", 1)[0]]
 
     if isinstance(parent, gf.Alias) and isinstance(obj, (gf.Function, gf.Attribute)):
         obj = gf.Alias(obj.name, obj, parent=parent)
 
-    if isinstance(obj, gf.Alias) and load_aliases:
+    if isinstance(obj, gf.Alias):
         target_mod = obj.target_path.split(".")[0]
-        if target_mod != module:
+        if target_mod != module_path:
             _ = loader.load(target_mod)
 
     return obj
@@ -119,6 +209,19 @@ def resolve_alias(
     Follows `Alias.target` links until a non-alias node is reached. An
     unresolved link is re-loaded through `get_object` when one is provided;
     otherwise the `AliasResolutionError` propagates.
+
+    Parameters
+    ----------
+    obj :
+        The node to resolve. One that is not an alias is returned unchanged.
+    get_object :
+        Callable used to re-load a link whose target is absent from the
+        collection. When omitted, such a link raises instead.
+
+    Returns
+    -------
+    :
+        The concrete object at the end of the chain.
 
     Raises
     ------
@@ -142,7 +245,8 @@ def resolve_alias(
 
 
 def replace_docstring(obj: gf.Object | gf.Alias, runtime_obj: object = None) -> None:
-    """Replace the griffe object's docstring in place with the imported runtime docstring
+    """
+    Replace the griffe object's docstring in place with the imported runtime docstring
 
     Callable attributes (the `method = some_function` pattern) are also
     promoted to functions so they render with a signature.
@@ -166,6 +270,13 @@ def replace_docstring(obj: gf.Object | gf.Alias, runtime_obj: object = None) -> 
         runtime_obj = _locate_runtime_object(obj)
         if runtime_obj is None:
             return
+
+    # A PEP 695 alias inherits `__doc__` from the `TypeAliasType` class, so the
+    # runtime docstring is CPython's prose about the `type` statement rather
+    # than the author's. Keep griffe's statically-parsed docstring; when there
+    # is none the alias correctly shows no docstring rather than boilerplate.
+    if TypeAliasType is not None and isinstance(runtime_obj, TypeAliasType):
+        return
 
     if getattr(runtime_obj, "__doc__", None) is None:
         return
@@ -199,11 +310,23 @@ def replace_docstring(obj: gf.Object | gf.Alias, runtime_obj: object = None) -> 
 
 
 def _locate_runtime_object(obj: gf.Object) -> object | None:
-    """Locate the imported runtime object that `obj` documents, or return None if unreachable
+    """
+    Locate the imported runtime object that `obj` documents, or return None if unreachable
 
     A member of a (possibly nested) class is reached by walking the class
     chain, e.g. `Node.add_child` inside `Tree` resolves to
     `mod.Tree.Node.add_child`.
+
+    Parameters
+    ----------
+    obj :
+        The documented node whose runtime counterpart is wanted.
+
+    Returns
+    -------
+    :
+        The imported object, or `None` when the class chain or the attribute
+        itself cannot be reached at runtime.
     """
     mod = importlib.import_module(obj.module.canonical_path)
 
@@ -231,10 +354,21 @@ def _locate_runtime_object(obj: gf.Object) -> object | None:
 
 
 def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
-    """Re-register the attribute on its parent as a `gf.Function`
+    """
+    Re-register the attribute on its parent as a `gf.Function`
 
     The function carries the runtime signature when it is recoverable, so
     the member renders function-style instead of attribute-style.
+
+    Parameters
+    ----------
+    obj :
+        The attribute to replace on its parent.
+    f :
+        The runtime callable the attribute holds. Its signature is copied when
+        `inspect` can read it, and omitted when it cannot.
+    doc :
+        Docstring for the replacement function.
     """
     assert obj.parent is not None
 
@@ -270,7 +404,24 @@ def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
 def _clone_docstring(
     old: gf.Docstring | None, value: str, parent: gf.Object | None
 ) -> gf.Docstring:
-    """Clone a docstring with a new value, keeping the old one's position and parser"""
+    """
+    Clone a docstring with a new value, keeping the old one's position and parser
+
+    Parameters
+    ----------
+    old :
+        Docstring to copy the position and parser settings from. `None` yields
+        a docstring with no position.
+    value :
+        Text of the new docstring.
+    parent :
+        Node the new docstring belongs to.
+
+    Returns
+    -------
+    :
+        A docstring carrying `value`.
+    """
     return gf.Docstring(
         value=value,
         lineno=getattr(old, "lineno", None),
@@ -281,181 +432,331 @@ def _clone_docstring(
     )
 
 
+@dataclass(frozen=True)
+class _LocatedAttr:
+    """
+    A runtime attribute reached by walking an access path
+
+    `canonical_path` is `None` when the attribute does not report where it
+    lives, leaving `access_path` the only path known for it.
+    """
+
+    value: object
+    name: str
+    access_path: str
+    canonical_path: str | None
+
+
+@dataclass(frozen=True)
+class _DeclarationOnly:
+    """A path that names a declaration carrying no runtime value, e.g. an instance attribute"""
+
+    obj: gf.Object | gf.Alias
+
+
+@dataclass(frozen=True)
+class _Documented:
+    """The griffe object documenting an attribute, and the path it was loaded from"""
+
+    obj: gf.Object | gf.Alias
+    path: str
+
+
+def _same_path(one: str, other: str) -> bool:
+    """
+    Whether two paths name the same object, ignoring the `:` / `.` separator
+
+    Parameters
+    ----------
+    one, other :
+        Paths to compare, each in either `module:object` or dotted form.
+
+    Returns
+    -------
+    :
+        True when both name the same object.
+    """
+    return one.replace(":", ".") == other.replace(":", ".")
+
+
 def dynamic_alias(
     path: str,
-    target: str | None = None,
     loader: gf.GriffeLoader | None = None,
 ) -> gf.Object | gf.Alias:
-    """Resolve a griffe object for `path` via a dynamic import.
+    """
+    Resolve a griffe object for `path` via a dynamic import
 
     Parameters
     ----------
     path :
         Full path to the object. E.g. `my_package.get_object`.
-    target :
-        Optional path to the ultimate alias target. By default, this is
-        inferred using the `__module__` attribute of the imported object.
     loader :
         An existing griffe loader to reuse. A fresh loader is created when omitted.
+
+    Returns
+    -------
+    :
+        The node griffe models at `path`, carrying the runtime docstring. It
+        comes back as an alias member of the thing it was accessed through only
+        when it lives somewhere else.
     """
-    try:
-        mod_name, object_path = path.split(":", 1)
-    except ValueError:
-        mod_name, object_path = path, None
+    module_path, object_path = _split_path(path)
+    module = importlib.import_module(module_path)
 
-    mod = importlib.import_module(mod_name)
+    located = _locate_runtime_attr(module, module_path, object_path, path, loader)
+    if isinstance(located, _DeclarationOnly):
+        return located.obj
 
-    if object_path is None:
-        attr: object = mod
-        canonical_path: str = mod.__name__
-        attr_name = ""
-    else:
-        located = _locate_runtime_attr(mod, object_path, path, loader)
-        if isinstance(located, (gf.Object, gf.Alias)):
-            return located
-        attr, canonical_path, attr_name = located
+    documented = _load_documenting_object(located, loader)
+    replace_docstring(documented.obj, located.value)
 
-    if target:
-        obj = get_object(target, loader=loader)
-    else:
-        try:
-            obj = get_object(canonical_path, loader=loader)
-        except (KeyError, ModuleNotFoundError, ImportError):
-            # The canonical path computed via `__module__` doesn't refer to a
-            # loadable Python module, which is typical for PyO3 classes whose Rust
-            # `#[pyclass]` lacks `module = "..."` so `__module__` defaults
-            # to `"builtins"`. Fall back to the access path the user actually
-            # wrote, which by definition is importable.
-            obj = get_object(path, loader=loader)
-            canonical_path = path.replace(":", ".")
-
-    replace_docstring(obj, attr)
-
-    if obj.canonical_path == path.replace(":", "."):
-        return obj
-    return _alias_into_parent(mod_name, object_path, attr_name, obj, loader)
+    if _same_path(documented.path, located.access_path):
+        return documented.obj
+    return _alias_into_parent(located, documented.obj, loader)
 
 
 def _locate_runtime_attr(
-    mod: ModuleType,
-    object_path: str,
+    module: ModuleType,
+    module_path: str,
+    object_path: str | None,
     path: str,
     loader: gf.GriffeLoader | None,
-) -> tuple[object, str, str] | gf.Object | gf.Alias:
+) -> _LocatedAttr | _DeclarationOnly:
     """
-    Locate the runtime object at `object_path` in `mod`, its canonical path, and its final name
+    Walk `object_path` from `module` to the runtime attribute it names
 
-    Returns the statically-loaded griffe object instead when the path names a
-    declaration-only attribute (one that carries no runtime value).
+    Parameters
+    ----------
+    module :
+        The already-imported module the walk starts from.
+    module_path :
+        Dotted path `module` was imported by.
+    object_path :
+        Dotted path of the attribute within the module, or `None` for the
+        module itself.
+    path :
+        The full path as written, used in error messages.
+    loader :
+        Loader to read the static model through when the walk finds no runtime
+        value.
+
+    Returns
+    -------
+    :
+        The attribute together with the paths it is known by, or the static node
+        when the path names a declaration that holds no runtime value.
+
+    Raises
+    ------
+    KeyError
+        When the path names neither a runtime attribute nor a declaration,
+        from the static lookup that `_locate_declaration` falls back to.
+    ImportError
+        When that static lookup needs a module that cannot be loaded.
+    AttributeError
+        The narrower case of a missing runtime attribute: raised only when
+        the static model DOES carry a value for it, so the absence is a
+        genuine error rather than a declaration to fall back to.
+    """
+    if object_path is None:
+        return _LocatedAttr(module, module_path.rsplit(".", 1)[-1], module_path, module.__name__)
+
+    names = object_path.split(".")
+    value: object = module
+    canonical_path: str | None = None
+
+    for index, name in enumerate(names):
+        home = _canonical_path(value, ".".join(names[index:]))
+        if home is not None:
+            canonical_path = home
+
+        try:
+            value = getattr(value, name)
+        except AttributeError:
+            return _locate_declaration(canonical_path or path, name, path, loader)
+
+    home = _canonical_path(value, "")
+    if home is not None:
+        canonical_path = home
+
+    return _LocatedAttr(value, names[-1], path, canonical_path)
+
+
+def _locate_declaration(
+    static_path: str,
+    name: str,
+    path: str,
+    loader: gf.GriffeLoader | None,
+) -> _DeclarationOnly:
+    """
+    Fall back to griffe's static model for an attribute with no runtime value
+
+    Parameters
+    ----------
+    static_path :
+        Path to read the static model at.
+    name :
+        Name of the attribute that was missing at runtime, for the error
+        message.
+    path :
+        The full path as written, for the error message.
+    loader :
+        Loader to read the static model through.
+
+    Returns
+    -------
+    :
+        The static node, when it is a declaration that carries no value of its
+        own.
 
     Raises
     ------
     AttributeError
-        When an attribute in the path does not exist at runtime.
-    ValueError
-        When no canonical import path can be determined.
+        When the static model does carry a value, so the missing runtime
+        attribute is a genuine absence rather than a declaration.
     """
-    splits = object_path.split(".")
+    obj = get_object(static_path, loader=loader)
+    if _has_no_value(obj):
+        return _DeclarationOnly(obj)
+    raise AttributeError(f"No attribute named `{name}` in the path `{path}`.")
 
-    attr_name = ""
-    canonical_path: str | None = None
-    current_part: object = mod
-    for ii, attr_name in enumerate(splits):
-        new_canonical_path = _probe_canonical_path(current_part, ".".join(splits[ii:]))
-        if new_canonical_path is not None:
-            canonical_path = new_canonical_path
 
+def _load_documenting_object(
+    located: _LocatedAttr,
+    loader: gf.GriffeLoader | None,
+) -> _Documented:
+    """
+    Load the griffe object that documents `located`
+
+    Prefers the attribute's canonical home, falling back to the path it was
+    accessed by. The fallback covers both an attribute that cannot report a
+    home and one whose `__module__` names a module that cannot be imported,
+    typical of PyO3 classes whose Rust `#[pyclass]` lacks `module = "..."` so
+    `__module__` defaults to `"builtins"`.
+
+    Parameters
+    ----------
+    located :
+        The attribute whose documentation is wanted.
+    loader :
+        Loader to read the static model through.
+
+    Returns
+    -------
+    :
+        The node that documents the attribute, and the path it was read from.
+        Callers compare that path against the access path to decide whether the
+        attribute still needs re-exposing.
+    """
+    if located.canonical_path is not None:
         try:
-            current_part = getattr(current_part, attr_name)
-        except AttributeError:
-            if canonical_path:
-                obj = get_object(canonical_path, loader=loader)
-                if _is_valueless(obj):
-                    return obj
+            obj = get_object(located.canonical_path, loader=loader)
+        except (KeyError, ModuleNotFoundError, ImportError):
+            pass
+        else:
+            return _Documented(obj, located.canonical_path)
 
-            raise AttributeError(f"No attribute named `{attr_name}` in the path `{path}`.")
-
-    new_canonical_path = _probe_canonical_path(current_part, "")
-    if new_canonical_path is not None:
-        canonical_path = new_canonical_path
-
-    if canonical_path is None:
-        raise ValueError(f"Cannot find canonical path for `{path}`")
-
-    return current_part, canonical_path, attr_name
+    return _Documented(get_object(located.access_path, loader=loader), located.access_path)
 
 
 def _alias_into_parent(
-    mod_name: str,
-    object_path: str | None,
-    attr_name: str,
+    located: _LocatedAttr,
     obj: gf.Object | gf.Alias,
     loader: gf.GriffeLoader | None,
 ) -> gf.Alias:
-    """Re-expose `obj` as an alias member of the object it was accessed through"""
-    if object_path:
-        if "." in object_path:
-            prev_member = object_path.rsplit(".", 1)[0]
-            parent_path = f"{mod_name}:{prev_member}"
-        else:
-            parent_path = mod_name
+    """
+    Re-expose `obj` as an alias member of the object it was accessed through
+
+    Only called when the object lives somewhere other than where it was
+    accessed, so the alias can never target its own path.
+
+    Parameters
+    ----------
+    located :
+        The attribute as it was reached. Its access path names the parent, and
+        its name becomes the alias's name.
+    obj :
+        The node to re-expose.
+    loader :
+        Loader to read the parent through.
+
+    Returns
+    -------
+    :
+        An alias named after the accessed attribute, parented to the module or
+        class it was reached through. It is left unparented when the access path
+        names something that cannot hold members.
+    """
+    module_path, object_path = _split_path(located.access_path)
+
+    if object_path is None:
+        parent_path = module_path.rsplit(".", 1)[0]
+    elif "." in object_path:
+        parent_path = f"{module_path}:{object_path.rsplit('.', 1)[0]}"
     else:
-        parent_path = mod_name.rsplit(".", 1)[0]
+        parent_path = module_path
 
     parent = get_object(parent_path, loader=loader, dynamic=True)
     if isinstance(parent, (gf.Module, gf.Class, gf.Alias)):
-        return gf.Alias(attr_name, obj, parent=parent)
-    return gf.Alias(attr_name, obj)
-
-
-def _probe_canonical_path(part: object, qualname: str) -> str | None:
-    """Probe for the canonical path of `part`, returning `None` when it does not expose one"""
-    try:
-        return _canonical_path(part, qualname)
-    except AttributeError:
-        return None
+        return gf.Alias(located.name, obj, parent=parent)
+    return gf.Alias(located.name, obj)
 
 
 def _canonical_path(current_part: object, qualname: str) -> str | None:
-    """Build the canonical import path for `current_part`, extended by `qualname`.
-
-    Returns `None` when no canonical path can be determined (e.g. for
-    plain data objects that carry no `__module__` or `__qualname__`).
     """
-    suffix = (":" + qualname) if qualname else ""
+    The path at which `current_part` reports it lives, extended by `qualname`
+
+    `None` when the object reports no home. A module knows its own `__name__`
+    but not where its members were defined, so it reports a home only for
+    itself. Plain instances carry no `__qualname__` of their own.
+
+    Parameters
+    ----------
+    current_part :
+        The runtime object to ask.
+    qualname :
+        Dotted names to append to the reported home, empty for the object
+        itself.
+
+    Returns
+    -------
+    :
+        The reported path in `module:qualname` form, or `None` when the object
+        reports no home.
+    """
     if isinstance(current_part, ModuleType):
-        return current_part.__name__ + suffix
+        return None if qualname else current_part.__name__
 
-    if inspect.isclass(current_part) or inspect.isfunction(current_part):
-        _mod = getattr(current_part, "__module__", None)
+    module = getattr(current_part, "__module__", None)
+    qualified = getattr(current_part, "__qualname__", None)
 
-        if _mod is None:
-            return None
+    # `callable` rather than `inspect.isfunction` so that PyO3 / C-extension
+    # callables (`builtin_function_or_method`, `method-wrapper`) report their
+    # canonical home too.
+    if not (module and qualified and callable(current_part)):
+        return None
 
-        qual_parts = [] if not qualname else qualname.split(".")
-        return _mod + ":" + ".".join([current_part.__qualname__, *qual_parts])
-
-    # PyO3 / C-extension callables (e.g. `builtin_function_or_method`,
-    # `method-wrapper`) don't satisfy `inspect.isfunction` but they do carry
-    # `__module__` / `__qualname__` attributes. Treat them as function-like
-    # so `dynamic_alias` can resolve them to their canonical home rather than
-    # building a self-referential alias on the re-exporting facade module
-    # (which produces `CyclicAliasError` downstream).
-    _mod = getattr(current_part, "__module__", None)
-    _qn = getattr(current_part, "__qualname__", None)
-    if _mod and _qn and callable(current_part):
-        qual_parts = [] if not qualname else qualname.split(".")
-        return _mod + ":" + ".".join([_qn, *qual_parts])
-
-    return None
+    qual_parts = qualname.split(".") if qualname else []
+    return module + ":" + ".".join([qualified, *qual_parts])
 
 
-def _is_valueless(obj: gf.Object | gf.Alias) -> bool:
-    """Whether `obj` is an attribute that carries no runtime value.
+def _has_no_value(obj: gf.Object | gf.Alias) -> bool:
+    """
+    Whether `obj` is an attribute that carries no runtime value
 
     True for class/module attributes with no assigned value, and for
     all instance attributes (which are declaration-only in griffe's static
     model).
+
+    Parameters
+    ----------
+    obj :
+        The node to test. Anything that is not an attribute is False.
+
+    Returns
+    -------
+    :
+        True when the attribute carries no value of its own.
     """
     if isinstance(obj, gf.Attribute):
         if obj.labels & {"class-attribute", "module-attribute"} and obj.value is None:
@@ -464,3 +765,12 @@ def _is_valueless(obj: gf.Object | gf.Alias) -> bool:
             return True
 
     return False
+
+
+def _validate_dynamic(value: object, *, allow_none: bool = False) -> None:
+    if isinstance(value, bool) or (allow_none and value is None):
+        return
+    raise ValueError(
+        f"`dynamic` accepts true or false, got {value!r}. "
+        "It selects how an object is inspected, not what it points to."
+    )

@@ -74,6 +74,7 @@ from great_docs._apiref._render.extending import (
     exclude_classes,
     exclude_functions,
     exclude_parameters,
+    exclude_type_aliases,
     extend_base_class,
     set_class_attr,
 )
@@ -110,6 +111,7 @@ from great_docs._apiref.content import (
     DocClass,
     DocFunction,
     DocModule,
+    DocTypeAlias,
     Link,
     MemberPage,
     Page,
@@ -117,7 +119,7 @@ from great_docs._apiref.content import (
     SummaryItem,
 )
 from great_docs._apiref.introspect import (
-    _is_valueless,
+    _has_no_value,
     dynamic_alias,
     get_object,
     get_parser_defaults,
@@ -27812,11 +27814,34 @@ def test_get_object_dynamic_mode():
     assert obj.name == "dumps"
 
 
+def test_get_object_rejects_a_path_for_dynamic():
+    with pytest.raises(ValueError, match="accepts true or false"):
+        get_object("json:dumps", dynamic="json:dumps")
+
+
+def test_get_object_warns_when_parser_is_ignored():
+    """A parser cannot apply to a loader that already carries one."""
+    from great_docs._apiref.introspect import make_loader
+
+    with pytest.warns(UserWarning, match="Ignoring parser"):
+        get_object("json:dumps", parser="numpy", loader=make_loader("numpy"))
+
+
+def test_get_object_does_not_warn_for_parser_or_loader_alone():
+    """Either argument on its own is unambiguous."""
+    from great_docs._apiref.introspect import make_loader
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        get_object("json:dumps", loader=make_loader("numpy"))
+        get_object("json:dumps", parser="numpy")
+
+
 def test_get_object_alias_loads_target_module():
-    """get_object with load_aliases=True loads the target module for aliases."""
+    """get_object loads the target module for aliases."""
 
     # os.path is typically an alias to posixpath or ntpath
-    obj = get_object("os:path", load_aliases=True)
+    obj = get_object("os:path")
     assert obj is not None
 
 
@@ -28015,6 +28040,29 @@ def test_replace_docstring_enum_no_member_docstrings():
             sys.modules.pop("introtest_enum_nodoc", None)
 
 
+def test_split_path_without_a_colon_is_all_module():
+    """`resolve_alias` re-loads targets by dotted path, with no object part."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("pkg.mod.func") == ("pkg.mod.func", None)
+
+
+def test_split_path_separates_the_object_part():
+    """Only the first colon separates; the object part keeps its dots."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("json:dumps") == ("json", "dumps")
+    assert _split_path("pkg.mod:A.b") == ("pkg.mod", "A.b")
+
+
+def test_same_path_ignores_the_separator():
+    """The `:` in an access path is a module boundary, not part of the name."""
+    from great_docs._apiref.introspect import _same_path
+
+    assert _same_path("pkg:SETTINGS", "pkg.SETTINGS")
+    assert not _same_path("pkg._conf:SETTINGS", "pkg.SETTINGS")
+
+
 def test_canonical_path_module():
     """_canonical_path for a module returns module name."""
     from great_docs._apiref.introspect import _canonical_path
@@ -28024,13 +28072,13 @@ def test_canonical_path_module():
     assert result == "json"
 
 
-def test_canonical_path_module_with_qualname():
-    """_canonical_path for a module with qualname appends suffix."""
+def test_canonical_path_module_reports_no_home_for_a_member():
+    """A module knows its own name but not where its members were defined."""
     from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json, "dumps")
 
-    assert result == "json:dumps"
+    assert result is None
 
 
 def test_canonical_path_function():
@@ -28088,56 +28136,56 @@ def test_canonical_path_class_no_module():
     assert result is None
 
 
-def test_is_valueless_class_attribute_no_value():
-    """_is_valueless returns True for class-attribute with no value."""
+def test_has_no_value_class_attribute_no_value():
+    """_has_no_value returns True for class-attribute with no value."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_instance_attribute():
-    """_is_valueless returns True for instance-attribute."""
+def test_has_no_value_instance_attribute():
+    """_has_no_value returns True for instance-attribute."""
 
     attr = gf.Attribute(name="x", lineno=1)
     attr.labels.add("instance-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_class_attribute_with_value():
-    """_is_valueless returns False for class-attribute with a value."""
+def test_has_no_value_class_attribute_with_value():
+    """_has_no_value returns False for class-attribute with a value."""
 
     attr = gf.Attribute(name="x", lineno=1, value="42")
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_unlabelled_attribute():
-    """_is_valueless returns False for an attribute with none of the labels."""
+def test_has_no_value_unlabelled_attribute():
+    """_has_no_value returns False for an attribute with none of the labels."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_function():
-    """_is_valueless returns False for a function."""
+def test_has_no_value_function():
+    """_has_no_value returns False for a function."""
 
     func = gf.Function(name="f", lineno=1)
 
-    assert _is_valueless(func) is False
+    assert _has_no_value(func) is False
 
 
-def test_is_valueless_module_attribute_no_value():
-    """_is_valueless returns True for module-attribute with no value."""
+def test_has_no_value_module_attribute_no_value():
+    """_has_no_value returns True for module-attribute with no value."""
 
     attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("module-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
 def test_insert_contents_list():
@@ -28257,14 +28305,6 @@ def test_dynamic_alias_nested_class_method():
     assert obj is not None
 
 
-def test_dynamic_alias_with_target():
-    """dynamic_alias with explicit target uses that target."""
-
-    obj = dynamic_alias("json:dumps", target="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
-
-
 def test_dynamic_alias_nonexistent_attr_raises():
     """dynamic_alias raises KeyError for nonexistent attributes in a real module."""
 
@@ -28355,12 +28395,19 @@ def test_dynamic_alias_reexported_creates_alias():
             sys.modules.pop("introtest_reexp.sub", None)
 
 
-def test_get_object_dynamic_string_target():
-    """get_object with dynamic=<string> passes target to dynamic_alias."""
+def test_spec_object_rejects_a_path_for_dynamic():
+    """`dynamic` selects how an object is inspected, so only a bool will do."""
+    from great_docs._apiref.spec import SpecObject
 
-    obj = get_object("json:dumps", dynamic="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecObject(**{"name": "dumps", "dynamic": "json:dumps"})
+
+
+def test_spec_options_replace_rejects_a_path_for_dynamic():
+    from great_docs._apiref.spec import SpecOptions
+
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecOptions().replace(dynamic="json:dumps")
 
 
 def _make_api_ref(**block):
@@ -30528,14 +30575,16 @@ def test_mixin_render_body_invalid_member_type_raises():
 
 
 def test_mixin_render_members_returns_groups():
-    """render_members returns [attributes, classes, functions] groups."""
+    """render_members returns [type aliases, attributes, classes, functions] groups."""
 
     _, doc_cls = _build_class_with_members()
     render = RenderDocClass(doc_cls, level=1)
 
     members = render.render_members()
-    assert len(members) == 3
-    for m in members:
+    assert len(members) == 4
+    # No type alias members in this fixture, so that slot is None.
+    assert members[0] is None
+    for m in members[1:]:
         assert isinstance(m, RenderedMembersGroup)
 
 
@@ -30550,14 +30599,16 @@ def test_mixin_render_members_show_members_false():
 
 
 def test_mixin_render_member_pages_returns_groups():
-    """render_member_pages returns [attributes, classes, functions] page groups."""
+    """render_member_pages returns [type aliases, attributes, classes, functions] page groups."""
 
     _, doc_cls = _build_class_with_member_pages()
     render = RenderDocClass(doc_cls, level=1)
 
     pages = render.render_member_pages()
-    assert len(pages) == 3
-    for p in pages:
+    assert len(pages) == 4
+    # No type alias members in this fixture, so that slot is None.
+    assert pages[0] is None
+    for p in pages[1:]:
         assert isinstance(p, RenderedMemberPagesGroup)
 
 
@@ -30569,6 +30620,89 @@ def test_mixin_render_member_pages_show_members_false():
     render.show_members = False
 
     assert render.render_member_pages() == []
+
+
+def _build_class_with_member_pages_and_type_alias():
+    """Build a griffe Class with MemberPage members, including a type alias."""
+    cls_obj, doc_cls = _build_class_with_member_pages()
+    alias_obj = gf.TypeAlias(name="Inline", value=gf.ExprName("int"), lineno=5)
+    cls_obj.set_member("Inline", alias_obj)
+
+    doc_alias = DocTypeAlias(name="Inline", obj=alias_obj)
+    page_alias = MemberPage(path="Inline", contents=[doc_alias])
+    doc_cls.members.append(page_alias)
+    return cls_obj, doc_cls
+
+
+def test_mixin_type_alias_member_pages_property():
+    """type_alias_member_pages filters MemberPage members by is_type_alias."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    pages = render.type_alias_member_pages
+    assert len(pages) == 1
+    assert pages[0].path == "Inline"
+
+
+def test_mixin_type_alias_member_pages_honours_exclusions():
+    """exclude_type_aliases drops a type alias from type_alias_member_pages."""
+
+    cls_obj, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({cls_obj.path: "Inline"})
+        assert render.type_alias_member_pages == []
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
+
+
+def test_exclude_type_aliases_updates_globals():
+    """exclude_type_aliases updates the EXCLUSIONS.type_aliases global dict."""
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({"test.MyClass": "Contract"})
+        assert EXCLUSIONS.type_aliases["test.MyClass"] == "Contract"
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
+
+
+def test_mixin_render_type_alias_member_pages():
+    """render_type_alias_member_pages returns RenderedMemberPagesGroup."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    result = render.render_type_alias_member_pages()
+    assert isinstance(result, RenderedMemberPagesGroup)
+    assert "Type Aliases" in str(result.title)
+
+
+def test_mixin_render_type_alias_member_pages_show_false():
+    """render_type_alias_member_pages returns None when show_type_aliases=False."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+    render.show_type_aliases = False
+
+    assert render.render_type_alias_member_pages() is None
+
+
+def test_mixin_render_member_pages_includes_type_alias_group():
+    """render_member_pages fills the type-alias slot when a MemberPage alias exists."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    pages = render.render_member_pages()
+    assert len(pages) == 4
+    assert isinstance(pages[0], RenderedMemberPagesGroup)
+    assert "Type Aliases" in str(pages[0].title)
 
 
 def test_mixin_attributes_property():
@@ -31086,7 +31220,7 @@ def test_mixin_render_members_module_uses_functions_slug():
     render = RenderDocModule(doc_mod, level=1)
 
     members = render.render_members()
-    assert len(members) == 3
+    assert len(members) == 4
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
         body_str = str(render.render_body())
@@ -32305,14 +32439,46 @@ def test_get_label_attribute_constant():
     assert get_label(obj) == "constant"
 
 
-def test_attribute_label_typealias():
-    """_attribute_label returns 'typealias' for a type alias."""
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias():
+    """get_label returns 'typealias' for a real PEP 695 alias."""
 
-    obj = MagicMock(spec=gf.Attribute)
-    obj.kind.value = "type alias"
-    obj.annotation = None
-    obj.labels = set()
-    assert _attribute_label(obj) == "typealias"
+    with gf.temporary_visited_package("pkg", {"__init__.py": "type Contract = int | str\n"}) as pkg:
+        assert get_label(pkg["Contract"]) == "typealias"
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias_reexported():
+    """A re-exported alias reaches get_label as an Alias proxy, not a raw TypeAlias.
+
+    This is the regression guard for a crash where `isinstance(obj, gf.TypeAlias)`
+    missed the proxy and fell through to code that reads `obj.annotation`, which
+    a type alias does not have.
+    """
+    with gf.temporary_visited_package(
+        "pkg",
+        {
+            "__init__.py": "from ._impl import Contract\n",
+            "_impl.py": "type Contract = int | str\n",
+        },
+    ) as pkg:
+        obj = pkg["Contract"]
+        assert isinstance(obj, gf.Alias)
+        assert get_label(obj) == "typealias"
+
+
+def test_get_label_typealias_legacy_spelling():
+    """get_label returns 'typealias' for the legacy `X: TypeAlias = ...` spelling."""
+
+    code = "from typing import TypeAlias\nContract: TypeAlias = int | str\n"
+    with gf.temporary_visited_package("pkg", {"__init__.py": code}) as pkg:
+        assert get_label(pkg["Contract"]) == "typealias"
 
 
 def test_attribute_label_typevar():
@@ -32810,13 +32976,17 @@ def test_label_unknown_kind_raises():
         get_label(obj)
 
 
-def test_attribute_label_typealias_kind():
-    """_attribute_label returns 'typealias' for type alias kind."""
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias_kind():
+    """get_label returns 'typealias' for a real griffe TYPE_ALIAS-kind object."""
 
-    obj = gf.Attribute(name="MyType", lineno=1)
-    obj.kind = gf.Kind.TYPE_ALIAS
-
-    assert _attribute_label(obj) == "typealias"
+    with gf.temporary_visited_package("pkg", {"__init__.py": "type MyType = int\n"}) as pkg:
+        obj = pkg["MyType"]
+        assert obj.kind is gf.Kind.TYPE_ALIAS
+        assert get_label(obj) == "typealias"
 
 
 def test_attribute_label_typevar_annotation():
@@ -33943,7 +34113,7 @@ def test_type_sections_post_init_typevars_no_sig_name():
 
 
 def test_type_sections_post_init_typealiases_settings():
-    """TypeSections.__post_init__ sets show_signature_name=False and show_signature_annotation=False on typealiases."""
+    """TypeSections keeps alias names and hides redundant annotations."""
 
     ta_item = InventoryItem(name="MyAlias", obj=MagicMock())
 
@@ -33962,8 +34132,8 @@ def test_type_sections_post_init_typealiases_settings():
             typealiases_items=[ta_item],
         )
 
-    assert mock_render.show_signature_name is False
     assert mock_render.show_signature_annotation is False
+    assert "show_signature_name" not in ts.categories[2].render_flags
 
 
 def test_type_sections_render_body_protocols_section():

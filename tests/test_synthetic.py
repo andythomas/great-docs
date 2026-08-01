@@ -48,11 +48,20 @@ PHASE1_PACKAGES = [
 
 # Only parametrize over specs that actually exist on disk.
 # As more specs are added in later phases they'll automatically be picked up.
+#
+# A spec may declare `min_python`, for source it cannot express on older
+# interpreters. Such a package is left out entirely rather than skipped
+# per-test: griffe parses its source with the running interpreter, so below the
+# floor there is nothing to assert against.
 _AVAILABLE_PACKAGES = []
 for _name in ALL_PACKAGES:
     _spec_file = _SYNTHETIC_DIR / "synthetic" / "specs" / f"{_name}.py"
-    if _spec_file.exists():
-        _AVAILABLE_PACKAGES.append(_name)
+    if not _spec_file.exists():
+        continue
+    _min_python = get_spec(_name).get("min_python")
+    if _min_python is not None and sys.version_info < tuple(_min_python):
+        continue
+    _AVAILABLE_PACKAGES.append(_name)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

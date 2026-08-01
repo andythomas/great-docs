@@ -292,3 +292,43 @@ def exclude_classes(spec: dict[str, str | Sequence[str]]):
     from .._globals import EXCLUSIONS
 
     EXCLUSIONS.classes.update(spec)
+
+
+def exclude_type_aliases(spec: dict[str, str | Sequence[str]]):
+    """
+    Exclude the type aliases in a class or module from the documentation
+
+    When a class or module has deprecated type aliases, we may want to
+    exclude them from the documentation. Use this function in your
+    `_renderer.py` file to specify them.
+
+    Parameters
+    ----------
+    spec :
+        Parent object path and the type alias(es) to exclude.
+        The object path is as shown on the API page and _not_ the
+        canonical path. e.g.
+
+    Examples
+    --------
+    Assuming we are documenting the module `package` with the deprecated
+    type alias marked as shown below.
+
+    ```python
+    type Contract = int | str  # deprecated
+    type Payload = bytes
+    ```
+
+    We would use this to exclude the type alias from the documentation.
+
+    ```python
+    from great_docs.renderer import exclude_type_aliases
+
+    exclude_type_aliases({
+        "package": "Contract",
+    })
+    ```
+    """
+    from .._globals import EXCLUSIONS
+
+    EXCLUSIONS.type_aliases.update(spec)

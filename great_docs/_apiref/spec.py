@@ -15,6 +15,7 @@ from enum import Enum
 from typing import Any, Self, cast
 
 from ._walkable import MISSING, MissingType, Walkable
+from .introspect import _validate_dynamic
 
 
 class ChildrenStyle(Enum):
@@ -43,7 +44,7 @@ class SpecOptions(Walkable):
 
     include: str | None = None
     exclude: list[str] | None = None
-    dynamic: bool | str | None = None
+    dynamic: bool | None = None
     children: ChildrenStyle = ChildrenStyle.embedded
     package: str | MissingType | None = MISSING
     member_order: str = "alphabetical"
@@ -76,6 +77,7 @@ class SpecOptions(Walkable):
                 object.__setattr__(self, f.name, f.default_factory())
             # else: field has no default — it must be in kwargs or will error
         object.__setattr__(self, "_fields_specified", tuple(kwargs.keys()))
+        _validate_dynamic(self.dynamic, allow_none=True)
 
     def replace(self, **changes: object) -> Self:
         """Return a copy with the given fields replaced
@@ -85,6 +87,9 @@ class SpecOptions(Walkable):
         (`dataclasses.replace` would instead re-run `__init__` with every
         field and mark them all as specified.)
         """
+        if "dynamic" in changes:
+            _validate_dynamic(changes["dynamic"], allow_none=True)
+
         new = self.copy()
         for name, value in changes.items():
             object.__setattr__(new, name, value)

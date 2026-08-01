@@ -57,12 +57,18 @@ def create_inventory(
     }
 
 
+# Sphinx roles have no spaces, so griffe's kind values cannot be used verbatim.
+# A PEP 695 alias maps to `py:type` (Sphinx 7.4+); every other kind already
+# matches its role name.
+_KIND_ROLES = {"type alias": "type"}
+
+
 def _create_inventory_item(item: InventoryItem, priority: str = "1") -> dict[str, Any]:
     """Build a single inventory entry as a dict"""
     return {
         "name": item.name,
         "domain": "py",
-        "role": item.obj.kind.value,
+        "role": _KIND_ROLES.get(item.obj.kind.value, item.obj.kind.value),
         "priority": priority,
         "uri": item.uri,
         "dispname": item.dispname or "-",
