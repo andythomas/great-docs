@@ -966,7 +966,7 @@ async def list_resources() -> list[Resource]:
         resources.append(
             Resource(
                 name="configuration",
-                uri=AnyUrl("gd://config"),
+                uri="gd://config",
                 description="Current Great Docs configuration (great-docs.yml).",
                 mimeType="text/yaml",
             )
@@ -976,7 +976,7 @@ async def list_resources() -> list[Resource]:
     resources.append(
         Resource(
             name="build-log",
-            uri=AnyUrl("gd://build-log"),
+            uri="gd://build-log",
             description=(
                 "Most recent build log output. Shows step-by-step build progress, "
                 "warnings, and errors."
@@ -989,7 +989,7 @@ async def list_resources() -> list[Resource]:
     resources.append(
         Resource(
             name="api-surface",
-            uri=AnyUrl("gd://api-surface"),
+            uri="gd://api-surface",
             description=(
                 "Discovered public API exports for the current package. "
                 "Lists classes, functions, constants, and their categorization."
@@ -1002,7 +1002,7 @@ async def list_resources() -> list[Resource]:
     resources.append(
         Resource(
             name="project-status",
-            uri=AnyUrl("gd://status"),
+            uri="gd://status",
             description=(
                 "Current project documentation status: package info, "
                 "configuration state, build artifacts, and enabled features."
@@ -1017,7 +1017,7 @@ async def list_resources() -> list[Resource]:
         resources.append(
             Resource(
                 name="pyproject",
-                uri=AnyUrl("gd://pyproject"),
+                uri="gd://pyproject",
                 description="Project metadata from pyproject.toml.",
                 mimeType="text/plain",
             )
@@ -1253,38 +1253,65 @@ async def handle_completion(
 if not _MCP_V1 and _V2_HANDLERS:
     _raw = _V2_HANDLERS
 
+    # mcp v2 handlers must return a typed result model (or dict), not the bare
+    # list/str/Completion the v1 decorator API accepted — the v1 decorators used
+    # to wrap those for us. Wrap each return value in the appropriate result
+    # type so the server speaks valid v2 protocol to real clients.
+    from mcp.types import (
+        CallToolResult,
+        CompleteResult,
+        ListPromptsResult,
+        ListResourcesResult,
+        ListResourceTemplatesResult,
+        ListToolsResult,
+        ReadResourceResult,
+        TextResourceContents,
+    )
+    from mcp.types import (
+        Completion as _Completion,
+    )
+
     async def _on_list_tools(ctx: Any, params: Any = None) -> Any:
-        return await _raw["list_tools"]()
+        return ListToolsResult(tools=await _raw["list_tools"]())
 
     async def _on_call_tool(ctx: Any, params: Any) -> Any:
-        return await _raw["call_tool"](
+        content = await _raw["call_tool"](
             getattr(params, "name", ""),
             getattr(params, "arguments", {}) or {},
         )
+        return CallToolResult(content=list(content or []))
 
     async def _on_list_prompts(ctx: Any, params: Any = None) -> Any:
-        return await _raw["list_prompts"]()
+        return ListPromptsResult(prompts=await _raw["list_prompts"]())
 
     async def _on_get_prompt(ctx: Any, params: Any) -> Any:
+        # The v1 handler already returns a GetPromptResult (a valid v2 model).
         return await _raw["get_prompt"](
             getattr(params, "name", ""),
             getattr(params, "arguments", None),
         )
 
     async def _on_list_resources(ctx: Any, params: Any = None) -> Any:
-        return await _raw["list_resources"]()
+        return ListResourcesResult(resources=await _raw["list_resources"]())
 
     async def _on_read_resource(ctx: Any, params: Any) -> Any:
-        return await _raw["read_resource"](getattr(params, "uri", ""))
+        uri = getattr(params, "uri", "")
+        text = await _raw["read_resource"](uri)
+        return ReadResourceResult(contents=[TextResourceContents(uri=uri, text=text or "")])
 
     async def _on_list_resource_templates(ctx: Any, params: Any = None) -> Any:
-        return await _raw["list_resource_templates"]()
+        return ListResourceTemplatesResult(
+            resourceTemplates=await _raw["list_resource_templates"]()
+        )
 
     async def _on_completion(ctx: Any, params: Any) -> Any:
-        return await _raw["completion"](
+        completion = await _raw["completion"](
             getattr(params, "ref", None),
             getattr(params, "argument", None),
         )
+        if completion is None:
+            completion = _Completion(values=[])
+        return CompleteResult(completion=completion)
 
     server = Server(
         name="great-docs",
@@ -1312,9 +1339,7 @@ async def run_mcp_server():
     """Run the Great Docs MCP server over stdio."""
     async with stdio_server() as (read_stream, write_stream):
         if _MCP_V1:
-            await server.run(
-                read_stream, write_stream, server.create_initialization_options()
-            )
+            await server.run(read_stream, write_stream, server.create_initialization_options())
         else:
             await server.run(read_stream, write_stream)
 
