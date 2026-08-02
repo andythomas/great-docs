@@ -1327,12 +1327,12 @@ div.sidebar-item-container {
 
 /* logo in the navbar title */
 .navbar-logo {
-  height: 24px;
-  width: auto;
-  max-width: 100%;
-  padding-right: 4px;
-  display: block;
-  flex-shrink: 0;
+    height: 24px;
+    width: auto;
+    max-width: 100%;
+    padding-right: 4px;
+    display: block;
+    flex-shrink: 0;
 }
 
 /* Version badge in navbar title */
@@ -4895,7 +4895,7 @@ main.content.page-columns.page-full > * {
    Scope to html[...] so Quarto's nav[data-bs-theme="dark"] (dark navbar
    background in the flatly theme) doesn't trigger these rules in light mode. */
 html[data-bs-theme="dark"] .navbar-logo.light-content { display: none !important; }
-html[data-bs-theme="dark"] .navbar-logo.dark-content  { display: inline !important; }
+html[data-bs-theme="dark"] .navbar-logo.dark-content  { display: block !important; }
 
 /* Reduce top margin on first heading after hero */
 .gd-hero + section.level1 > h1:first-child,
