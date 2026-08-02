@@ -3466,7 +3466,11 @@ class GreatDocs:
             # Add subdirectory groups as section headers
             if dir_titles is None:
                 dir_titles = {}
-            for subdir in sorted(subdir_groups_dict.keys()):
+            # Preserve source discovery order rather than sorting the keys. The
+            # source file list is sorted with numeric prefixes intact, so first
+            # encounter order already reflects the author's intended ordering.
+            # Sorting here would use the prefix-stripped names and lose it.
+            for subdir in subdir_groups_dict:
                 clean_subdir = self._strip_numeric_prefix(subdir)  # pragma: no cover
                 section_title = dir_titles.get(  # pragma: no cover
                     clean_subdir,

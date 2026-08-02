@@ -10010,6 +10010,36 @@ def test_add_section_sidebar_strips_numeric_prefix_from_subdirs():
         assert "02 Advanced" not in section_titles
 
 
+def test_add_section_sidebar_preserves_subdir_order():
+    """_add_section_sidebar orders subsections by source order, not stripped name."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        quarto_yml = docs.project_path / "_quarto.yml"
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        config = {"website": {"sidebar": [], "navbar": {"left": []}}}
+        with open(quarto_yml, "w") as f:
+            write_yaml(config, f)
+
+        # Numeric prefixes are stripped before this point, so the pages arrive
+        # in source order with clean names that do not sort alphabetically.
+        pages = [
+            {"filename": "foundations/page.qmd", "title": "Foundations Page"},
+            {"filename": "effect-estimation/page.qmd", "title": "Effect Page"},
+            {"filename": "applied-models/page.qmd", "title": "Applied Page"},
+        ]
+        docs._add_section_sidebar("Examples", "examples", pages, has_user_index=True)
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        sidebar = result["website"]["sidebar"]
+        sections = [c for c in sidebar[0]["contents"] if isinstance(c, dict) and "section" in c]
+        section_titles = [s["section"] for s in sections]
+
+        assert section_titles == ["Foundations", "Effect Estimation", "Applied Models"]
+
+
 def test_add_section_sidebar_dir_titles_override():
     """_add_section_sidebar uses dir_titles mapping to override sidebar section titles."""
     with tempfile.TemporaryDirectory() as tmp_dir:
