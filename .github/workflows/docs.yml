@@ -40,18 +40,7 @@ jobs:
 
       - name: How to preview this build locally
         if: github.event_name == 'pull_request'
-        run: |
-          echo "::notice title=Preview these docs locally::great-docs preview --run ${{ github.run_id }}"
-          echo ""
-          echo "  # this exact build:"
-          echo "  great-docs preview --run ${{ github.run_id }}"
-          echo ""
-          echo "  # or always the latest build for this PR:"
-          echo "  great-docs preview --pr ${{ github.event.number }}"
-          echo ""
-          echo "  Don't have it? pip install great-docs (or: pipx run / uvx great-docs preview ...)."
-          echo "  Auth: 'gh auth login' then add --use-gh, or set GITHUB_TOKEN (Actions:read)."
-          echo "  Tip: add --path reference/mcp/gd_config.html to jump straight to a page."
+        run: great-docs ci notice --run ${{ github.run_id }} --pr ${{ github.event.number }}
 
       - name: Upload build timings
         uses: actions/upload-artifact@v7
@@ -94,56 +83,22 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      # Post (and keep updated) a sticky comment telling reviewers how to fetch
-      # this build and view it locally — no preview host required. The command
-      # is pinned to this exact run so it reproduces the build being reviewed.
-      # Uses the first-party actions/github-script (no third-party action in the
-      # supply chain); continue-on-error so fork PRs (read-only GITHUB_TOKEN)
-      # don't fail the run — the "How to preview this build locally" log notice
-      # still covers those.
-      - name: Post preview instructions to the PR
-        uses: actions/github-script@v7
-        continue-on-error: true
-        env:
-          RUN_ID: ${{ github.run_id }}
-          PR_NUMBER: ${{ github.event.number }}
+      # Install the PR's own great-docs and let it post the sticky preview
+      # comment. Running the in-repo build (rather than a released version)
+      # means this job exercises the code under review. Kept as its own minimal
+      # job so the docs build — which runs PR-authored code — never holds a
+      # pull-requests:write token. continue-on-error so fork PRs (read-only
+      # token) don't fail the run; the build job's log notice still covers them.
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          script: |
-            const marker = '<!-- great-docs:docs-preview -->';
-            const body = [
-              marker,
-              "### 📚 Preview this PR's docs locally",
-              '',
-              'Fetch the just-built site and open it in your browser:',
-              '',
-              '```bash',
-              '# this exact build',
-              `great-docs preview --run ${process.env.RUN_ID}`,
-              '',
-              '# or always the latest build for this PR',
-              `great-docs preview --pr ${process.env.PR_NUMBER}`,
-              '```',
-              '',
-              '<details>',
-              '<summary>Auth &amp; tips</summary>',
-              '',
-              '- **Requires** `great-docs`: `pip install great-docs` (or run via `pipx`/`uvx`).',
-              '- **Auth:** run `gh auth login` then add `--use-gh`, or set `GITHUB_TOKEN` (needs *Actions: read*).',
-              '- **Jump to a page:** add `--path reference/index.html`.',
-              '- **Latest vs exact:** `--pr <n>` grabs the newest build; `--run <id>` pins this one.',
-              '- **Re-download:** `--refresh` ignores the local cache.',
-              '',
-              '</details>',
-            ].join('\n');
-
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number, per_page: 100,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-            }
+          python-version: "3.11"
+      - name: Install great-docs
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+      - name: Post preview instructions to the PR
+        continue-on-error: true
+        run: great-docs ci pr-comment --run ${{ github.run_id }} --pr ${{ github.event.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
