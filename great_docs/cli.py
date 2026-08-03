@@ -591,12 +591,71 @@ def config(project_path: str | None, force: bool) -> None:
         sys.exit(1)
 
 
+@click.group(cls=OrderedGroup)
+def ci() -> None:
+    """Helpers meant to run inside CI (GitHub Actions).
+
+    These emit the "preview this build locally" hints that let reviewers open a
+    pull request's docs without a preview host: a workflow log notice and a
+    sticky PR comment, both pointing at 'great-docs preview'.
+
+    \b
+    Examples:
+      great-docs ci notice --run "$GITHUB_RUN_ID" --pr 302
+      great-docs ci pr-comment --run "$GITHUB_RUN_ID" --pr 302
+    """
+
+
+@click.command(name="pr-comment")
+@click.option(
+    "--run", "run_id", type=int, required=True, help="Workflow run id that built the site."
+)
+@click.option("--pr", type=int, required=True, help="Pull request number to comment on.")
+@click.option(
+    "--repo",
+    default=None,
+    help="GitHub repo as 'owner/repo' (default: $GITHUB_REPOSITORY, then git remote).",
+)
+def ci_pr_comment(run_id: int, pr: int, repo: str | None) -> None:
+    """Post or refresh a sticky PR comment with the local-preview command.
+
+    Reads the token from GITHUB_TOKEN / GH_TOKEN and needs 'pull-requests: write'.
+    """
+    from ._ci import post_preview_comment
+    from ._pr_preview import PreviewError
+
+    try:
+        action, repo_slug = post_preview_comment(run_id=run_id, pr=pr, repo_override=repo)
+        click.echo(f"✓ {action.capitalize()} preview comment on {repo_slug}#{pr}")
+    except PreviewError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@click.command(name="notice")
+@click.option(
+    "--run", "run_id", type=int, required=True, help="Workflow run id that built the site."
+)
+@click.option("--pr", type=int, default=None, help="Pull request number (adds the --pr hint).")
+def ci_notice(run_id: int, pr: int | None) -> None:
+    """Print a workflow log notice with the local-preview command."""
+    from ._ci import render_notice_lines
+
+    for line in render_notice_lines(run_id, pr):
+        click.echo(line)
+
+
+ci.add_command(ci_pr_comment)
+ci.add_command(ci_notice)
+
+
 # Register commands in the desired order
 cli.add_command(init)
 cli.add_command(build)
 cli.add_command(preview)
 cli.add_command(uninstall)
 cli.add_command(config)
+cli.add_command(ci)
 
 
 @click.command()
