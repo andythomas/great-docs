@@ -1756,20 +1756,13 @@ class GreatDocs:
         if not repo_url or "github.com" not in repo_url:
             return None, None, None
 
-        # Parse the GitHub URL to extract owner and repo
-        # Handles formats like:
-        # - https://github.com/owner/repo
-        # - https://github.com/owner/repo.git
-        # - git@github.com:owner/repo.git
-        github_pattern = r"github\.com[/:]([^/]+)/([^/\s.]+)"
-        match = re.search(github_pattern, repo_url)
+        # Parse the GitHub URL to extract owner and repo. Handles https, ssh, and
+        # `.git`-suffixed forms; see great_docs._pr_preview.parse_github_url.
+        from ._pr_preview import parse_github_url
 
-        if match:
-            owner = match.group(1)
-            repo = match.group(2)
-            # Remove .git suffix if present (use removesuffix, not rstrip which removes characters)
-            if repo.endswith(".git"):
-                repo = repo[:-4]  # pragma: no cover
+        parsed = parse_github_url(repo_url)
+        if parsed:
+            owner, repo = parsed
             base_url = f"https://github.com/{owner}/{repo}"
             return owner, repo, base_url
 
@@ -9324,9 +9317,7 @@ class GreatDocs:
             # No importable name to detect from; fall back to the documented
             # parser/dynamic defaults so the emitted config is never empty.
             minimal_overrides = {"parser": "parser: numpy", "dynamic": "dynamic: true"}
-            config_path.write_text(
-                create_default_config(minimal_overrides), encoding="utf-8"
-            )
+            config_path.write_text(create_default_config(minimal_overrides), encoding="utf-8")
             print(f"Created {config_path}")
             return True
 
@@ -11637,9 +11628,7 @@ anchor-sections: true
         # great-docs.default.yml, plus any user format.html keys) merges into
         # format.html. Legacy great-docs keys were normalized to the top level
         # at load, and css is applied separately below.
-        config["format"]["html"] = Config._merge(
-            config["format"]["html"], self._config.site_quarto
-        )
+        config["format"]["html"] = Config._merge(config["format"]["html"], self._config.site_quarto)
 
         # toc-title: use the translated label unless the user overrode it via
         # site.toc-title. Test the user's `site` rather than the merged result —
@@ -16468,7 +16457,13 @@ anchor-sections: true
                 pass  # Best-effort cleanup
 
     @staticmethod
-    def preview_site(site_dir: str | Path, port: int = 3000) -> None:
+    def preview_site(
+        site_dir: str | Path,
+        port: int = 3000,
+        *,
+        open_path: str = "",
+        open_browser: bool = True,
+    ) -> None:
         """Preview a pre-built documentation site from any directory.
 
         Starts a local HTTP server and opens the site in the default browser. This is useful for
@@ -16480,6 +16475,13 @@ anchor-sections: true
             Path to the directory containing the built site (must have `index.html`).
         port
             The port number for the local HTTP server (default `3000`).
+        open_path
+            Optional site-relative page to open in the browser (e.g.
+            `reference/mcp/gd_config.html`). Defaults to the site root. If the page does not
+            exist under `site_dir`, a warning is printed and the root is opened instead.
+        open_browser
+            Whether to launch the default browser. When `False`, the URL is printed but no
+            browser is opened.
         """
         import functools
         import http.server
@@ -16493,6 +16495,15 @@ anchor-sections: true
         if not index_html.exists():
             print(f"❌ No index.html found in {site_path}")
             sys.exit(1)
+
+        # Normalize the requested deep-link page and confirm it exists on disk before we
+        # advertise/open it; fall back to the root otherwise.
+        rel_path = (open_path or "").strip().lstrip("/")
+        if rel_path:
+            target = site_path / rel_path
+            if not target.is_file():
+                print(f"⚠️  Page '{rel_path}' not found in the site; opening the home page instead.")
+                rel_path = ""
 
         handler = functools.partial(
             http.server.SimpleHTTPRequestHandler,
@@ -16511,12 +16522,16 @@ anchor-sections: true
             print(f"❌ Port {port} is already in use. Try a different port.")
             sys.exit(1)
 
-        url = f"http://localhost:{port}/"
-        print(f"\n🌐 Serving site at {url}")
+        base_url = f"http://localhost:{port}/"
+        url = base_url + rel_path
+        print(f"\n🌐 Serving site at {base_url}")
         print(f"   Site directory: {site_path}")
+        if rel_path:
+            print(f"   Opening: {url}")
         print("   Press Ctrl+C to stop\n")
 
-        threading.Timer(0.3, webbrowser.open, args=(url,)).start()
+        if open_browser:
+            threading.Timer(0.3, webbrowser.open, args=(url,)).start()
 
         try:
             httpd.serve_forever()
