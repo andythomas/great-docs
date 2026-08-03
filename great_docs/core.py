@@ -11063,17 +11063,10 @@ body-classes: "gd-homepage"
 
         # Add marimo islands runtime (CDN JS/CSS) when enabled
         if self._config.marimo_enabled:
+            from great_docs._marimo import get_islands_head_html
+
             marimo_version = self._config.marimo_version
-            marimo_entry = {
-                "text": (
-                    f'<script type="module" src="https://cdn.jsdelivr.net/npm/'
-                    f'@marimo-team/islands@{marimo_version}/dist/main.js"></script>\n'
-                    f'<link href="https://cdn.jsdelivr.net/npm/'
-                    f'@marimo-team/islands@{marimo_version}/dist/style.css" '
-                    f'rel="stylesheet" crossorigin="anonymous"/>\n'
-                    '<link rel="preconnect" href="https://cdn.jsdelivr.net"/>'
-                )
-            }
+            marimo_entry = {"text": get_islands_head_html(marimo_version)}
             if not any(
                 "marimo-team/islands" in str(item)
                 for item in config["format"]["html"]["include-in-header"]
