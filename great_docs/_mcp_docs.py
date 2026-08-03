@@ -91,7 +91,7 @@ def discover_mcp_server(
 
 
 def _locate_server(module: Any, server_var: str | None) -> Any:
-    """Locate the MCP ``Server``/``FastMCP`` instance in an imported module."""
+    """Locate the MCP `Server`/`FastMCP` instance in an imported module."""
     if server_var:
         return getattr(module, server_var, None)
 
@@ -1079,7 +1079,7 @@ def generate_mcp_manifest(
         Server metadata from discover_mcp_server().
     output_dir
         The build project path (e.g., project_path). The manifest is placed
-        at ``output_dir/.well-known/mcp.json``.
+        at `output_dir/.well-known/mcp.json`.
     package_name
         The pip-installable package name (e.g., "great-docs").
     repo_url
@@ -1087,7 +1087,7 @@ def generate_mcp_manifest(
     site_url
         Canonical documentation site URL.
     install_command
-        Custom install command. Defaults to ``pip install {package_name}[mcp]``.
+        Custom install command. Defaults to `pip install {package_name}[mcp]`.
 
     Returns
     -------
