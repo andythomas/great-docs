@@ -267,10 +267,14 @@ diff). Great Docs warns you when a build comes from a fork.
 ::: {.callout-tip}
 ## Advertise it in CI
 
-Have your workflow print the exact command after uploading the artifact so reviewers
-discover it. Pin the command to the run that produced the build with
-`--run ${{ github.run_id }}` (rather than `--pr`, which always resolves to the newest
-build), so a reviewer reproduces exactly the build they're looking at:
+If you scaffolded your CI with [`great-docs setup-github-pages`](14-deployment.qmd), this is
+already wired up: on every pull request the workflow prints a log notice **and** posts a
+sticky PR comment with the exact `great-docs preview` command, pinned to that run.
+
+To add it to a hand-maintained workflow, print the command after uploading the artifact. Pin
+it to the run that produced the build with `--run ${{ github.run_id }}` (rather than `--pr`,
+which always resolves to the newest build) so a reviewer reproduces exactly the build they're
+looking at:
 
 ```{.yaml filename=".github/workflows/docs.yml"}
       - name: How to preview this build locally
