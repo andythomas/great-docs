@@ -42,11 +42,12 @@ jobs:
           echo "::notice title=Preview these docs locally::great-docs preview --run ${{ github.run_id }}"
           echo ""
           echo "  # this exact build:"
-          echo "  pipx run great-docs preview --run ${{ github.run_id }}"
+          echo "  great-docs preview --run ${{ github.run_id }}"
           echo ""
           echo "  # or always the latest build for this PR:"
-          echo "  pipx run great-docs preview --pr ${{ github.event.number }}"
+          echo "  great-docs preview --pr ${{ github.event.number }}"
           echo ""
+          echo "  Don't have it? pip install great-docs (or: pipx run / uvx great-docs preview ...)."
           echo "  Auth: 'gh auth login' then add --use-gh, or set GITHUB_TOKEN (Actions:read)."
 
       - name: Upload build timings
