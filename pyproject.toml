@@ -51,6 +51,9 @@ svg = [
 mcp = [
     "mcp>=1.0.0",
 ]
+marimo = [
+    "marimo>=0.20.0",
+]
 dev = [
     "pytest>=6.0",
     "pytest-cov>=3.0",

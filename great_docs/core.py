@@ -324,8 +324,19 @@ class GreatDocs:
 
         # Copy notebooks directory and pre-generate marimo island HTML
         if self._config.marimo_enabled:
+            import importlib.util
+
             notebooks_src = self.project_root / "notebooks"
-            if notebooks_src.exists() and notebooks_src.is_dir():
+            if importlib.util.find_spec("marimo") is None:
+                # `marimo: true` is set but the package isn't installed. Warn and
+                # skip rather than crashing the whole build; pages using the
+                # {{< marimo >}} shortcode will show a "not generated" notice.
+                print(
+                    "Warning: marimo notebooks are enabled in great-docs.yml but "
+                    "the 'marimo' package is not installed; skipping notebook "
+                    "island generation. Install it with: pip install marimo"
+                )
+            elif notebooks_src.exists() and notebooks_src.is_dir():
                 notebooks_dst = self.project_path / "notebooks"
                 shutil.copytree(notebooks_src, notebooks_dst, dirs_exist_ok=True)
 
