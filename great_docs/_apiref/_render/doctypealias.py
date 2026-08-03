@@ -88,6 +88,15 @@ class __RenderDocTypeAlias(RenderDoc):
             ]
         )
 
+    def render_type_parameters_section(self, el: gf.DocstringSectionTypeParameters) -> BlockContent:
+        """
+        Render a `Type Parameters` section
+
+        A type alias can be generic without being callable, so it needs its
+        own renderer rather than inheriting one from the call mixin.
+        """
+        return self.render_definition_items(el)
+
 
 class RenderDocTypeAlias(__RenderDocTypeAlias):
     """

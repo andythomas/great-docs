@@ -81,6 +81,15 @@ class __RenderDocCallMixin(RenderDoc):
         """Render the `Parameter Attributes` section of a dataclass"""
         return self.render_definition_items(el)
 
+    def render_type_parameters_section(self, el: gf.DocstringSectionTypeParameters) -> BlockContent:
+        """
+        Render a `Type Parameters` section
+
+        A generic class or function declares its type parameters as part of
+        the signature this renderer builds.
+        """
+        return self.render_definition_items(el)
+
     @cached_property
     def parameters(self) -> gf.Parameters:
         """

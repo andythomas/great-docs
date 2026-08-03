@@ -686,3 +686,93 @@ def test_attributes_section_on_a_module_still_renders():
         MAX: int = 3
     '''
     assert "The largest allowed value." in _render(source, None)
+
+
+def test_type_parameters_section_on_a_module_is_unhandled(caplog):
+    """
+    A module is not generic, so it has no type parameters to describe
+    """
+    source = '''
+        """
+        A module.
+
+        Type Parameters
+        ---------------
+        T :
+            Not a real type parameter.
+        """
+    '''
+    with caplog.at_level("WARNING"):
+        qmd = _render(source, None)
+
+    assert "Not a real type parameter." not in qmd
+    assert "object at 0x" not in qmd
+    assert any("no renderer" in r.message for r in caplog.records)
+
+
+def test_type_parameters_section_on_a_plain_attribute_is_unhandled(caplog):
+    source = '''
+        class Holder:
+            """A holder."""
+
+            size: int = 3
+            """
+            The size.
+
+            Type Parameters
+            ---------------
+            T :
+                Not a real type parameter.
+            """
+    '''
+    with caplog.at_level("WARNING"):
+        qmd = _render(source, "Holder")
+
+    assert "Not a real type parameter." not in qmd
+    assert any("no renderer" in r.message for r in caplog.records)
+
+
+def test_type_parameters_section_on_a_generic_class_still_renders():
+    source = '''
+        class Repo[T]:
+            """
+            A repository.
+
+            Type Parameters
+            ---------------
+            T :
+                The entity type.
+            """
+    '''
+    assert "The entity type." in _render(source, "Repo")
+
+
+def test_type_parameters_section_on_a_generic_function_still_renders():
+    source = '''
+        def first[T](items: list[T]) -> T:
+            """
+            Take the first item.
+
+            Type Parameters
+            ---------------
+            T :
+                The element type.
+            """
+            return items[0]
+    '''
+    assert "The element type." in _render(source, "first")
+
+
+def test_type_parameters_section_on_a_generic_type_alias_still_renders():
+    source = '''
+        type Pair[T] = tuple[T, T]
+        """
+        Two values of the same type.
+
+        Type Parameters
+        ---------------
+        T :
+            The type of both elements.
+        """
+    '''
+    assert "The type of both elements." in _render(source, "Pair")

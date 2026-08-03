@@ -637,15 +637,6 @@ class __RenderDoc(RenderBase):
             items.append((term, ":".join(desc)))
         return DefinitionList(items)
 
-    def render_type_parameters_section(self, el: gf.DocstringSectionTypeParameters) -> BlockContent:
-        """
-        Render a `Type Parameters` section
-
-        Classes, functions and type aliases can all be generic, so this is not
-        confined to callables.
-        """
-        return self.render_definition_items(el)
-
     def render_definition_items(self, el: DocstringSectionWithDefinitions) -> BlockContent:
         """
         Render a section whose value is a list of definitions
