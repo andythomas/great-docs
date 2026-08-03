@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, cast
 
 import griffe as gf
 
@@ -22,20 +22,6 @@ from .doc import RenderDoc
 if TYPE_CHECKING:
     from ..content import DocClass, DocFunction
 
-# Definition sections that only ever describe a callable's interface
-# singledispatch needs this type at runtime
-CallableDefinitionSection: TypeAlias = (
-    gf.DocstringSectionParameters
-    | gf.DocstringSectionOtherParameters
-    | gf.DocstringSectionReturns
-    | gf.DocstringSectionYields
-    | gf.DocstringSectionReceives
-    | gf.DocstringSectionRaises
-    | gf.DocstringSectionWarns
-    | DCDocstringSectionParameterAttributes
-    | DCDocstringSectionInitParameters
-)
-
 
 class __RenderDocCallMixin(RenderDoc):
     """
@@ -55,14 +41,44 @@ class __RenderDocCallMixin(RenderDoc):
         # rendering needs it.
         self._parameter_kinds = {p.name: p.kind for p in self.parameters}
 
-    @RenderDoc.render_docstring_section.register  # pyright: ignore[reportFunctionMemberAccess]
-    def _(self, el: CallableDefinitionSection):
-        """
-        Render definition sections that describe a callable's interface
+    def render_parameters_section(self, el: gf.DocstringSectionParameters) -> BlockContent:
+        """Render a `Parameters` section"""
+        return self.render_definition_items(el)
 
-        e.g. Parameters, Other Parameters, Returns, Yields, Receives,
-             Raises, Warns
-        """
+    def render_other_parameters_section(
+        self, el: gf.DocstringSectionOtherParameters
+    ) -> BlockContent:
+        """Render an `Other Parameters` section"""
+        return self.render_definition_items(el)
+
+    def render_returns_section(self, el: gf.DocstringSectionReturns) -> BlockContent:
+        """Render a `Returns` section"""
+        return self.render_definition_items(el)
+
+    def render_yields_section(self, el: gf.DocstringSectionYields) -> BlockContent:
+        """Render a `Yields` section"""
+        return self.render_definition_items(el)
+
+    def render_receives_section(self, el: gf.DocstringSectionReceives) -> BlockContent:
+        """Render a `Receives` section"""
+        return self.render_definition_items(el)
+
+    def render_raises_section(self, el: gf.DocstringSectionRaises) -> BlockContent:
+        """Render a `Raises` section"""
+        return self.render_definition_items(el)
+
+    def render_warns_section(self, el: gf.DocstringSectionWarns) -> BlockContent:
+        """Render a `Warns` section"""
+        return self.render_definition_items(el)
+
+    def render_init_parameters_section(self, el: DCDocstringSectionInitParameters) -> BlockContent:
+        """Render the `Init Parameters` section of a dataclass"""
+        return self.render_definition_items(el)
+
+    def render_parameter_attributes_section(
+        self, el: DCDocstringSectionParameterAttributes
+    ) -> BlockContent:
+        """Render the `Parameter Attributes` section of a dataclass"""
         return self.render_definition_items(el)
 
     @cached_property

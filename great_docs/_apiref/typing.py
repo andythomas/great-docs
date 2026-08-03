@@ -4,15 +4,18 @@ from typing import Literal, TypeAlias
 
 import griffe as gf
 
-from ._docstring_sections import DCDocstringSection
+from ._docstring_sections import (
+    DCDocstringSection,
+    DCDocstringSectionInitParameters,
+    DCDocstringSectionParameterAttributes,
+)
 from ._render.api_page import RenderAPIPage
-from ._render.doc import ObjectDefinitionSection, RenderDoc
+from ._render.doc import RenderDoc
 from ._render.docattribute import RenderDocAttribute
 from ._render.docclass import RenderDocClass
 from ._render.docfunction import RenderDocFunction
 from ._render.docmodule import RenderDocModule
 from ._render.doctypealias import RenderDocTypeAlias
-from ._render.mixin_call import CallableDefinitionSection
 from ._render.reference_page import RenderReferencePage
 from ._render.reference_section import RenderReferenceSection
 from .content import (
@@ -42,7 +45,19 @@ DocObjectKind: TypeAlias = Literal[
     "type alias",
 ]
 
-DocstringSectionWithDefinitions: TypeAlias = ObjectDefinitionSection | CallableDefinitionSection
+DocstringSectionWithDefinitions: TypeAlias = (
+    gf.DocstringSectionParameters
+    | gf.DocstringSectionOtherParameters
+    | gf.DocstringSectionTypeParameters
+    | gf.DocstringSectionReturns
+    | gf.DocstringSectionYields
+    | gf.DocstringSectionReceives
+    | gf.DocstringSectionRaises
+    | gf.DocstringSectionWarns
+    | gf.DocstringSectionAttributes
+    | DCDocstringSectionParameterAttributes
+    | DCDocstringSectionInitParameters
+)
 
 DocstringDefinitionType: TypeAlias = (
     gf.DocstringParameter

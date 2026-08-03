@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 from copy import copy
 from dataclasses import dataclass
-from functools import cached_property, singledispatchmethod
+from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, cast
 
 import griffe as gf
 
@@ -44,6 +45,7 @@ from .._format import (
     repr_obj,
 )
 from .._globals import package_info
+from ._section_dispatch import SECTION_METHOD
 from .base import RenderBase
 
 if TYPE_CHECKING:
@@ -61,13 +63,7 @@ if TYPE_CHECKING:
         DocstringSectionWithDefinitions,
     )
 
-# Definition sections that are not confined to callables.
-# `Attributes` describes classes and modules, `Type Parameters` describes
-# classes, functions and type aliases.
-# singledispatch needs this type at runtime
-ObjectDefinitionSection: TypeAlias = (
-    gf.DocstringSectionAttributes | gf.DocstringSectionTypeParameters
-)
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -498,8 +494,7 @@ class __RenderDoc(RenderBase):
         """
         return None if not self.docstring_sections else Blocks(self.docstring_sections)
 
-    @singledispatchmethod
-    def render_docstring_section(self, el: gf.DocstringSection) -> BlockContent:
+    def render_docstring_section(self, el: AnyDocstringSection) -> BlockContent:
         """
         Render a section of a docstring
 
@@ -508,23 +503,88 @@ class __RenderDoc(RenderBase):
         el :
             The section to render
 
+        Returns
+        -------
+        :
+            The rendered section, or `None` when this renderer has no method
+            for it.
+
         Notes
         -----
-        To render a given type of section differently, register a
-        [](`~functools.singledispatchmethod`) method for that type
-        of section.
+        To render a given type of section differently, override the method
+        that `SECTION_METHOD` names for it. Defining that method on a subclass
+        confines the change to that subclass.
         """
-        return str(el.value)
+        name = SECTION_METHOD.get(type(el))
+        method = getattr(self, name, None) if name else None
+        return method(el) if method else self._unhandled_section(el)
 
-    @render_docstring_section.register
-    def _(self, el: gf.DocstringSectionText):
+    def _unhandled_section(self, el: AnyDocstringSection) -> None:
+        """
+        Discard a section this renderer has no method for, and say so
+        """
+        name = el.title or el.kind.value
+        _log.warning(
+            "%s: no renderer for the %s docstring section, so it is omitted.",
+            self.obj.path,
+            name,
+        )
+        return None
+
+    def _suppress_section(self, el: AnyDocstringSection) -> None:
+        """
+        Drop a hand-written summary of members that great-docs generates itself
+        """
+        return None
+
+    def render_functions_section(self, el: gf.DocstringSectionFunctions) -> None:
+        """
+        Drop a hand-written `Functions` section
+
+        numpydoc's `Methods` section is also parsed by griffe into a
+        `DocstringSectionFunctions`, so this method covers both `Methods` and
+        `Functions`. great-docs lists the real functions or methods from the
+        object's members, so a hand-written list would duplicate that and
+        risk going stale.
+        """
+        return self._suppress_section(el)
+
+    def render_classes_section(self, el: gf.DocstringSectionClasses) -> None:
+        """
+        Drop a hand-written `Classes` section
+
+        great-docs generates the list of nested classes from the object's
+        real members, so a hand-written summary would duplicate it and risk
+        contradicting it.
+        """
+        return self._suppress_section(el)
+
+    def render_modules_section(self, el: gf.DocstringSectionModules) -> None:
+        """
+        Drop a hand-written `Modules` section
+
+        great-docs generates the list of submodules from the package's real
+        members, so a hand-written summary would duplicate it and risk
+        contradicting it.
+        """
+        return self._suppress_section(el)
+
+    def render_type_aliases_section(self, el: gf.DocstringSectionTypeAliases) -> None:
+        """
+        Drop a hand-written `Type Aliases` section
+
+        great-docs generates the list of type aliases from the module's real
+        members, so a hand-written summary would duplicate it and risk
+        contradicting it.
+        """
+        return self._suppress_section(el)
+
+    def render_text_section(self, el: gf.DocstringSectionText) -> BlockContent:
+        """Render a `Text` section"""
         return el.value
 
-    @render_docstring_section.register
-    def _(self, el: gf.DocstringSectionExamples):
-        """
-        Render an `Examples` section
-        """
+    def render_examples_section(self, el: gf.DocstringSectionExamples) -> BlockContent:
+        """Render an `Examples` section"""
         return Blocks([self._render_example_fragment(c) for c in el.value])
 
     def _render_example_fragment(self, fragment: object) -> BlockContent:
@@ -538,8 +598,8 @@ class __RenderDoc(RenderBase):
             return el.value
         return ""
 
-    @render_docstring_section.register
-    def _(self, el: gf.DocstringSectionDeprecated):
+    def render_deprecated_section(self, el: gf.DocstringSectionDeprecated) -> BlockContent:
+        """Render a `Deprecated` section"""
         content = Div(
             Inlines(
                 [
@@ -554,26 +614,20 @@ class __RenderDoc(RenderBase):
         )
         return str(content)
 
-    @render_docstring_section.register
-    def _(self, el: gf.DocstringSectionAdmonition):
-        """
-        Render an unofficial numpydoc section
-        """
+    def render_admonition_section(self, el: gf.DocstringSectionAdmonition) -> BlockContent:
+        """Render an unofficial numpydoc section"""
         return el.value.description
 
-    @render_docstring_section.register
-    def _(self, el: DocstringSectionWarnings):
+    def render_warnings_section(self, el: DocstringSectionWarnings) -> BlockContent:
+        """Render a `Warnings` section"""
         return el.value
 
-    @render_docstring_section.register
-    def _(self, el: DocstringSectionNotes):
+    def render_notes_section(self, el: DocstringSectionNotes) -> BlockContent:
+        """Render a `Notes` section"""
         return el.value
 
-    @render_docstring_section.register
-    def _(self, el: DocstringSectionSeeAlso):
-        """
-        Render the See Also section
-        """
+    def render_see_also_section(self, el: DocstringSectionSeeAlso) -> BlockContent:
+        """Render a `See Also` section"""
         content = format_see_also(el.value)
         items: list[DefinitionItem] = []
         for line in content.split("\n"):
@@ -583,14 +637,21 @@ class __RenderDoc(RenderBase):
             items.append((term, ":".join(desc)))
         return DefinitionList(items)
 
-    @render_docstring_section.register
-    def _(self, el: ObjectDefinitionSection):
+    def render_attributes_section(self, el: gf.DocstringSectionAttributes) -> BlockContent:
         """
-        Render definition sections that any object can have
+        Render an `Attributes` section
 
-        `Attributes` describes classes and modules, and `Type Parameters`
-        describes classes, functions and type aliases. Neither is confined to
-        callables, so neither belongs with the sections that describe a call.
+        Classes and modules both have attributes, so this is not confined to
+        callables.
+        """
+        return self.render_definition_items(el)
+
+    def render_type_parameters_section(self, el: gf.DocstringSectionTypeParameters) -> BlockContent:
+        """
+        Render a `Type Parameters` section
+
+        Classes, functions and type aliases can all be generic, so this is not
+        confined to callables.
         """
         return self.render_definition_items(el)
 
@@ -660,21 +721,6 @@ class __RenderDoc(RenderBase):
         if not items:
             return None  # pragma: no cover
         return Div(DefinitionList(items), Attr(classes=["doc-definition-items"]))
-
-    @render_docstring_section.register(gf.DocstringSectionFunctions)
-    @render_docstring_section.register(gf.DocstringSectionClasses)
-    @render_docstring_section.register(gf.DocstringSectionModules)
-    def _(self, el):
-        """
-        Suppress collection-style sections (Methods, Functions, Classes, Modules,
-        Attributes) emitted by the numpy parser
-
-        These sections are hand-written summaries of class/module members (e.g.,
-        `Methods\\n-------\\nfoo(x)\\n    Description.`). Great Docs already auto-generates the same
-        data from the actual members, so rendering the docstring version produces redundant content.
-        Drop them silently rather than risking duplicate / out-of-sync tables.
-        """
-        return None
 
     @property
     def summary_name(self) -> str:
