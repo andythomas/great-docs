@@ -754,11 +754,19 @@ class Config:
 
     @property
     def marimo_version(self) -> str:
-        """Get the @marimo-team/islands CDN version."""
+        """Get the @marimo-team/islands CDN runtime version.
+
+        Defaults to the installed marimo version so the browser runtime matches
+        the version that generated the island markup. An explicit ``version`` in
+        the config (dict form) overrides this.
+        """
         val = self.get("marimo")
-        if isinstance(val, dict):
-            return val.get("version", "0.23.8")
-        return "0.23.8"
+        if isinstance(val, dict) and val.get("version"):
+            return str(val["version"])
+
+        from great_docs._marimo import islands_runtime_version
+
+        return islands_runtime_version()
 
     @property
     def markdown_pages(self) -> bool:
