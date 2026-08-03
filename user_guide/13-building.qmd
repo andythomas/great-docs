@@ -199,7 +199,7 @@ great-docs preview --site-dir /tmp/my-site
 This starts the same local HTTP server and opens your browser, just like the regular
 `great-docs preview` command.
 
-## Previewing a PR or CI Build [version-badge new 0.15] {#pr-preview}
+## Previewing a PR or CI Build [version-badge new 0.16] {#pr-preview}
 
 When someone opens a pull request, reviewing the rendered docs usually means checking out the
 branch and rebuilding locally, or setting up a preview host (Netlify, Cloudflare Pages,
