@@ -126,6 +126,19 @@ SPEC = {
             "\n"
             '{{< marimo file="notebooks/demo.py" show-code="false" >}}\n'
         ),
+        # ── User guide: iframe mode (full notebook, self-hosted WASM) ─────
+        "user_guide/03-iframe.qmd": (
+            "---\n"
+            "title: Iframe Mode\n"
+            "---\n"
+            "\n"
+            "# Full Notebook (Iframe Mode)\n"
+            "\n"
+            "The same notebook embedded as a full Marimo app in a sandboxed iframe,\n"
+            "served from a self-hosted WASM export.\n"
+            "\n"
+            '{{< marimo file="notebooks/demo.py" mode="iframe" height="600px" >}}\n'
+        ),
     },
     "config": {
         "marimo": True,
@@ -137,6 +150,8 @@ SPEC = {
             "reference/greet.html",
             "user-guide/islands.html",
             "user-guide/nocode.html",
+            "user-guide/iframe.html",
+            "notebooks/demo/index.html",
         ],
         "files_contain": {
             "user-guide/islands.html": [
@@ -146,6 +161,10 @@ SPEC = {
             ],
             "user-guide/nocode.html": [
                 "gd-marimo-nocode",
+            ],
+            "user-guide/iframe.html": [
+                "gd-marimo-iframe",
+                "notebooks/demo/index.html",
             ],
         },
         "coverage_exclude": ['ref', 'nodoc', 'bigcl', 'ug', 'supp', 'title', 'badge', 'sig', 'desc', 'param', 'pmatch', 'ret', 'refidx', 'sechdg', 'sbsec', 'hdg'],
