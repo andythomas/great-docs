@@ -463,7 +463,7 @@ def preview(
     a '--from-repo' build).
 
     Use '--pr', '--run', or '--branch' to fetch and preview a site that CI
-    already built — no hosting setup required. Downloading CI artifacts needs a
+    already built (no hosting setup required). Downloading CI artifacts needs a
     GitHub token with 'Actions: read' (via GITHUB_TOKEN, a .env, or 'gh auth
     login' + '--use-gh'). For fork PRs you'll be viewing contributor-authored
     HTML locally.
@@ -1468,7 +1468,7 @@ def setup_github_pages(
         click.echo("💡 The workflow will:")
         click.echo(f"   • Build docs on every push to '{main_branch}' and pull requests")
         click.echo("   • Automatically deploy to GitHub Pages on main branch")
-        click.echo("   • Create preview deployments for pull requests")
+        click.echo("   • Comment on pull requests with a 'great-docs preview' command")
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
