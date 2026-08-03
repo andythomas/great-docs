@@ -637,15 +637,6 @@ class __RenderDoc(RenderBase):
             items.append((term, ":".join(desc)))
         return DefinitionList(items)
 
-    def render_attributes_section(self, el: gf.DocstringSectionAttributes) -> BlockContent:
-        """
-        Render an `Attributes` section
-
-        Classes and modules both have attributes, so this is not confined to
-        callables.
-        """
-        return self.render_definition_items(el)
-
     def render_type_parameters_section(self, el: gf.DocstringSectionTypeParameters) -> BlockContent:
         """
         Render a `Type Parameters` section

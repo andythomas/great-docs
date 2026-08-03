@@ -627,3 +627,62 @@ def test_every_table_entry_names_a_real_method():
     }
 
     assert not orphans, f"SECTION_METHOD names methods that do not exist: {orphans}"
+
+
+def test_attributes_section_on_a_type_alias_is_unhandled(caplog):
+    """
+    A type alias has no attributes, so the section has no renderer
+
+    `Attributes` describes the members of a class or a module. Anything else
+    documenting one is an authoring mistake worth reporting.
+    """
+    source = '''
+        type Pair = tuple[int, int]
+        """
+        Two integers.
+
+        Attributes
+        ----------
+        first : int
+            Not a real attribute.
+        """
+    '''
+    with caplog.at_level("WARNING"):
+        qmd = _render(source, "Pair")
+
+    assert "Not a real attribute." not in qmd
+    assert "object at 0x" not in qmd
+    assert any("no renderer" in r.message for r in caplog.records)
+
+
+def test_attributes_section_on_a_class_still_renders():
+    source = '''
+        class Widget:
+            """
+            A widget.
+
+            Attributes
+            ----------
+            size : int
+                How big it is.
+            """
+
+            size: int = 3
+    '''
+    assert "How big it is." in _render(source, "Widget")
+
+
+def test_attributes_section_on_a_module_still_renders():
+    source = '''
+        """
+        A module.
+
+        Attributes
+        ----------
+        MAX : int
+            The largest allowed value.
+        """
+
+        MAX: int = 3
+    '''
+    assert "The largest allowed value." in _render(source, None)
