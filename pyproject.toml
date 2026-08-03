@@ -39,6 +39,7 @@ dependencies = [
     "griffe~=2.1.0",
     "pygments>=2.0.0",
     "requests>=2.25.0",
+    "python-dotenv>=1.0.0",
     "Pillow>=9.0.0",
     "ruff>=0.9.9",
 ]
