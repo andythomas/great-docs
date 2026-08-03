@@ -8,12 +8,9 @@ import griffe as gf
 from great_docs.pandoc.blocks import (
     BlockContent,
     CodeBlock,
-    DefinitionItem,
-    DefinitionList,
     Div,
 )
 from great_docs.pandoc.components import Attr
-from great_docs.pandoc.inlines import Code
 
 from .._docstring_sections import (
     DCDocstringSectionInitParameters,
@@ -24,10 +21,10 @@ from .doc import RenderDoc
 
 if TYPE_CHECKING:
     from ..content import DocClass, DocFunction
-    from ..typing import DocstringDefinitionType
 
+# Definition sections that only ever describe a callable's interface
 # singledispatch needs this type at runtime
-DocstringSectionWithDefinitions: TypeAlias = (
+CallableDefinitionSection: TypeAlias = (
     gf.DocstringSectionParameters
     | gf.DocstringSectionOtherParameters
     | gf.DocstringSectionReturns
@@ -35,7 +32,6 @@ DocstringSectionWithDefinitions: TypeAlias = (
     | gf.DocstringSectionReceives
     | gf.DocstringSectionRaises
     | gf.DocstringSectionWarns
-    | gf.DocstringSectionAttributes
     | DCDocstringSectionParameterAttributes
     | DCDocstringSectionInitParameters
 )
@@ -60,71 +56,14 @@ class __RenderDocCallMixin(RenderDoc):
         self._parameter_kinds = {p.name: p.kind for p in self.parameters}
 
     @RenderDoc.render_docstring_section.register  # pyright: ignore[reportFunctionMemberAccess]
-    def _(self, el: DocstringSectionWithDefinitions):
+    def _(self, el: CallableDefinitionSection):
         """
-        Render docstring sections that have a list of definitions
+        Render definition sections that describe a callable's interface
 
         e.g. Parameters, Other Parameters, Returns, Yields, Receives,
-             Warns, Attributes
+             Raises, Warns
         """
-
-        def render_section_item(el: DocstringDefinitionType) -> DefinitionItem:
-            """
-            Render a single definition in a section
-            """
-            name = getattr(el, "name", None) or ""
-            default = getattr(el, "default", None)
-            annotation = el.annotation
-
-            # Parameter of kind *args or **kwargs have no default values
-            if isinstance(el, gf.DocstringParameter) and "*" in el.name:
-                default = None
-
-            term = self.render_variable_definition(name, annotation, default)
-
-            # Annotations are expressed in html so that contained interlink
-            # references can be processed. Pandoc does not process any markup
-            # within backquotes `...`, but it does if the markup is within
-            # html code tags.
-            desc = el.description or ""
-            return Code(str(term)).html, desc
-
-        # For Returns/Yields/Receives, merge consecutive unnamed items that
-        # share the same annotation (griffe splits continuation paragraphs
-        # into separate DocstringReturn objects, each repeating the type).
-        items_to_render = list(el.value)
-        if isinstance(
-            el, (gf.DocstringSectionReturns, gf.DocstringSectionYields, gf.DocstringSectionReceives)
-        ):
-            items_to_render = cast(
-                "list[gf.DocstringReturn | gf.DocstringYield | gf.DocstringReceive]",
-                items_to_render,
-            )
-            merged: list[gf.DocstringReturn | gf.DocstringYield | gf.DocstringReceive] = []
-            merged = []
-            for item in items_to_render:
-                name = getattr(item, "name", None) or ""
-                ann = getattr(item, "annotation", None)
-                if (
-                    not name
-                    and merged
-                    and not (getattr(merged[-1], "name", None) or "")
-                    and getattr(merged[-1], "annotation", None) == ann
-                ):
-                    # Merge description into the previous item
-                    prev = merged[-1]
-                    prev_desc = prev.description or ""
-                    cur_desc = item.description or ""
-                    sep = "\n\n" if prev_desc else ""
-                    prev.description = prev_desc + sep + cur_desc
-                else:
-                    merged.append(item)
-            items_to_render = merged
-
-        items = [render_section_item(item) for item in items_to_render]
-        if not items:
-            return None  # pragma: no cover
-        return Div(DefinitionList(items), Attr(classes=["doc-definition-items"]))
+        return self.render_definition_items(el)
 
     @cached_property
     def parameters(self) -> gf.Parameters:

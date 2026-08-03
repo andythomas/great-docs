@@ -5,7 +5,7 @@ from copy import copy
 from dataclasses import dataclass
 from functools import cached_property, singledispatchmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 import griffe as gf
 
@@ -22,7 +22,7 @@ from great_docs.pandoc.blocks import (
     Para,
 )
 from great_docs.pandoc.components import Attr
-from great_docs.pandoc.inlines import Inline, Inlines, Inlines0, Link, Span
+from great_docs.pandoc.inlines import Code, Inline, Inlines, Inlines0, Link, Span
 
 from .. import content
 from .._docstring_sections import (
@@ -57,7 +57,17 @@ if TYPE_CHECKING:
         AnyDocstringSection,
         DisplayNameFormat,
         DocObjectKind,
+        DocstringDefinitionType,
+        DocstringSectionWithDefinitions,
     )
+
+# Definition sections that are not confined to callables.
+# `Attributes` describes classes and modules, `Type Parameters` describes
+# classes, functions and type aliases.
+# singledispatch needs this type at runtime
+ObjectDefinitionSection: TypeAlias = (
+    gf.DocstringSectionAttributes | gf.DocstringSectionTypeParameters
+)
 
 
 @dataclass
@@ -563,6 +573,84 @@ class __RenderDoc(RenderBase):
             term, *desc = line.split(":")
             items.append((term, ":".join(desc)))
         return DefinitionList(items)
+
+    @render_docstring_section.register
+    def _(self, el: ObjectDefinitionSection):
+        """
+        Render definition sections that any object can have
+
+        `Attributes` describes classes and modules, and `Type Parameters`
+        describes classes, functions and type aliases. Neither is confined to
+        callables, so neither belongs with the sections that describe a call.
+        """
+        return self.render_definition_items(el)
+
+    def render_definition_items(self, el: DocstringSectionWithDefinitions) -> BlockContent:
+        """
+        Render a section whose value is a list of definitions
+
+        The definitions differ in what they describe — a parameter, an
+        attribute, a type parameter — but each renders as a term built from
+        name, annotation and default, followed by a description.
+        """
+
+        def render_section_item(el: DocstringDefinitionType) -> DefinitionItem:
+            """
+            Render a single definition in a section
+            """
+            name = getattr(el, "name", None) or ""
+            default = getattr(el, "default", None)
+            annotation = el.annotation
+
+            # Parameter of kind *args or **kwargs have no default values
+            if isinstance(el, gf.DocstringParameter) and "*" in el.name:
+                default = None
+
+            term = self.render_variable_definition(name, annotation, default)
+
+            # Annotations are expressed in html so that contained interlink
+            # references can be processed. Pandoc does not process any markup
+            # within backquotes `...`, but it does if the markup is within
+            # html code tags.
+            desc = el.description or ""
+            return Code(str(term)).html, desc
+
+        # For Returns/Yields/Receives, merge consecutive unnamed items that
+        # share the same annotation (griffe splits continuation paragraphs
+        # into separate DocstringReturn objects, each repeating the type).
+        items_to_render = list(el.value)
+        if isinstance(
+            el, (gf.DocstringSectionReturns, gf.DocstringSectionYields, gf.DocstringSectionReceives)
+        ):
+            items_to_render = cast(
+                "list[gf.DocstringReturn | gf.DocstringYield | gf.DocstringReceive]",
+                items_to_render,
+            )
+            merged: list[gf.DocstringReturn | gf.DocstringYield | gf.DocstringReceive] = []
+            merged = []
+            for item in items_to_render:
+                name = getattr(item, "name", None) or ""
+                ann = getattr(item, "annotation", None)
+                if (
+                    not name
+                    and merged
+                    and not (getattr(merged[-1], "name", None) or "")
+                    and getattr(merged[-1], "annotation", None) == ann
+                ):
+                    # Merge description into the previous item
+                    prev = merged[-1]
+                    prev_desc = prev.description or ""
+                    cur_desc = item.description or ""
+                    sep = "\n\n" if prev_desc else ""
+                    prev.description = prev_desc + sep + cur_desc
+                else:
+                    merged.append(item)
+            items_to_render = merged
+
+        items = [render_section_item(item) for item in items_to_render]
+        if not items:
+            return None  # pragma: no cover
+        return Div(DefinitionList(items), Attr(classes=["doc-definition-items"]))
 
     @render_docstring_section.register(gf.DocstringSectionFunctions)
     @render_docstring_section.register(gf.DocstringSectionClasses)
