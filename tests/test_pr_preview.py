@@ -318,6 +318,67 @@ def test_download_and_extract_caches(monkeypatch, tmp_path, capsys):
     assert client.downloads == 2
 
 
+class _FakeResponse:
+    """Minimal stand-in for a streaming requests.Response."""
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def iter_content(self, chunk_size=None):
+        yield from self._chunks
+
+
+def test_stream_to_file_writes_all_bytes(tmp_path):
+    dest = tmp_path / "out.zip"
+    resp = _FakeResponse([b"abc", b"def", b"ghi"])
+    pp._stream_to_file(resp, dest, total=9)
+    assert dest.read_bytes() == b"abcdefghi"
+
+
+def test_stream_to_file_unknown_length(tmp_path):
+    # total == 0 (no Content-Length) should still write the file, just without a bar.
+    dest = tmp_path / "out.zip"
+    resp = _FakeResponse([b"x" * 100])
+    pp._stream_to_file(resp, dest, total=0)
+    assert dest.read_bytes() == b"x" * 100
+
+
+def test_stream_to_file_progress_bar_path(monkeypatch, tmp_path):
+    # Force the TTY branch and stub click.progressbar to verify wiring (writes
+    # the file and advances the bar) without depending on terminal rendering.
+    import click
+
+    class _FakeTTY:
+        def isatty(self):
+            return True
+
+        def write(self, *a):
+            pass
+
+        def flush(self):
+            pass
+
+    updates: list[int] = []
+
+    class _FakeBar:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def update(self, n):
+            updates.append(n)
+
+    monkeypatch.setattr(pp.sys, "stderr", _FakeTTY())
+    monkeypatch.setattr(click, "progressbar", lambda **kwargs: _FakeBar())
+
+    dest = tmp_path / "out.zip"
+    pp._stream_to_file(_FakeResponse([b"aa", b"bb"]), dest, total=4)
+    assert dest.read_bytes() == b"aabb"
+    assert sum(updates) == 4
+
+
 def test_download_and_extract_missing_index_raises(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
 
