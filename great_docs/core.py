@@ -372,7 +372,7 @@ class GreatDocs:
                     for nb_file in notebooks_src.glob("*.py"):
                         wasm_dir = self.project_path / "notebooks" / nb_file.stem
                         wasm_dir.mkdir(parents=True, exist_ok=True)
-                        subprocess.run(
+                        result = subprocess.run(
                             [
                                 _sys.executable,
                                 "-m",
@@ -389,6 +389,15 @@ class GreatDocs:
                             capture_output=True,
                             text=True,
                         )
+                        # Surface failures: a silent export failure otherwise
+                        # leaves iframe-mode shortcodes pointing at a missing
+                        # index.html (404) with no explanation in the build log.
+                        if result.returncode != 0 or not (wasm_dir / "index.html").exists():
+                            _orig_stderr.write(
+                                f"Warning: marimo WASM export failed for "
+                                f"{nb_file.name} (iframe mode will 404). "
+                                f"{(result.stderr or result.stdout or '').strip()[:500]}\n"
+                            )
                 finally:
                     _sys.stdout = _orig_stdout
                     _sys.stderr = _orig_stderr
