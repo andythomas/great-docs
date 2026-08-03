@@ -382,9 +382,8 @@ class GitHubClient:
                     )
                 if resp.status_code != 200:
                     raise PreviewError(f"Artifact download failed (HTTP {resp.status_code}).")
-                with open(zip_path, "wb") as handle:
-                    for chunk in resp.iter_content(chunk_size=1 << 16):
-                        handle.write(chunk)
+                total = int(resp.headers.get("Content-Length") or 0)
+                _stream_to_file(resp, zip_path, total)
         except requests.RequestException as exc:
             raise PreviewError(f"Artifact download failed: {exc}") from exc
 
