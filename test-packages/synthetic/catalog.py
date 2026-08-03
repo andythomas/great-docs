@@ -384,6 +384,8 @@ ALL_PACKAGES: list[str] = [
     "gdtest_details_shortcode",  # 191
     # 192: Termshow recording/playback showcase
     "gdtest_termshow",  # 192
+    # 193: Marimo notebook islands showcase
+    "gdtest_marimo",  # 193
 ]
 
 
