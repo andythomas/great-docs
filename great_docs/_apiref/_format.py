@@ -296,9 +296,20 @@ def _stdin_filename() -> str:
 @lru_cache(maxsize=2048)
 def format_str(source: str) -> str:
     """
-    Format Python source code using Ruff
+    Format Python source code with ruff
 
-    This analogous to black.format_str.
+    Parameters
+    ----------
+    source
+        Python code to format. This is a snippet, e.g. an expression,
+        rather than the contents of a file.
+
+    Returns
+    -------
+    :
+        Formatted code, with no trailing newline. Only a file needs a
+        newline to terminate it, and `ruff format` adds one because it
+        reads and writes whole files.
     """
     if not HAS_RUFF:
         return source
@@ -319,7 +330,7 @@ def format_str(source: str) -> str:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip())
 
-    return proc.stdout
+    return proc.stdout.removesuffix("\n")
 
 
 def format_value(value: str | gf.Expr | None = None) -> str:
