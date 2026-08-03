@@ -277,7 +277,7 @@ build), so a reviewer reproduces exactly the build they're looking at:
         if: github.event_name == 'pull_request'
         run: |
           echo "::notice title=Preview these docs locally::great-docs preview --run ${{ github.run_id }}"
-          echo "  pipx run great-docs preview --run ${{ github.run_id }}"
+          echo "  great-docs preview --run ${{ github.run_id }}"
 ```
 :::
 
