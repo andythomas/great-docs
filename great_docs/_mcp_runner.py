@@ -21,7 +21,7 @@ from typing import Any
 
 
 def _find_server(module: Any, server_var: str | None) -> Any:
-    """Locate the MCP ``Server``/``FastMCP`` instance in a module."""
+    """Locate the MCP `Server`/`FastMCP` instance in a module."""
     if server_var:
         return getattr(module, server_var, None)
 
@@ -45,13 +45,13 @@ async def _run(module_path: str, server_var: str | None) -> None:
         await server.run_stdio_async()
         return
 
-    # FastMCP exposes the underlying low-level server as ``_mcp_server``.
+    # FastMCP exposes the underlying low-level server as `_mcp_server`.
     low = getattr(server, "_mcp_server", server)
 
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        # mcp v1 requires initialization options; v2's ``run`` takes only the
+        # mcp v1 requires initialization options; v2's `run` takes only the
         # streams. Try the v1 shape first and fall back on signature mismatch.
         init_options = None
         if hasattr(low, "create_initialization_options"):

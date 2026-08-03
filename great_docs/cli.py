@@ -397,7 +397,60 @@ def uninstall(project_path: str | None) -> None:
     default=None,
     help="Path to a pre-built site directory to serve (bypasses project detection)",
 )
-def preview(project_path: str | None, port: int, site_dir: str | None) -> None:
+@click.option("--pr", type=int, default=None, help="Preview the CI docs build for this PR number.")
+@click.option("--run", type=int, default=None, help="Preview a specific workflow run id.")
+@click.option("--branch", default=None, help="Preview the newest CI docs build for a branch.")
+@click.option(
+    "--repo",
+    default=None,
+    help="GitHub repo as 'owner/repo' (default: detect from git remote / config).",
+)
+@click.option(
+    "--artifact",
+    default="docs-html",
+    show_default=True,
+    help="Name of the CI artifact to fetch.",
+)
+@click.option(
+    "--path",
+    "open_path",
+    default="",
+    help="Open the browser at this page within the site (e.g. reference/index.html).",
+)
+@click.option("--no-open", is_flag=True, help="Serve without launching a browser.")
+@click.option("--refresh", is_flag=True, help="Ignore the local cache and re-download.")
+@click.option(
+    "--clear-cache",
+    is_flag=True,
+    help="Delete the downloaded PR-preview cache and exit.",
+)
+@click.option(
+    "--use-gh",
+    is_flag=True,
+    help="Fetch via the 'gh' CLI (uses your existing gh auth) instead of a token.",
+)
+@click.option(
+    "--env-file",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Load a .env for GITHUB_TOKEN/GH_TOKEN (default: auto-detect .env).",
+)
+def preview(
+    project_path: str | None,
+    port: int,
+    site_dir: str | None,
+    pr: int | None,
+    run: int | None,
+    branch: str | None,
+    repo: str | None,
+    artifact: str,
+    open_path: str,
+    no_open: bool,
+    refresh: bool,
+    clear_cache: bool,
+    use_gh: bool,
+    env_file: str | None,
+) -> None:
     """Preview your documentation locally.
 
     Starts a local HTTP server and opens the built documentation site in your
@@ -409,25 +462,81 @@ def preview(project_path: str | None, port: int, site_dir: str | None) -> None:
     Use '--site-dir' to preview a site from any directory (e.g. output from
     a '--from-repo' build).
 
+    Use '--pr', '--run', or '--branch' to fetch and preview a site that CI
+    already built (no hosting setup required). Downloading CI artifacts needs a
+    GitHub token with 'Actions: read' (via GITHUB_TOKEN, a .env, or 'gh auth
+    login' + '--use-gh'). For fork PRs you'll be viewing contributor-authored
+    HTML locally.
+
     \b
     Examples:
       great-docs preview                    # Preview on port 3000
       great-docs preview --port 8080        # Preview on port 8080
       great-docs preview --site-dir /tmp/weathervault-site
+      great-docs preview --pr 302           # Newest CI build for PR #302
+      great-docs preview --run 18273645521  # A specific workflow run
+      great-docs preview --pr 302 --path reference/mcp/gd_config.html
     """
+    if clear_cache:
+        from ._pr_preview import clear_cache as _clear_cache
+
+        existed, path = _clear_cache()
+        if existed:
+            click.echo(f"✓ Cleared PR-preview cache at {path}")
+        else:
+            click.echo(f"No PR-preview cache to clear ({path} does not exist).")
+        return
+
+    exclusive = [
+        ("--pr", pr is not None),
+        ("--run", run is not None),
+        ("--branch", branch is not None),
+    ]
+    given = [name for name, present in exclusive if present]
+    if len(given) > 1:
+        click.echo(f"Error: {', '.join(given)} are mutually exclusive; pass only one.", err=True)
+        sys.exit(1)
+
     try:
-        if site_dir:
+        if given:
+            if site_dir:
+                click.echo("Warning: --site-dir is ignored with --pr/--run/--branch", err=True)
+            from ._pr_preview import PreviewError, preview_pr
+
+            try:
+                preview_pr(
+                    project_path,
+                    pr=pr,
+                    run=run,
+                    branch=branch,
+                    repo=repo,
+                    artifact=artifact,
+                    path=open_path,
+                    port=port,
+                    open_browser=not no_open,
+                    refresh=refresh,
+                    use_gh=use_gh,
+                    env_file=env_file,
+                )
+            except PreviewError as e:
+                click.echo(f"Error: {e}", err=True)
+                sys.exit(1)
+        elif site_dir:
             if project_path:
                 click.echo(
                     "Warning: --project-path is ignored when --site-dir is used",
                     err=True,
                 )
-            GreatDocs.preview_site(site_dir, port=port)
+            GreatDocs.preview_site(
+                site_dir, port=port, open_path=open_path, open_browser=not no_open
+            )
         else:
             docs = GreatDocs(project_path=project_path)
             docs.preview(port=port)
     except KeyboardInterrupt:
         click.echo("\n👋 Server stopped")
+    except SystemExit:
+        raise
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -1359,7 +1468,7 @@ def setup_github_pages(
         click.echo("💡 The workflow will:")
         click.echo(f"   • Build docs on every push to '{main_branch}' and pull requests")
         click.echo("   • Automatically deploy to GitHub Pages on main branch")
-        click.echo("   • Create preview deployments for pull requests")
+        click.echo("   • Comment on pull requests with a 'great-docs preview' command")
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)

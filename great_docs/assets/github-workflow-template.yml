@@ -36,6 +36,20 @@ jobs:
           path: great-docs/_site
           include-hidden-files: true
 
+      - name: How to preview this build locally
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "::notice title=Preview these docs locally::great-docs preview --run ${{ github.run_id }}"
+          echo ""
+          echo "  # this exact build:"
+          echo "  great-docs preview --run ${{ github.run_id }}"
+          echo ""
+          echo "  # or always the latest build for this PR:"
+          echo "  great-docs preview --pr ${{ github.event.number }}"
+          echo ""
+          echo "  Don't have it? pip install great-docs (or: pipx run / uvx great-docs preview ...)."
+          echo "  Auth: 'gh auth login' then add --use-gh, or set GITHUB_TOKEN (Actions:read)."
+
       - name: Upload build timings
         uses: actions/upload-artifact@v7
         with:
@@ -75,34 +89,56 @@ jobs:
     needs: "build-docs"
     if: github.event_name == 'pull_request'
     permissions:
-      deployments: write
       pull-requests: write
     steps:
-      - uses: actions/download-artifact@v7
+      # Post (and keep updated) a sticky comment telling reviewers how to fetch
+      # this build and view it locally with `great-docs preview` — no preview
+      # host required. Pinned to this run so it reproduces the build under review.
+      # Uses the first-party actions/github-script (no third-party action);
+      # continue-on-error so fork PRs (read-only token) don't fail the run.
+      - name: Post preview instructions to the PR
+        uses: actions/github-script@v7
+        continue-on-error: true
+        env:
+          RUN_ID: ${{ github.run_id }}
+          PR_NUMBER: ${{ github.event.number }}
         with:
-          name: docs-html
-          path: great-docs/_site
+          script: |
+            const marker = '<!-- great-docs:docs-preview -->';
+            const body = [
+              marker,
+              "### 📚 Preview this PR's docs locally",
+              '',
+              'Fetch the just-built site and open it in your browser:',
+              '',
+              '```bash',
+              '# this exact build',
+              `great-docs preview --run ${process.env.RUN_ID}`,
+              '',
+              '# or always the latest build for this PR',
+              `great-docs preview --pr ${process.env.PR_NUMBER}`,
+              '```',
+              '',
+              '<details>',
+              '<summary>Auth &amp; tips</summary>',
+              '',
+              '- **Requires** `great-docs`: `pip install great-docs` (or run via `pipx`/`uvx`).',
+              '- **Auth:** run `gh auth login` then add `--use-gh`, or set `GITHUB_TOKEN` (needs *Actions: read*).',
+              '- **Jump to a page:** add `--path reference/index.html`.',
+              '- **Latest vs exact:** `--pr <n>` grabs the newest build; `--run <id>` pins this one.',
+              '- **Re-download:** `--refresh` ignores the local cache.',
+              '',
+              '</details>',
+            ].join('\n');
 
-      # Start deployment
-      - name: Configure pull release name
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          echo "RELEASE_NAME=pr-${{ github.event.number }}" >> $GITHUB_ENV
-
-      - name: Configure branch release name
-        if: ${{ github.event_name != 'pull_request' }}
-        run: |
-          # use branch name, but replace slashes. E.g. feat/a -> feat-a
-          echo "RELEASE_NAME=${GITHUB_REF_NAME//\//-}" >> $GITHUB_ENV
-
-      # Deploy
-      - name: Create Github Deployment
-        uses: bobheadxi/deployments@v1
-        id: deployment
-        if: ${{ !github.event.pull_request.head.repo.fork }}
-        with:
-          step: start
-          token: ${{ secrets.GITHUB_TOKEN }}
-          env: ${{ env.RELEASE_NAME }}
-          ref: ${{ github.head_ref }}
-          logs: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
