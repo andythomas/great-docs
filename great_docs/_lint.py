@@ -4,6 +4,9 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from ._builtin.directives import DIRECTIVES
+from ._utils import parse_seealso
+
 
 @dataclass
 class LintIssue:
@@ -133,7 +136,7 @@ def run_lint(
         )
         return result
 
-    importable_name = docs._normalize_package_name(package_name)
+    importable_name = docs._resolve_importable_name(package_name)
     result.package_name = importable_name
 
     # Load package via griffe for introspection
@@ -153,7 +156,7 @@ def run_lint(
         return result
 
     try:
-        pkg = griffe.load(importable_name)
+        pkg = griffe.load(importable_name, search_paths=docs._griffe_search_paths())
     except Exception as e:
         if quiet:
             sys.stdout = _saved_stdout
@@ -178,7 +181,7 @@ def run_lint(
     result.exports_count = len(exports)
 
     # Get configured docstring style
-    config_style = docs._config.get("parser", "numpy")
+    config_style = docs._config["parser"]
 
     # Run selected checks
     if "docstrings" in checks:
@@ -280,8 +283,6 @@ def _check_cross_references(
     result: LintResult,
 ) -> None:
     """Check %seealso directives for broken cross-references."""
-    from ._directives import extract_directives
-
     # Build a set of all known public names (fully unqualified)
     known_names = set(exports)
 
@@ -307,8 +308,7 @@ def _check_cross_references(
         if not docstring:
             continue
 
-        directives = extract_directives(docstring)
-        for ref_name, _ in directives.seealso:
+        for ref_name, _ in parse_seealso(docstring):
             if ref_name not in known_names:
                 result.issues.append(
                     LintIssue(
@@ -328,8 +328,7 @@ def _check_cross_references(
                     member_doc = _get_docstring(member)
                     if not member_doc:  # pragma: no cover
                         continue
-                    member_directives = extract_directives(member_doc)
-                    for ref_name, _ in member_directives.seealso:
+                    for ref_name, _ in parse_seealso(member_doc):
                         if ref_name not in known_names:  # pragma: no cover
                             result.issues.append(
                                 LintIssue(
@@ -440,8 +439,6 @@ _MALFORMED_DIRECTIVE = re.compile(
     re.MULTILINE,
 )
 
-_KNOWN_DIRECTIVES = {"seealso", "nodoc"}
-
 
 def _check_directive_consistency(
     pkg,
@@ -450,13 +447,12 @@ def _check_directive_consistency(
     result: LintResult,
 ) -> None:
     """Check for malformed or unknown directives in docstrings."""
-    from ._directives import extract_directives
 
     def _check_one(symbol: str, docstring: str) -> None:
         # Find all %-prefixed tokens in the docstring
         for match in _MALFORMED_DIRECTIVE.finditer(docstring):
-            directive_name = match.group(1).lower()
-            if directive_name not in _KNOWN_DIRECTIVES:
+            directive_name = match.group(1)
+            if directive_name not in DIRECTIVES:
                 result.issues.append(
                     LintIssue(
                         check="unknown-directive",
@@ -464,21 +460,8 @@ def _check_directive_consistency(
                         symbol=symbol,
                         message=(
                             f"Unknown directive '%{match.group(1)}'. "
-                            f"Known directives: {', '.join(sorted('%' + d for d in _KNOWN_DIRECTIVES))}."
+                            f"Known directives: {', '.join(sorted('%' + d for d in DIRECTIVES))}."
                         ),
-                    )
-                )
-
-        # Validate that %seealso entries are non-empty
-        directives = extract_directives(docstring)
-        for ref_name, _ in directives.seealso:
-            if not ref_name.strip():  # pragma: no cover
-                result.issues.append(
-                    LintIssue(
-                        check="empty-seealso",
-                        severity="warning",
-                        symbol=symbol,
-                        message="%%seealso contains an empty reference.",
                     )
                 )
 

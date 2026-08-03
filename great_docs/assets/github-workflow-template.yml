@@ -36,6 +36,10 @@ jobs:
           path: great-docs/_site
           include-hidden-files: true
 
+      - name: How to preview this build locally
+        if: github.event_name == 'pull_request'
+        run: great-docs ci notice --run ${{ github.run_id }} --pr ${{ github.event.number }}
+
       - name: Upload build timings
         uses: actions/upload-artifact@v7
         with:
@@ -75,34 +79,15 @@ jobs:
     needs: "build-docs"
     if: github.event_name == 'pull_request'
     permissions:
-      deployments: write
       pull-requests: write
     steps:
-      - uses: actions/download-artifact@v7
-        with:
-          name: docs-html
-          path: great-docs/_site
-
-      # Start deployment
-      - name: Configure pull release name
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          echo "RELEASE_NAME=pr-${{ github.event.number }}" >> $GITHUB_ENV
-
-      - name: Configure branch release name
-        if: ${{ github.event_name != 'pull_request' }}
-        run: |
-          # use branch name, but replace slashes. E.g. feat/a -> feat-a
-          echo "RELEASE_NAME=${GITHUB_REF_NAME//\//-}" >> $GITHUB_ENV
-
-      # Deploy
-      - name: Create Github Deployment
-        uses: bobheadxi/deployments@v1
-        id: deployment
-        if: ${{ !github.event.pull_request.head.repo.fork }}
-        with:
-          step: start
-          token: ${{ secrets.GITHUB_TOKEN }}
-          env: ${{ env.RELEASE_NAME }}
-          ref: ${{ github.head_ref }}
-          logs: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      # Post (and keep updated) a sticky PR comment with the local-preview
+      # command, pinned to this run so it reproduces the build under review.
+      # Runs the released great-docs via pipx (no install step needed); kept as
+      # its own minimal job so the docs build never holds a pull-requests:write
+      # token. continue-on-error so fork PRs (read-only token) don't fail the run.
+      - name: Post preview instructions to the PR
+        continue-on-error: true
+        run: pipx run great-docs ci pr-comment --run ${{ github.run_id }} --pr ${{ github.event.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

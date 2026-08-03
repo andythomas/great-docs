@@ -48,11 +48,20 @@ PHASE1_PACKAGES = [
 
 # Only parametrize over specs that actually exist on disk.
 # As more specs are added in later phases they'll automatically be picked up.
+#
+# A spec may declare `min_python`, for source it cannot express on older
+# interpreters. Such a package is left out entirely rather than skipped
+# per-test: griffe parses its source with the running interpreter, so below the
+# floor there is nothing to assert against.
 _AVAILABLE_PACKAGES = []
 for _name in ALL_PACKAGES:
     _spec_file = _SYNTHETIC_DIR / "synthetic" / "specs" / f"{_name}.py"
-    if _spec_file.exists():
-        _AVAILABLE_PACKAGES.append(_name)
+    if not _spec_file.exists():
+        continue
+    _min_python = get_spec(_name).get("min_python")
+    if _min_python is not None and sys.version_info < tuple(_min_python):
+        continue
+    _AVAILABLE_PACKAGES.append(_name)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -604,11 +613,12 @@ def test_L3_cli_sidebar_flat_paths(pkg_name: str, tmp_path: Path):
     sidebar_items = docs._generate_cli_reference_pages(cli_info)
     assert len(sidebar_items) >= 1, "No sidebar items generated"
 
-    # First item should be the main index page
-    assert sidebar_items[0] == "reference/cli/index.qmd"
+    # First item should be the labeled index link
+    assert isinstance(sidebar_items[0], dict)
+    assert sidebar_items[0].get("href") == "reference/cli/index.qmd"
 
-    # Every item should be a plain path string (no section dicts)
-    for item in sidebar_items:
+    # Remaining items should be plain path strings (flat CLI -> no section dicts)
+    for item in sidebar_items[1:]:
         assert isinstance(item, str), f"Expected plain path string, got dict: {item}"
         assert item.startswith("reference/cli/"), (
             f"Sidebar path {item!r} does not start with 'reference/cli/'"
@@ -636,11 +646,12 @@ def test_L3_cli_sidebar_nested_structure(pkg_name: str, tmp_path: Path):
     sidebar_items = docs._generate_cli_reference_pages(cli_info)
     assert len(sidebar_items) >= 2, "Too few sidebar items for a grouped CLI"
 
-    # First item should be the main index
-    assert sidebar_items[0] == "reference/cli/index.qmd"
+    # First item should be the labeled index link
+    assert isinstance(sidebar_items[0], dict)
+    assert sidebar_items[0].get("href") == "reference/cli/index.qmd"
 
-    # Collect section dicts from the sidebar items
-    section_items = [item for item in sidebar_items if isinstance(item, dict)]
+    # Collect group section dicts (the index link dict has 'href', not 'section')
+    section_items = [item for item in sidebar_items if isinstance(item, dict) and "section" in item]
     assert len(section_items) > 0, (
         f"No section dicts found in sidebar items; "
         f"nested groups should use {{section: ..., contents: [...]}} structure. "
@@ -939,6 +950,79 @@ def _setup_blended_homepage(pkg_dir: Path, spec: dict) -> GreatDocs:
 
 
 @pytest.mark.parametrize("pkg_name", _AVAILABLE_PACKAGES)
+def test_L3_bibliography_wired_into_quarto_config(pkg_name: str, tmp_path: Path):
+    """Project-level bibliography is copied into the build dir and wired into _quarto.yml."""
+    pkg_dir, spec = _make_package(pkg_name, tmp_path)
+    expected = spec.get("expected", {})
+    if not expected.get("has_bibliography"):
+        pytest.skip("No 'has_bibliography' in spec expected outcomes")
+
+    from yaml12 import read_yaml
+
+    docs = GreatDocs(project_path=str(pkg_dir))
+
+    # The generated great-docs.yml already carries the bibliography key, so the
+    # build directory prep alone should copy the file and wire the config.
+    docs._prepare_build_directory()
+
+    bib_file = expected["bibliography_file"]
+
+    # The .bib file is copied into the build directory by basename.
+    assert (docs.project_path / bib_file).exists(), (
+        f"{bib_file!r} should be copied into the build dir {docs.project_path}"
+    )
+
+    # _quarto.yml references the bibliography by basename.
+    quarto_yml = docs.project_path / "_quarto.yml"
+
+    assert quarto_yml.exists(), "_quarto.yml was not created"
+
+    with open(quarto_yml, encoding="utf-8") as f:
+        config = read_yaml(f)
+
+    assert config.get("bibliography") == bib_file, (
+        f"Expected bibliography {bib_file!r} in _quarto.yml, got {config.get('bibliography')!r}"
+    )
+
+
+@pytest.mark.parametrize("pkg_name", _AVAILABLE_PACKAGES)
+def test_L3_custom_css_wired_into_quarto_config(pkg_name: str, tmp_path: Path):
+    """Project-level site.css is copied into the build dir and wired into _quarto.yml."""
+    pkg_dir, spec = _make_package(pkg_name, tmp_path)
+    expected = spec.get("expected", {})
+    if not expected.get("has_custom_css"):
+        pytest.skip("No 'has_custom_css' in spec expected outcomes")
+
+    from yaml12 import read_yaml
+
+    docs = GreatDocs(project_path=str(pkg_dir))
+
+    # The generated great-docs.yml already carries the site.css key, so the
+    # build directory prep alone should copy the file and wire the config.
+    docs._prepare_build_directory()
+
+    css_file = expected["custom_css_file"]
+
+    # The .css file is copied into the build directory by basename.
+    assert (docs.project_path / css_file).exists(), (
+        f"{css_file!r} should be copied into the build dir {docs.project_path}"
+    )
+
+    # _quarto.yml references the CSS by basename.
+    quarto_yml = docs.project_path / "_quarto.yml"
+
+    assert quarto_yml.exists(), "_quarto.yml was not created"
+
+    with open(quarto_yml, encoding="utf-8") as f:
+        config = read_yaml(f)
+
+    assert css_file in (config.get("format", {}).get("html", {}).get("css") or []), (
+        f"Expected {css_file!r} in _quarto.yml format.html.css, "
+        f"got {config.get('format', {}).get('html', {}).get('css')!r}"
+    )
+
+
+@pytest.mark.parametrize("pkg_name", _AVAILABLE_PACKAGES)
 def test_L3_blended_homepage_index_content(pkg_name: str, tmp_path: Path):
     """In blended mode, index.qmd contains first UG page content + metadata sidebar."""
     pkg_dir, spec = _make_package(pkg_name, tmp_path)
@@ -1060,6 +1144,44 @@ def test_L3_blended_homepage_sidebar_first_entry(pkg_name: str, tmp_path: Path):
     assert first_href == expected_href, (
         f"Sidebar first entry should point to {expected_href!r}, got {first_href!r}"
     )
+
+
+def test_L3_code_include_expansion(tmp_path: Path):
+    """gdtest_code_include: include shortcodes for code files are expanded in user guide."""
+    pkg_dir, spec = _make_package("gdtest_code_include", tmp_path)
+    docs = GreatDocs(project_path=str(pkg_dir))
+    docs._prepare_build_directory()
+
+    ug_info = docs._discover_user_guide()
+    assert ug_info is not None
+
+    docs._copy_user_guide_to_docs(ug_info)
+
+    built = docs.project_path / "user-guide" / "includes.qmd"
+    assert built.exists(), "includes.qmd not found in build dir"
+
+    content = built.read_text(encoding="utf-8")
+
+    # Basic include should have expanded to a python code block
+    assert "```python" in content
+    assert "Widget" in content
+
+    # YAML include should have expanded to a yaml code block
+    assert "```yaml" in content
+    assert "my-app" in content
+
+    # Language override should use "r" instead of "python"
+    assert "```r" in content
+
+    # Code-file includes should be fully expanded (no shortcodes remain
+    # for .py/.yaml files — only .qmd/.md includes pass through to Quarto)
+    assert "{{< include" not in content or all(
+        ".qmd" in line or ".md" in line for line in content.splitlines() if "{{< include" in line
+    )
+    # Ensure triple curly brace escaping work properly for code includes.
+    original = r"{{{< include src/mypackage/examples/usage.py >}}}"
+    replaced = docs._expand_code_includes(original, tmp_path)
+    assert replaced == original
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

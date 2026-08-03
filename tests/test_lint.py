@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from great_docs._builtin.directives import DIRECTIVES
 from great_docs._lint import (
     LintIssue,
     LintResult,
@@ -243,6 +244,33 @@ class TestCheckCrossReferences:
         assert result.issues[0].severity == "error"
         assert "nonexistent_func" in result.issues[0].message
 
+    def test_broken_reference_in_second_seealso(self):
+        pkg = _make_pkg(
+            {
+                "func_a": _make_griffe_obj(
+                    docstring="Docs.\n\n%seealso func_b\n%seealso nonexistent_func"
+                ),
+                "func_b": _make_griffe_obj(docstring="Docs."),
+            }
+        )
+        result = LintResult()
+        _check_cross_references(pkg, "mypkg", ["func_a", "func_b"], result)
+
+        assert len(result.issues) == 1
+        assert result.issues[0].check == "broken-xref"
+        assert "nonexistent_func" in result.issues[0].message
+
+    def test_bare_seealso_does_not_lint_following_content(self):
+        pkg = _make_pkg(
+            {
+                "func_a": _make_griffe_obj(docstring="Docs.\n\n%seealso\nnonexistent prose"),
+            }
+        )
+        result = LintResult()
+        _check_cross_references(pkg, "mypkg", ["func_a"], result)
+
+        assert len(result.issues) == 0
+
     def test_seealso_to_class_method(self):
         method = _make_griffe_obj(kind="function", docstring="Method.")
         cls = _make_griffe_obj(
@@ -313,23 +341,36 @@ class TestCheckDocstringStyle:
 
 
 class TestCheckDirectiveConsistency:
-    def test_known_directives_ok(self):
-        doc = "Short.\n\n%seealso func_b\n%nodoc\n"
+    @pytest.mark.parametrize("directive", sorted(DIRECTIVES))
+    def test_registered_directive_is_known(self, directive: str):
+        doc = f"Short.\n\n%{directive}"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
-        assert len(result.issues) == 0
+        assert result.issues == []
 
     def test_unknown_directive(self):
-        doc = "Short.\n\n%deprecated since v2.0\n"
+        doc = "Short.\n\n%internal\n"
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
         assert len(result.issues) == 1
         assert result.issues[0].check == "unknown-directive"
-        assert "%deprecated" in result.issues[0].message
+        assert "%internal" in result.issues[0].message
+
+    @pytest.mark.parametrize("directive", ["WARNING", "SeeAlso", "NODOC"])
+    def test_mixed_case_directive_is_unknown(self, directive: str):
+        doc = f"Short.\n\n%{directive}"
+        pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=doc)})
+        result = LintResult()
+
+        _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
+
+        assert len(result.issues) == 1
+        assert result.issues[0].check == "unknown-directive"
+        assert f"%{directive}" in result.issues[0].message
 
     def test_no_docstring_skipped(self):
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=None)})
@@ -361,6 +402,7 @@ class TestRunLint:
     def test_griffe_import_error(self, mock_gd_cls, tmp_path):
         mock_gd = MagicMock()
         mock_gd._detect_package_name.return_value = "mypkg"
+        mock_gd._detect_module_name.return_value = None
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd_cls.return_value = mock_gd
 
@@ -386,7 +428,7 @@ class TestRunLint:
     def test_successful_lint_run(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
         mock_gd._detect_package_name.return_value = "mypkg"
-        mock_gd._normalize_package_name.return_value = "mypkg"
+        mock_gd._resolve_importable_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a", "func_b"]
         mock_gd._config.get.return_value = "numpy"
         mock_gd_cls.return_value = mock_gd
@@ -409,9 +451,37 @@ class TestRunLint:
 
     @patch("griffe.load")
     @patch("great_docs.core.GreatDocs")
+    def test_resolves_module_name_when_project_name_differs(
+        self, mock_gd_cls, mock_griffe_load, tmp_path
+    ):
+        """Regression: run_lint loads griffe by the importable module name, not the
+        dash-normalized PyPI project name, when the two diverge."""
+        mock_gd = MagicMock()
+        mock_gd._detect_package_name.return_value = "my-dist"
+        mock_gd._resolve_importable_name.return_value = "actual_module"
+        mock_gd._get_package_exports.return_value = ["func_a"]
+        mock_gd._config.get.return_value = "numpy"
+        mock_gd_cls.return_value = mock_gd
+
+        func_a = _make_griffe_obj(docstring="Documented.\n\nParameters\n----------\nx : int\n")
+        mock_pkg = MagicMock()
+        mock_pkg.members = {"func_a": func_a}
+        mock_griffe_load.return_value = mock_pkg
+
+        result = run_lint(tmp_path)
+
+        mock_gd._resolve_importable_name.assert_called_once_with("my-dist")
+        mock_griffe_load.assert_called_once_with(
+            "actual_module", search_paths=mock_gd._griffe_search_paths.return_value
+        )
+        assert result.package_name == "actual_module"
+
+    @patch("griffe.load")
+    @patch("great_docs.core.GreatDocs")
     def test_selective_checks(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
         mock_gd._detect_package_name.return_value = "mypkg"
+        mock_gd._detect_module_name.return_value = None
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a"]
         mock_gd._config.get.return_value = "numpy"
@@ -839,7 +909,7 @@ class TestCheckDirectiveConsistencyEdgeCases:
         """Unknown directive in a class method docstring."""
         method = _make_griffe_obj(
             kind="function",
-            docstring="Method.\n\n%deprecated since v2\n",
+            docstring="Method.\n\n%versionremoved 2.0\n",
         )
         cls = _make_griffe_obj(
             kind="class",
@@ -886,20 +956,6 @@ class TestCheckDirectiveConsistencyEdgeCases:
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
 
         assert len(result.issues) == 0
-
-    def test_empty_seealso_reference(self):
-        """Empty references inside %seealso should trigger empty-seealso warning."""
-        # This docstring has a trailing comma which produces an empty ref
-        doc = "Short.\n\n%seealso func_a, , func_b\n"
-        pkg = _make_pkg({"func_x": _make_griffe_obj(docstring=doc)})
-        result = LintResult()
-        _check_directive_consistency(pkg, "mypkg", ["func_x"], result)
-
-        # The extract_directives parser strips empty entries, but let's verify
-        # the branch is exercised if any empty name survives
-        # Note: the actual _directives.extract_directives filters empties via `if name:`
-        # so this won't produce an issue — but we still exercise the code path
-        assert all(i.check != "empty-seealso" for i in result.issues)
 
 
 # ---------------------------------------------------------------------------

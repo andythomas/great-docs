@@ -374,7 +374,9 @@ def test_preview_site_dir():
         site_path = str(Path("mysite").resolve())
         with patch.object(GreatDocs, "preview_site") as mock_preview:
             result = runner.invoke(cli, ["preview", "--site-dir", site_path])
-            mock_preview.assert_called_once_with(site_path, port=3000)
+            mock_preview.assert_called_once_with(
+                site_path, port=3000, open_path="", open_browser=True
+            )
 
 
 def test_preview_site_dir_project_path_warning():

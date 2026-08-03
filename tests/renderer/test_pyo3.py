@@ -17,7 +17,7 @@ import types
 
 import pytest
 
-from great_docs._renderer.introspection import (
+from great_docs._apiref.introspect import (
     _canonical_path,
     dynamic_alias,
 )
@@ -41,9 +41,9 @@ def test_canonical_path_returns_none_for_plain_value():
 
 
 def test_canonical_path_module():
-    """Modules continue to resolve to their dotted name."""
+    """A module reports a home for itself only, never for its members."""
     assert _canonical_path(sys, "") == "sys"
-    assert _canonical_path(sys, "path") == "sys:path"
+    assert _canonical_path(sys, "path") is None
 
 
 def _make_facade_with_builtin(monkeypatch):
@@ -81,32 +81,9 @@ def test_dynamic_alias_does_not_self_reference_pyo3_function(monkeypatch, tmp_pa
     assert canonical == "builtins:abs"
 
 
-def test_convert_rst_text_tolerates_non_string():
-    """Issue 5: a list-valued docstring section value must not crash rendering."""
-    from great_docs._renderer._rst_converters import _convert_rst_text
-
-    # A plain list (as produced by some docstring section kinds) should be
-    # coerced to a string instead of raising AttributeError.
-    out = _convert_rst_text(["a", "b"])
-    assert isinstance(out, str)
-    # And a normal string still passes through transformations.
-    assert _convert_rst_text("hello") == "hello"
-
-
 def test_lineno_none_does_not_crash_method_sort():
     """Issue 3: methods with `lineno=None` must sort without TypeError."""
     method_entries = [("foo", float("inf")), ("bar", float("inf"))]
     # The fix coerces None -> inf so this comparison is valid.
     method_entries.sort(key=lambda x: x[1])
     assert method_entries == [("foo", float("inf")), ("bar", float("inf"))]
-
-
-@pytest.mark.parametrize(
-    "value",
-    [None, 42, ["a"], {"k": "v"}, ("t",)],
-)
-def test_convert_rst_text_handles_various_non_strings(value):
-    from great_docs._renderer._rst_converters import _convert_rst_text
-
-    out = _convert_rst_text(value)
-    assert isinstance(out, str)

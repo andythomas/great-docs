@@ -612,10 +612,10 @@ class TestBuildLogHeader:
         assert "great-docs build" in output
 
     def test_header_contains_step_count(self):
-        log, stream = _make_log(total_steps=18)
+        log, stream = _make_log(total_steps=19)
         log.header()
         output = stream.getvalue()
-        assert "18 steps" in output
+        assert "19 steps" in output
 
     def test_header_contains_estimate(self):
         log, stream = _make_log(estimated_seconds=252)
@@ -670,6 +670,24 @@ class TestBuildLogHeader:
         border_line = lines[0]
         assert len(border_line) <= _BOX_MAX_WIDTH
 
+    def test_header_shows_package_location(self):
+        log, stream = _make_log(package_location="/path/to/site-packages/testpkg")
+        log.header()
+        output = stream.getvalue()
+        assert "from /path/to/site-packages/testpkg" in output
+
+    def test_header_no_location_when_empty(self):
+        log, stream = _make_log(package_location="")
+        log.header()
+        output = stream.getvalue()
+        assert "from " not in output
+
+    def test_header_location_with_remote_url(self):
+        log, stream = _make_log(package_location="https://github.com/posit-dev/great-tables.git")
+        log.header()
+        output = stream.getvalue()
+        assert "from https://github.com/posit-dev/great-tables.git" in output
+
 
 # =========================================================================
 # BuildLog — step_start
@@ -696,16 +714,16 @@ class TestBuildLogStepStart:
         assert "━" in output
 
     def test_step_start_pads_number(self):
-        log, stream = _make_log(force_color=False, total_steps=18)
+        log, stream = _make_log(force_color=False, total_steps=19)
         log.step_start(1, "First step")
         output = stream.getvalue()
-        assert "Step  1/18" in output
+        assert "Step  1/19" in output
 
     def test_step_start_double_digit(self):
-        log, stream = _make_log(force_color=False, total_steps=18)
+        log, stream = _make_log(force_color=False, total_steps=19)
         log.step_start(15, "Build site")
         output = stream.getvalue()
-        assert "Step 15/18" in output
+        assert "Step 15/19" in output
 
     def test_step_start_resets_warnings(self):
         log, stream = _make_log()
@@ -1711,6 +1729,35 @@ class TestDefensiveWrite:
 
         log = BuildLog(stream=ErrorStream(), force_color=False, width=80)
         log._write("test")  # should not raise
+
+    def test_substep_survives_cp1252_stdout(self):
+        """Issue #200: box-drawing substeps must not crash on cp1252 stdout."""
+        buffer = io.BytesIO()
+        stream = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict")
+        log = BuildLog(stream=stream, force_color=False, width=80)
+        log.substep("SEO enhancements applied")
+        output = buffer.getvalue().decode("utf-8", errors="replace")
+        assert "SEO enhancements applied" in output
+
+    def test_footer_survives_cp1252_stdout(self):
+        """Issue #200: celebration emoji in footer must not crash on cp1252 stdout."""
+        buffer = io.BytesIO()
+        stream = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict")
+        log = BuildLog(stream=stream, force_color=False, width=80)
+        log.footer(site_path="out/index.html")
+        output = buffer.getvalue().decode("utf-8", errors="replace")
+        assert "Site ready" in output
+        assert "Build complete" in output
+
+    def test_post_render_stdio_reconfigure_allows_emoji(self):
+        """Issue #200: post-render status prints must survive cp1252 stdout."""
+        buffer = io.BytesIO()
+        wrapper = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict")
+        wrapper.reconfigure(encoding="utf-8", errors="replace")
+        print("\n🔍 Applying SEO enhancements to HTML files...", file=wrapper)
+        wrapper.flush()
+        output = buffer.getvalue().decode("utf-8", errors="replace")
+        assert "SEO enhancements" in output
 
     def test_progress_bar_survives_broken_pipe(self):
         class BrokenStream:

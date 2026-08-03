@@ -62,6 +62,7 @@ ALL_PACKAGES: list[str] = [
     "gdtest_index_md",  # 41
     "gdtest_no_readme",  # 42
     "gdtest_index_wins",  # 43
+    "gdtest_index_frontmatter",  # 43b (issue #237 regression)
     # 44–45: Supporting pages
     "gdtest_full_extras",  # 44
     "gdtest_github_contrib",  # 45
@@ -166,6 +167,7 @@ ALL_PACKAGES: list[str] = [
     "gdtest_rst_danger",  # 32
     "gdtest_rst_important",  # 33
     "gdtest_rst_mixed_dirs",  # 34
+    "gdtest_directives",  # 34b
     "gdtest_sphinx_func_role",  # 35
     "gdtest_sphinx_class_role",  # 36
     "gdtest_sphinx_exc_role",  # 37
@@ -175,6 +177,7 @@ ALL_PACKAGES: list[str] = [
     "gdtest_google_rich",  # 41
     "gdtest_sphinx_rich",  # 42
     "gdtest_docstring_examples",  # 43
+    "gdtest_examples_rst_repro",  # RST markup inside a numpy Examples section
     "gdtest_docstring_notes",  # 44
     "gdtest_docstring_warnings",  # 45
     "gdtest_docstring_references",  # 46
@@ -384,8 +387,31 @@ ALL_PACKAGES: list[str] = [
     "gdtest_details_shortcode",  # 191
     # 192: Termshow recording/playback showcase
     "gdtest_termshow",  # 192
-    # 193: Marimo notebook islands showcase
-    "gdtest_marimo",  # 193
+    # 193: Lightbox extension showcase
+    "gdtest_lightbox",  # 193
+    # 194: Hero name suppressed (hero.name: false)
+    "gdtest_hero_no_name",  # 194
+    # 195: Tags in a custom section with a nested dir
+    "gdtest_sec_nested_tags",  # 195
+    # 196: Cross-refs into numeric-prefix section subdirs
+    "gdtest_sec_xref_subdirs",  # 196
+    # 197: Project-level bibliography forwarded into _quarto.yml
+    "gdtest_bibliography",  # 197
+    # 198: Project-level bibliography with a custom (numeric) CSL style
+    "gdtest_bibliography_csl",  # 198
+    # 199: Project-level custom CSS forwarded into _quarto.yml
+    "gdtest_custom_css",  # 199
+    # 200: Minimal Go CLI project — go.mod + cobra-style --help, no Python module
+    "gdtest_go_cli",  # 200
+    # 201: Dark-mode image assets in user guide non-images/ subdirectories
+    "gdtest_ug_dark_assets",  # 201
+    # 202: Code-include shortcode in user guide pages
+    "gdtest_code_include",  # 202
+    # 203: Mixed root files and subdirectories with numeric prefix interleaving
+    "gdtest_ug_mixed_subdir_order",  # 203
+    "gdtest_type_aliases",  # 204
+    # 205: Marimo notebook islands showcase
+    "gdtest_marimo",  # 205
 ]
 
 
@@ -437,6 +463,7 @@ DIMENSIONS: dict[str, dict[str, str]] = {
     "C22": {"axis": "objects", "label": "Decorator functions"},
     "C23": {"axis": "objects", "label": "Custom exceptions"},
     "C24": {"axis": "objects", "label": "Re-exported symbols"},
+    "C25": {"axis": "objects", "label": "PEP 695 type aliases"},
     "D1": {"axis": "docstrings", "label": "NumPy"},
     "D2": {"axis": "docstrings", "label": "Google"},
     "D3": {"axis": "docstrings", "label": "Sphinx"},
@@ -572,6 +599,7 @@ DIMENSIONS: dict[str, dict[str, str]] = {
     "N9": {"axis": "sections", "label": "Single-page sidebar hide"},
     "N10": {"axis": "sections", "label": "Section index hero cards"},
     "N11": {"axis": "sections", "label": "dir_titles + numeric prefix subdirs"},
+    "N12": {"axis": "sections", "label": "Cross-refs into numeric-prefix subdirs"},
     # Reference axes
     "P1": {"axis": "reference", "label": "Explicit reference"},
     "P2": {"axis": "reference", "label": "members: false"},
@@ -591,6 +619,7 @@ DIMENSIONS: dict[str, dict[str, str]] = {
     "Q5": {"axis": "theme", "label": "TOC depth 3"},
     "Q6": {"axis": "theme", "label": "Custom TOC title"},
     "Q7": {"axis": "theme", "label": "Site combo"},
+    "Q8": {"axis": "theme", "label": "site.css: custom stylesheet"},
     # Skill axes
     "S1": {"axis": "skill", "label": "Auto-generated skill"},
     "S2": {"axis": "skill", "label": "Curated skill"},
@@ -607,11 +636,16 @@ DIMENSIONS: dict[str, dict[str, str]] = {
     "K54": {"axis": "config", "label": "inline_methods: default (5)"},
     "K55": {"axis": "config", "label": "inline_methods: true (never split)"},
     "K56": {"axis": "config", "label": "inline_methods: false (always split)"},
+    "K57": {"axis": "config", "label": "project-level bibliography"},
+    "K58": {"axis": "config", "label": "citation style (CSL)"},
     # Page tags axes
     "T1": {"axis": "tags", "label": "Page tags with hierarchy + shadow"},
     "T3": {"axis": "tags", "label": "Tag location top vs. bottom with per-page overrides"},
+    "T4": {"axis": "tags", "label": "Tags in a custom section with a nested dir"},
     # Page status axes
     "T2": {"axis": "status", "label": "Page status badges in sidebar + pages"},
+    # Go CLI axes
+    "Z1": {"axis": "go_cli", "label": "Go CLI (cobra-style --help)"},
 }
 
 
@@ -620,6 +654,15 @@ DIMENSIONS: dict[str, dict[str, str]] = {
 # exercises and why it matters. Displayed on the hub card and detail pages.
 
 PACKAGE_DESCRIPTIONS: dict[str, str] = {
+    "gdtest_type_aliases": (
+        "A package whose public API is mostly PEP 695 `type X = ...` aliases: "
+        "generic, bounded, constrained, variadic, ParamSpec, recursive, and a long "
+        "Literal. On the Reference page you should see a 'Type Aliases' section "
+        "listing them, each signature rendered in its source form with the `type` "
+        "keyword. The Ledger class declares an alias in its own body, which should "
+        "appear under its own 'Type Aliases' heading rather than being dropped. "
+        "Requires Python 3.12+."
+    ),
     "gdtest_minimal": (
         "The simplest possible package: two functions (greet, add) with NumPy "
         "docstrings in a flat layout. On the Reference page you should see a "
@@ -877,6 +920,15 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "index.qmd content ('Index Wins') NOT the README.md. Look for the "
         "text 'This index.qmd should take priority over README.md.' Tests the "
         "full priority chain: index.qmd > index.md > README.md."
+    ),
+    "gdtest_index_frontmatter": (
+        "Regression for issue #237. index.qmd carries its own YAML frontmatter "
+        "(title 'Embedded Frontmatter Title') plus a Quarto code cell with "
+        "`#| code-fold: true`. The landing page must NOT show the raw text "
+        "'title: Embedded Frontmatter Title' (frontmatter is stripped, not "
+        "embedded mid-document), and the code cell must stay folded (cell "
+        "options survive the heading bump). One function (hello) on the "
+        "Reference page."
     ),
     "gdtest_full_extras": (
         "Includes every supporting page type. The sidebar/nav should show "
@@ -1347,45 +1399,48 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
     ),
     # ── 26–50: Docstring richness ─────────────────────────────────────────
     "gdtest_rst_versionadded": (
-        "Docstrings contain '.. versionadded:: 2.0' RST directive. Post-render "
-        "should translate this into a styled callout div with version info. "
+        "Docstrings contain '.. versionadded:: 2.0' RST directives. The built-in "
+        "handler should convert them into Quarto note callouts with version info. "
         "Two functions with versionadded in their docstrings."
     ),
     "gdtest_rst_deprecated": (
         "Docstrings contain '.. deprecated:: 1.5' with deprecation message. "
-        "Post-render should show a deprecation warning callout. Two functions "
-        "with deprecated directives."
+        "The built-in handler should produce Quarto warning callouts. Two "
+        "functions have deprecated directives."
     ),
     "gdtest_rst_note": (
-        "Docstrings contain '.. note::' with body text. Post-render should "
-        "translate into a note callout. Three functions with note blocks."
+        "Docstrings contain '.. note::' with body text. The built-in handler "
+        "should produce Quarto note callouts. Three functions have note blocks."
     ),
     "gdtest_rst_warning": (
-        "Docstrings contain '.. warning::' directive. Post-render should "
-        "translate into a warning callout (yellow/orange). Two functions "
-        "with warning blocks."
+        "Docstrings contain '.. warning::' directives. The built-in handler "
+        "should produce Quarto warning callouts. Two functions have warning blocks."
     ),
     "gdtest_rst_tip": (
-        "Docstrings contain '.. tip::' directive. Post-render should "
-        "translate into a tip callout. Two functions with helpful tips."
+        "Docstrings contain '.. tip::' directives. The built-in handler should "
+        "produce Quarto tip callouts. Two functions have helpful tips."
     ),
     "gdtest_rst_caution": (
-        "Docstrings contain '.. caution::' directive. Post-render should "
-        "translate into a caution callout (orange). Two functions."
+        "Docstrings contain '.. caution::' directives. The built-in handler "
+        "should produce Quarto caution callouts. Two functions exercise them."
     ),
     "gdtest_rst_danger": (
-        "Docstrings contain '.. danger::' directive. Post-render should "
-        "translate into a danger callout (red). Two functions with hazard "
-        "warnings."
+        "Docstrings contain '.. danger::' directives. The built-in handler "
+        "should produce Quarto important callouts. Two functions have hazard warnings."
     ),
     "gdtest_rst_important": (
-        "Docstrings contain '.. important::' directive. Post-render should "
-        "translate into an important callout. Two functions."
+        "Docstrings contain '.. important::' directives. The built-in handler "
+        "should produce Quarto important callouts. Two functions exercise them."
     ),
     "gdtest_rst_mixed_dirs": (
         "Docstrings mix multiple RST directives: versionadded, deprecated, "
         "note, warning, tip in the same module and sometimes SAME docstring. "
         "All should render as distinct callouts."
+    ),
+    "gdtest_directives": (
+        "One docstring contains all ten canonical Great Docs '%' callout "
+        "directives. Inline, multiline, versioned, and aliased callouts should "
+        "render without leaving raw directive text."
     ),
     "gdtest_sphinx_func_role": (
         "Docstrings contain :py:func:`other_func` cross-reference roles. "
@@ -2151,6 +2206,97 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "Features CLI command demos (install, init, build), TUI interface "
         "recordings with box-drawing and ANSI colors, chapter navigation, "
         "floating annotations, and recording tips user guide."
+    ),
+    # ── 193: Lightbox extension showcase ─────────────────────────────
+    "gdtest_lightbox": (
+        "Lightbox extension showcase demonstrating the gd-lightbox image viewer "
+        "with all feature combinations: explicit .lightbox class, auto mode "
+        "(lightbox: true), dark-mode image variants (naming convention and "
+        "explicit dark= attribute), gallery grouping with filmstrip navigation, "
+        "captions and credits, .nolightbox opt-out, and deep-linking."
+    ),
+    # ── 194: Hero name suppressed ────────────────────────────────────
+    "gdtest_hero_no_name": (
+        "Hero with the name suppressed via hero.name: false plus a "
+        "hero-specific logo override. Tests that setting hero.name: false "
+        "removes the name entirely instead of falling back to the package "
+        "or display name, while the hero still renders the overridden logo."
+    ),
+    "gdtest_sec_nested_tags": (
+        "A custom section titled 'Examples' published from a nested directory "
+        "(dir: docs/examples) whose path does not match the title-derived slug. "
+        "Two of its pages carry flat and hierarchical tags. Tests that page tag "
+        "scanning resolves the same build directory used to copy the section "
+        "(great-docs/docs/examples/) rather than the wrong title-slug path, so "
+        "tagged pages in the section appear in tags/index.qmd and in the "
+        "client-side tag data."
+    ),
+    "gdtest_sec_xref_subdirs": (
+        "A custom 'Examples' section whose pages live in numerically-prefixed "
+        "subdirectories (01-topic-a/, 02-topic-b/) and cross-reference one "
+        "another, plus an auto-discovery user-guide page that links into the "
+        "section. Link rewriting strips numeric prefixes from every path "
+        "component, so the section copy must strip prefixes from subdirectory "
+        "names too — otherwise files land at examples/02-topic-b/ while links "
+        "point at examples/topic-b/, producing dead cross-references. Verifies "
+        "the on-disk section paths and the rewritten links agree."
+    ),
+    "gdtest_bibliography": (
+        "A package whose great-docs.yml sets a single project-level "
+        "`bibliography: docs/references.bib` key (issue #214) and then cites it "
+        "from four different contexts with no per-page `bibliography:` "
+        "frontmatter: the homepage (README→index.qmd), a top-level user-guide "
+        "page, a user-guide page nested one subdirectory deep, and a function "
+        "docstring on a generated API reference page. One key (knuth1984) is "
+        "shared across pages to prove a single bibliography serves the whole "
+        "project. Great Docs should copy the .bib into the build directory and "
+        "write `bibliography: references.bib` into _quarto.yml, so Quarto's "
+        "citeproc resolves every citation inline and renders a References "
+        "section on each page — regardless of nesting depth. If the wiring is "
+        "missing you'll see raw [@knuth1984] text and no references, exactly the "
+        "bug this verifies is fixed."
+    ),
+    "gdtest_bibliography_csl": (
+        "Like gdtest_bibliography, but great-docs.yml also sets the optional "
+        "`csl: docs/numeric.csl` key. The custom Citation Style Language file is "
+        "copied into the build and wired into _quarto.yml, so citations render as "
+        "bracketed numbers ([1], [2]) and the reference list is numbered, instead "
+        "of the default Chicago author-date style. Confirms CSL selection works "
+        "end to end (issue #214's optional CSL support)."
+    ),
+    "gdtest_custom_css": (
+        "A package whose great-docs.yml sets a single project-level "
+        "`site.css: [docs/custom.css]` key. Great Docs should copy "
+        "the stylesheet into the build directory and write it into _quarto.yml's "
+        "format.html.css. If the wiring is missing, the marker rule in custom.css "
+        "never reaches the rendered site."
+    ),
+    "gdtest_go_cli": (
+        "A pure Go CLI project (no Python module). The project has a go.mod and a "
+        "stdlib-only CLI under cmd/hello/ that emits cobra-style --help output. "
+        "Great Docs compiles the binary with 'go build', recurses through "
+        "'hello --help', 'hello greet --help', and 'hello version --help', and "
+        "generates a CLI reference section in the site. On the CLI reference "
+        "index you should see 'greet' and 'version' listed (with 'completion' "
+        "and 'help' excluded). Each subcommand should have its own page with "
+        "flags documented. The landing page comes from README.md. There is no "
+        "API Reference section — the site is driven entirely by the Go CLI."
+    ),
+    # ── 201: Dark-mode image assets in user guide subdirectories ─────
+    "gdtest_ug_dark_assets": (
+        "User guide with dark-mode image assets in non-images/ subdirectories "
+        "(assets/orientation/, assets/charts/, assets/diagrams/). Tests that "
+        "dark-mode siblings — both naming-convention (.light./.dark.) and "
+        "explicit dark= attribute — are copied to _site. Regression test for "
+        "GitHub issue #268."
+    ),
+    "gdtest_code_include": (
+        "User guide page exercising the {{< code-include >}} shortcode. "
+        "Includes a Python example file with auto language detection, a YAML "
+        "config file, a line-range selection (lines='1-3'), and a language "
+        "override (lang='text'). The module exports Widget (class) and "
+        "run_widget (function). Key test: code-include shortcode renders "
+        "embedded source files correctly in user guide pages."
     ),
 }
 

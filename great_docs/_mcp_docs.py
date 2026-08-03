@@ -2,17 +2,29 @@
 
 Introspects an MCP server module to extract tool, resource, and prompt
 definitions, then generates Quarto reference pages.
+
+Introspection is performed over the MCP *wire protocol*: the target server is
+launched in a subprocess (via `great_docs._mcp_runner`) and queried with a
+standard MCP client. This keeps discovery independent of the `mcp` library's
+internal handler registries, which change between major releases: the JSON the
+protocol returns is stable regardless of the installed library version.
 """
 
 from __future__ import annotations
 
 import importlib
 import inspect
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
 from ._translations import get_translation
+
+# How long (seconds) to wait for the server subprocess to answer each request
+# before giving up on protocol introspection.
+_PROTOCOL_TIMEOUT = 30.0
 
 
 def discover_mcp_server(
@@ -25,10 +37,10 @@ def discover_mcp_server(
     Parameters
     ----------
     module_path
-        Importable module path (e.g., "sweet.mcp").
+        Importable module path (e.g., `"sweet.mcp"`).
     server_var
-        Name of the Server variable in the module. If None, auto-detects
-        the first ``mcp.server.Server`` instance.
+        Name of the Server variable in the module. If `None`, auto-detects
+        the first `mcp.server.Server` instance.
 
     Returns
     -------
@@ -42,114 +54,322 @@ def discover_mcp_server(
         print(f"Could not import MCP module {module_path}: {e}")
         return None
 
-    # Find the Server instance
-    server = None
-    if server_var:
-        server = getattr(module, server_var, None)
-    else:
-        # Auto-detect: look for mcp.server.Server instances
-        for attr_name in dir(module):
-            obj = getattr(module, attr_name)
-            type_name = type(obj).__name__
-            module_name = type(obj).__module__ or ""
-            if type_name == "Server" and "mcp" in module_name:
-                server = obj
-                break
-
+    server = _locate_server(module, server_var)
     if server is None:
         print(f"No MCP Server instance found in {module_path}")
         return None
 
-    # Extract server name
-    server_name = getattr(server, "name", None) or module_path.split(".")[-1]
+    # Primary path: introspect through the wire protocol (version-agnostic).
+    info = _introspect_via_protocol(module_path, server_var)
 
-    # Extract tools by calling the registered list_tools handler
-    tools = _extract_tools(module, server)
-    resources = _extract_resources(module, server)
-    prompts = _extract_prompts(module, server)
-    resource_templates = _extract_resource_templates(module, server)
-    instructions = _extract_instructions(server)
-    completions_enabled = _extract_completions_enabled(server)
+    if info is None:
+        # Protocol introspection failed entirely (e.g., the server could not be
+        # launched). Fall back to a best-effort static scan of the source so at
+        # least the tool list is populated.
+        print(
+            f"MCP protocol introspection failed for {module_path}; "
+            "falling back to static source scan"
+        )
+        info = {
+            "tools": [],
+            "resources": [],
+            "prompts": [],
+            "resource_templates": [],
+            "instructions": None,
+            "completions_enabled": False,
+        }
 
-    return {
-        "name": server_name,
-        "module": module_path,
-        "tools": tools,
-        "resources": resources,
-        "prompts": prompts,
-        "resource_templates": resource_templates,
-        "instructions": instructions,
-        "completions_enabled": completions_enabled,
-    }
+    if not info["tools"]:
+        info["tools"] = _extract_tools_from_source(module)
+
+    # Fill in the server name from the module if the protocol did not supply one.
+    if not info.get("name"):
+        info["name"] = getattr(server, "name", None) or module_path.split(".")[-1]
+    info["module"] = module_path
+
+    return info
 
 
-def _extract_tools(module: Any, server: Any) -> list[dict[str, Any]]:
-    """Extract tool definitions from the server's registered handlers."""
-    tools: list[dict[str, Any]] = []
+def _locate_server(module: Any, server_var: str | None) -> Any:
+    """Locate the MCP `Server`/`FastMCP` instance in an imported module."""
+    if server_var:
+        return getattr(module, server_var, None)
 
-    # Strategy 1: Call the list_tools handler directly (async → run sync)
+    for attr_name in dir(module):
+        obj = getattr(module, attr_name)
+        type_name = type(obj).__name__
+        module_name = type(obj).__module__ or ""
+        if "mcp" in module_name and type_name in ("Server", "FastMCP"):
+            return obj
+    return None
+
+
+def _introspect_via_protocol(
+    module_path: str,
+    server_var: str | None,
+) -> dict[str, Any] | None:
+    """Launch the server and read its capabilities over the MCP protocol.
+
+    Runs the target server in a subprocess via `great_docs._mcp_runner` and
+    speaks the MCP protocol to it with a standard client session. Returns the
+    server metadata dict, or `None` if the client could not connect or the
+    `mcp` client APIs are unavailable.
+    """
+    try:
+        import asyncio
+    except Exception:
+        return None
+
+    try:
+        return asyncio.run(_collect_over_protocol(module_path, server_var))
+    except Exception as e:
+        print(f"Could not introspect MCP server over protocol: {e}")
+        return None
+
+
+async def _collect_over_protocol(
+    module_path: str,
+    server_var: str | None,
+) -> dict[str, Any] | None:
+    """Connect to the server subprocess and collect all metadata as plain dicts."""
     import asyncio
 
-    handler = None
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
 
-    # The mcp library stores handlers keyed by request type classes
-    request_handlers = getattr(server, "request_handlers", {})
-    if not request_handlers:
-        request_handlers = getattr(server, "_request_handlers", {})
+    args = ["-m", "great_docs._mcp_runner", module_path]
+    if server_var:
+        args.append(server_var)
 
-    for key, handler_fn in request_handlers.items():
-        key_str = getattr(key, "__name__", str(key))
-        if "ListTools" in key_str or "list_tools" in key_str:
-            handler = handler_fn
-            break
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=args,
+        env=dict(os.environ),
+        cwd=os.getcwd(),
+    )
 
-    if handler:
+    async with stdio_client(params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            init = _dump(await asyncio.wait_for(session.initialize(), _PROTOCOL_TIMEOUT))
+
+            server_name = (init.get("serverInfo") or {}).get("name")
+
+            instructions = init.get("instructions")
+            if instructions and isinstance(instructions, str) and instructions.strip():
+                instructions = instructions.strip()
+            else:
+                instructions = None
+
+            caps = init.get("capabilities") or {}
+            completions_enabled = caps.get("completions") is not None
+
+            tools = await _list_tools(session)
+            resources = await _list_resources(session)
+            resource_templates = await _list_resource_templates(session)
+            prompts = await _list_prompts(session)
+
+            return {
+                "name": server_name,
+                "tools": tools,
+                "resources": resources,
+                "prompts": prompts,
+                "resource_templates": resource_templates,
+                "instructions": instructions,
+                "completions_enabled": completions_enabled,
+            }
+
+
+def _dump(obj: Any) -> dict[str, Any]:
+    """Serialize an MCP result/model to its wire-JSON dict (camelCase keys).
+
+    `mcp` v1 and v2 disagree on Python attribute names (v2 switched result
+    models to snake_case), but `model_dump(by_alias=True)` emits the stable
+    camelCase field names defined by the MCP protocol in *both* versions. Read
+    from that dict rather than touching attributes so discovery is not coupled to
+    a particular library version.
+    """
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "model_dump"):
         try:
-            # Run the async handler
-            loop = asyncio.new_event_loop()
-            try:
-                # Build a minimal request object if needed
-                try:
-                    from mcp.types import ListToolsRequest
-
-                    req = ListToolsRequest(method="tools/list")
-                except Exception:
-                    req = None
-                result = loop.run_until_complete(handler(req))
-                # Result may be wrapped in ServerResult with .root
-                inner = getattr(result, "root", result)
-                tool_list = getattr(inner, "tools", None)
-                if tool_list is None and isinstance(inner, (list, tuple)):
-                    tool_list = inner
-                if tool_list:
-                    for tool in tool_list:
-                        tools.append(_tool_to_dict(tool))
-            finally:
-                loop.close()
+            return obj.model_dump(by_alias=True, exclude_none=True)
         except Exception:
             pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict(by_alias=True)
+        except Exception:
+            pass
+    return {}
 
-    # Strategy 2: If handler approach failed, scan for Tool() instantiations
-    # by looking at the source of the list_tools function
-    if not tools:
-        tools = _extract_tools_from_source(module)
 
+async def _call_list(method: Any, cursor: str | None) -> dict[str, Any]:
+    """Call an MCP client `list_*` method across `mcp` v1/v2 signatures.
+
+    `mcp` v1 paginates via a `cursor=` keyword; v2 wraps it in a
+    `params=PaginatedRequestParams(cursor=...)` object. Detect which shape the
+    installed client exposes, call accordingly, and return the result as a
+    wire-JSON dict.
+    """
+    import asyncio
+    import inspect
+
+    try:
+        param_names = set(inspect.signature(method).parameters)
+    except (TypeError, ValueError):
+        param_names = set()
+
+    if cursor is None:
+        call = method()
+    elif "cursor" in param_names:
+        call = method(cursor=cursor)
+    elif "params" in param_names:
+        from mcp.types import PaginatedRequestParams
+
+        call = method(params=PaginatedRequestParams(cursor=cursor))
+    else:
+        call = method()
+
+    return _dump(await asyncio.wait_for(call, _PROTOCOL_TIMEOUT))
+
+
+async def _list_tools(session: Any) -> list[dict[str, Any]]:
+    """Fetch all tools, following pagination cursors."""
+    tools: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        result = await _call_list(session.list_tools, cursor)
+        for tool in result.get("tools", []) or []:
+            tools.append(
+                {
+                    "name": tool.get("name", "unknown"),
+                    "description": tool.get("description", "") or "",
+                    "input_schema": tool.get("inputSchema") or {},
+                }
+            )
+        cursor = result.get("nextCursor")
+        if not cursor:
+            break
     return tools
 
 
-def _tool_to_dict(tool: Any) -> dict[str, Any]:
-    """Convert an MCP Tool object to a plain dictionary."""
-    schema = getattr(tool, "inputSchema", {}) or {}
-    if hasattr(schema, "model_dump"):
-        schema = schema.model_dump()
-    elif hasattr(schema, "dict"):
-        schema = schema.dict()
+async def _list_resources(session: Any) -> list[dict[str, Any]]:
+    """Fetch all resources, following pagination cursors."""
+    resources: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        try:
+            result = await _call_list(session.list_resources, cursor)
+        except Exception:
+            break
+        for r in result.get("resources", []) or []:
+            resources.append(
+                {
+                    "uri": str(r.get("uri", "")),
+                    "name": r.get("name", "") or "",
+                    "description": r.get("description", "") or "",
+                    "mime_type": r.get("mimeType"),
+                }
+            )
+        cursor = result.get("nextCursor")
+        if not cursor:
+            break
+    return resources
 
-    return {
-        "name": getattr(tool, "name", "unknown"),
-        "description": getattr(tool, "description", ""),
-        "input_schema": schema,
-    }
+
+async def _list_resource_templates(session: Any) -> list[dict[str, Any]]:
+    """Fetch all resource templates."""
+    templates: list[dict[str, Any]] = []
+    try:
+        result = await _call_list(session.list_resource_templates, None)
+    except Exception:
+        return templates
+    for t in result.get("resourceTemplates", []) or []:
+        templates.append(
+            {
+                "name": t.get("name", "") or "",
+                "uri_template": str(t.get("uriTemplate", "") or ""),
+                "description": t.get("description", "") or "",
+                "mime_type": t.get("mimeType"),
+            }
+        )
+    return templates
+
+
+async def _list_prompts(session: Any) -> list[dict[str, Any]]:
+    """Fetch all prompts along with their expanded message content."""
+    prompts: list[dict[str, Any]] = []
+    try:
+        result = await _call_list(session.list_prompts, None)
+    except Exception:
+        return prompts
+
+    for p in result.get("prompts", []) or []:
+        arguments = []
+        required_names = []
+        for arg in p.get("arguments") or []:
+            is_required = bool(arg.get("required", False))
+            arg_name = arg.get("name", "")
+            arguments.append(
+                {
+                    "name": arg_name,
+                    "description": arg.get("description", "") or "",
+                    "required": is_required,
+                }
+            )
+            if is_required:
+                required_names.append(arg_name)
+
+        name = p.get("name", "")
+        prompt_data: dict[str, Any] = {
+            "name": name,
+            "description": p.get("description", "") or "",
+            "arguments": arguments,
+            "messages": _messages_for_prompt(
+                await _get_prompt_messages(session, name, required_names)
+            ),
+        }
+        prompts.append(prompt_data)
+
+    return prompts
+
+
+async def _get_prompt_messages(
+    session: Any, name: str, required_names: list[str]
+) -> list[dict[str, Any]]:
+    """Call `prompts/get` for a prompt, tolerating required-argument servers."""
+    import asyncio
+
+    # Try with no arguments first; if the server rejects that because arguments
+    # are required, retry with placeholder values so we can still show a preview.
+    attempts: list[dict[str, str]] = [{}]
+    if required_names:
+        attempts.append({n: f"<{n}>" for n in required_names})
+
+    for args in attempts:
+        try:
+            result = await asyncio.wait_for(session.get_prompt(name, args), _PROTOCOL_TIMEOUT)
+            return _dump(result).get("messages", []) or []
+        except Exception:
+            continue
+    return []
+
+
+def _messages_for_prompt(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Flatten MCP prompt messages (wire-JSON dicts) into `{role, text}` dicts."""
+    out: list[dict[str, str]] = []
+    for msg in messages or []:
+        role = msg.get("role", "user")
+        content = msg.get("content")
+        # Content may be a single content block or a list of them.
+        blocks = content if isinstance(content, list) else [content]
+        for block in blocks:
+            text = block.get("text", "") if isinstance(block, dict) else ""
+            if text:
+                out.append({"role": role, "text": text})
+    return out
 
 
 def _extract_tools_from_source(module: Any) -> list[dict[str, Any]]:
@@ -173,187 +393,6 @@ def _extract_tools_from_source(module: Any) -> list[dict[str, Any]]:
         tools.append({"name": name, "description": desc, "input_schema": {}})
 
     return tools
-
-
-def _extract_resources(module: Any, server: Any) -> list[dict[str, Any]]:
-    """Extract resource definitions from the server."""
-    resources: list[dict[str, Any]] = []
-    import asyncio
-
-    request_handlers = getattr(server, "request_handlers", {})
-    if not request_handlers:
-        request_handlers = getattr(server, "_request_handlers", {})
-
-    for key, handler_fn in request_handlers.items():
-        key_str = getattr(key, "__name__", str(key))
-        if "ListResources" in key_str or "list_resources" in key_str:
-            try:
-                loop = asyncio.new_event_loop()
-                try:
-                    result = loop.run_until_complete(handler_fn(None))
-                    inner = getattr(result, "root", result)
-                    resource_list = getattr(inner, "resources", None)
-                    if resource_list is None and isinstance(inner, (list, tuple)):
-                        resource_list = inner
-                    if resource_list:
-                        for r in resource_list:
-                            resources.append(
-                                {
-                                    "uri": str(getattr(r, "uri", "")),
-                                    "name": getattr(r, "name", ""),
-                                    "description": getattr(r, "description", ""),
-                                    "mime_type": getattr(r, "mimeType", None),
-                                }
-                            )
-                finally:
-                    loop.close()
-            except Exception:
-                pass
-            break
-
-    return resources
-
-
-def _extract_prompts(module: Any, server: Any) -> list[dict[str, Any]]:
-    """Extract prompt definitions from the server, including message content."""
-    prompts: list[dict[str, Any]] = []
-    import asyncio
-
-    request_handlers = getattr(server, "request_handlers", {})
-    if not request_handlers:
-        request_handlers = getattr(server, "_request_handlers", {})
-
-    # First, get the prompt list
-    list_handler = None
-    get_handler = None
-    for key, handler_fn in request_handlers.items():
-        key_str = getattr(key, "__name__", str(key))
-        if "ListPrompts" in key_str or "list_prompts" in key_str:
-            list_handler = handler_fn
-        if "GetPrompt" in key_str or "get_prompt" in key_str:
-            get_handler = handler_fn
-
-    if list_handler:
-        try:
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(list_handler(None))
-                inner = getattr(result, "root", result)
-                prompt_list = getattr(inner, "prompts", None)
-                if prompt_list is None and isinstance(inner, (list, tuple)):
-                    prompt_list = inner
-                if prompt_list:
-                    for p in prompt_list:
-                        arguments = []
-                        for arg in getattr(p, "arguments", []) or []:
-                            arguments.append(
-                                {
-                                    "name": getattr(arg, "name", ""),
-                                    "description": getattr(arg, "description", ""),
-                                    "required": getattr(arg, "required", False),
-                                }
-                            )
-                        prompt_data: dict[str, Any] = {
-                            "name": getattr(p, "name", ""),
-                            "description": getattr(p, "description", ""),
-                            "arguments": arguments,
-                            "messages": [],
-                        }
-
-                        # Try to get the actual prompt messages
-                        if get_handler:
-                            try:
-                                from mcp.types import GetPromptRequest, GetPromptRequestParams
-
-                                req = GetPromptRequest(
-                                    method="prompts/get",
-                                    params=GetPromptRequestParams(
-                                        name=getattr(p, "name", ""),
-                                        arguments=None,
-                                    ),
-                                )
-                                get_result = loop.run_until_complete(get_handler(req))
-                                get_inner = getattr(get_result, "root", get_result)
-                                messages = getattr(get_inner, "messages", []) or []
-                                for msg in messages:
-                                    role = getattr(msg, "role", "user")
-                                    content = getattr(msg, "content", None)
-                                    if content:
-                                        text = getattr(content, "text", "")
-                                        if text:
-                                            prompt_data["messages"].append(
-                                                {"role": role, "text": text}
-                                            )
-                            except Exception:
-                                pass
-
-                        prompts.append(prompt_data)
-            finally:
-                loop.close()
-        except Exception:
-            pass
-
-    return prompts
-
-
-def _extract_resource_templates(module: Any, server: Any) -> list[dict[str, Any]]:
-    """Extract resource template definitions from the server."""
-    templates: list[dict[str, Any]] = []
-    import asyncio
-
-    request_handlers = getattr(server, "request_handlers", {})
-    if not request_handlers:
-        request_handlers = getattr(server, "_request_handlers", {})
-
-    for key, handler_fn in request_handlers.items():
-        key_str = getattr(key, "__name__", str(key))
-        if "ListResourceTemplates" in key_str or "list_resource_templates" in key_str:
-            try:
-                loop = asyncio.new_event_loop()
-                try:
-                    result = loop.run_until_complete(handler_fn(None))
-                    inner = getattr(result, "root", result)
-                    template_list = getattr(inner, "resourceTemplates", None)
-                    if template_list is None and isinstance(inner, (list, tuple)):
-                        template_list = inner
-                    if template_list:
-                        for t in template_list:
-                            templates.append(
-                                {
-                                    "name": getattr(t, "name", ""),
-                                    "uri_template": getattr(t, "uriTemplate", ""),
-                                    "description": getattr(t, "description", ""),
-                                    "mime_type": getattr(t, "mimeType", None),
-                                }
-                            )
-                finally:
-                    loop.close()
-            except Exception:
-                pass
-            break
-
-    return templates
-
-
-def _extract_instructions(server: Any) -> str | None:
-    """Extract server-level instructions if set."""
-    instructions = getattr(server, "instructions", None)
-    if instructions and isinstance(instructions, str) and instructions.strip():
-        return instructions.strip()
-    return None
-
-
-def _extract_completions_enabled(server: Any) -> bool:
-    """Check whether the server has a completions handler registered."""
-    request_handlers = getattr(server, "request_handlers", {})
-    if not request_handlers:
-        request_handlers = getattr(server, "_request_handlers", {})
-
-    for key in request_handlers:
-        key_str = getattr(key, "__name__", str(key))
-        if "Complete" in key_str or "completion" in key_str:
-            return True
-    return False
 
 
 def categorize_tools(
@@ -562,6 +601,7 @@ def _generate_mcp_index_page(
     lines.append("body-classes: doc-api-page doc-reference")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
+    lines.append("html-table-processing: none")
     lines.append("---")
     lines.append("")
 
@@ -598,14 +638,14 @@ def _generate_mcp_index_page(
         f'<span class="mcp-tile-count">{n_prompts}</span></span>'
     )
     lines.append(
-        f'<span class="mcp-tile mcp-tile-completions">'
-        f'<span class="mcp-tile-label">{get_translation("mcp_completions", language)}</span>'
-        f'<span class="mcp-tile-count">{completions_mark}</span></span>'
-    )
-    lines.append(
         f'<span class="mcp-tile mcp-tile-instructions">'
         f'<span class="mcp-tile-label">{get_translation("mcp_instructions", language)}</span>'
         f'<span class="mcp-tile-count">{instructions_mark}</span></span>'
+    )
+    lines.append(
+        f'<span class="mcp-tile mcp-tile-completions">'
+        f'<span class="mcp-tile-label">{get_translation("mcp_completions", language)}</span>'
+        f'<span class="mcp-tile-count">{completions_mark}</span></span>'
     )
     lines.append("</div>")
     lines.append("")
@@ -713,6 +753,7 @@ def _generate_tool_page(tool: dict[str, Any], server_name: str, language: str = 
     lines.append("body-classes: doc-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
+    lines.append("html-table-processing: none")
     lines.append("---")
     lines.append("")
     lines.append(f"# [{name}]{{.doc-object-name .doc-label .doc-label-mcp-tool}} {{.title}}")
@@ -825,6 +866,7 @@ def _generate_resource_page(
     lines.append("body-classes: doc-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
+    lines.append("html-table-processing: none")
     lines.append("---")
     lines.append("")
     lines.append(f"# [{name}]{{.doc-object-name .doc-label .doc-label-mcp-resource}} {{.title}}")
@@ -864,6 +906,7 @@ def _generate_resource_template_page(
     lines.append("body-classes: doc-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
+    lines.append("html-table-processing: none")
     lines.append("---")
     lines.append("")
     lines.append(
@@ -926,6 +969,7 @@ def _generate_prompt_page(prompt: dict[str, Any], server_name: str, language: st
     lines.append("body-classes: doc-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
+    lines.append("html-table-processing: none")
     lines.append("---")
     lines.append("")
     lines.append(f"# [{name}]{{.doc-object-name .doc-label .doc-label-mcp-prompt}} {{.title}}")
@@ -1035,7 +1079,7 @@ def generate_mcp_manifest(
         Server metadata from discover_mcp_server().
     output_dir
         The build project path (e.g., project_path). The manifest is placed
-        at ``output_dir/.well-known/mcp.json``.
+        at `output_dir/.well-known/mcp.json`.
     package_name
         The pip-installable package name (e.g., "great-docs").
     repo_url
@@ -1043,7 +1087,7 @@ def generate_mcp_manifest(
     site_url
         Canonical documentation site URL.
     install_command
-        Custom install command. Defaults to ``pip install {package_name}[mcp]``.
+        Custom install command. Defaults to `pip install {package_name}[mcp]`.
 
     Returns
     -------

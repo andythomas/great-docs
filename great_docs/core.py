@@ -2,35 +2,31 @@ import json
 import os
 import re
 import shutil
+import sys
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 
-from .config import Config
+from ._subprocess import TEXT_MODE_KWARGS
+from .config import Config, create_default_config
 
-
-def _patch_griffe():
-    """Ensure griffe has CyclicAliasError and AliasResolutionError at top level.
-
-    Older griffe versions don't re-export these from the top-level package. This patches them in so
-    `griffe.CyclicAliasError` etc. work everywhere.
-    """
-    import griffe
-
-    if hasattr(griffe, "CyclicAliasError") and hasattr(griffe, "AliasResolutionError"):
-        return
-
-    try:
-        from griffe.exceptions import AliasResolutionError, CyclicAliasError
-    except ImportError:
-        from griffe._internal.exceptions import AliasResolutionError, CyclicAliasError
-
-    if not hasattr(griffe, "CyclicAliasError"):
-        griffe.CyclicAliasError = CyclicAliasError
-    if not hasattr(griffe, "AliasResolutionError"):
-        griffe.AliasResolutionError = AliasResolutionError
+# Quarto's default input file types, enumerated as render globs. Used to seed
+# `project.render` whenever we also add `!` exclusions. A recursive `**` glob
+# overpowers any negation that follows it (so `!skill.md` would be ignored),
+# whereas these per-extension globs still match recursively while letting the
+# exclusions take effect.
+_QUARTO_RENDER_GLOBS = [
+    "*.qmd",
+    "*.md",
+    "*.markdown",
+    "*.rmd",
+    "*.Rmd",
+    "*.rmarkdown",
+    "*.ipynb",
+]
 
 
 class QuartoNotFoundError(RuntimeError):
@@ -134,10 +130,16 @@ class GreatDocs:
         # Whether API reference was successfully configured (set during build)
         self._has_api_reference = True
 
+        # When True, suppress writes of build artifacts (e.g. `_object_types.json`)
+        # so read-only queries like `documented_symbol_names()` leave no files behind.
+        self._suppress_artifact_writes = False
+
+        # Whether MCP pages were actually generated (None = not yet determined)
+        self._mcp_pages_generated: bool | None = None
+
         # Per-build caches (reset on each build, shared across steps)
         self._griffe_pkg_cache: dict | None = None  # {normalized_name: griffe Package}
         self._cached_exports: list | None = None
-        self._cached_categories: dict | None = None
         self._cached_package_name: str | None = None
 
         # Set environment variables needed by the qrenderer
@@ -145,6 +147,14 @@ class GreatDocs:
         if url:
             os.environ["GITHUB_REPO_URL"] = str(url)
         os.environ["GIT_REF"] = self._detect_git_ref()
+        # The repository root, so the renderer can build source-link paths
+        # relative to it (preserving `src/` and other non-flat layouts)
+        # instead of griffe's package-parent-relative path, which 404s.
+        os.environ["PACKAGE_ROOT"] = str(self._find_package_root())
+        # Optional explicit source-path override for monorepos (source.path).
+        source_path = self._config.source_path
+        if source_path:
+            os.environ["SOURCE_PATH"] = str(source_path)
 
     def _get_griffe_package(self, package_name: str):
         """Load a griffe package, using a per-build cache to avoid redundant loads.
@@ -160,8 +170,6 @@ class GreatDocs:
             The loaded griffe package object.
         """
         import griffe
-
-        _patch_griffe()
 
         if self._griffe_pkg_cache is None:
             self._griffe_pkg_cache = {}
@@ -254,6 +262,31 @@ class GreatDocs:
                 shutil.copy2(src, dst)
             else:
                 print(f"Warning: Pre-render script not found: {script_path}")
+
+        # Copy bibliography and CSL files into the build directory so that
+        # project-level citations resolve (see _update_quarto_config for wiring)
+        for bib_path in self._config.bibliography:
+            src = self.project_root / bib_path
+            if src.is_file():
+                shutil.copy2(src, self.project_path / src.name)
+            else:
+                print(f"Warning: Bibliography file not found: {bib_path}")
+        csl_path = self._config.csl
+        if csl_path:
+            csl_src = self.project_root / csl_path
+            if csl_src.is_file():
+                shutil.copy2(csl_src, self.project_path / csl_src.name)
+            else:
+                print(f"Warning: CSL file not found: {csl_path}")
+
+        # Copy custom CSS files (site.css) into the build directory
+        # where _quarto.yml will refer to them by basename
+        for css_path in self._config.css:
+            css_src = self.project_root / css_path
+            if css_src.is_file():
+                shutil.copy2(css_src, self.project_path / css_src.name)
+            else:
+                print(f"Warning: CSS file not found: {css_path}")
 
         # Copy qrenderer assets
         renderer_src = self.assets_path / "_renderer.py"
@@ -348,6 +381,21 @@ class GreatDocs:
                 finally:
                     _sys.stdout = _orig_stdout
                     _sys.stderr = _orig_stderr
+
+        # Copy lightbox assets (JS + CSS live with the extension but also need
+        # to be available as top-level resources for the Lua filter's injection)
+        lb_ext = self.assets_path / "_extensions" / "gd-lightbox"
+        for lb_file in (
+            "gd-lightbox.js",
+            "gd-lightbox.css",
+            "gd-lightbox-compare.js",
+            "gd-lightbox-compare.css",
+            "gd-lightbox-annotate.js",
+            "gd-lightbox-annotate.css",
+        ):
+            lb_src = lb_ext / lb_file
+            if lb_src.exists():
+                shutil.copy2(lb_src, self.project_path / lb_file)
 
         # Copy JavaScript files
         js_files = [
@@ -987,7 +1035,7 @@ class GreatDocs:
                     "generation from SVG. Install it with:\n"
                     "  pip install 'great-docs[svg]'\n"
                     "On Linux you also need: apt install libcairo2-dev\n"
-                    "On macOS: brew install cairo"
+                    "On macOS (see installation notes): brew install cairo"
                 )
                 return result
 
@@ -1092,6 +1140,27 @@ class GreatDocs:
             The importable package name (with underscores)
         """
         return package_name.replace("-", "_")
+
+    def _resolve_importable_name(self, package_name: str) -> str:
+        """
+        Resolve the importable module name for a project.
+
+        Prefers the module name from `_detect_module_name` (an explicit `module:` in great-docs.yml,
+        build-backend hints, or auto-discovery), falling back to the normalized PyPI project name
+        when detection returns `None`.
+
+        Parameters
+        ----------
+        package_name
+            The PyPI project name to fall back to.
+
+        Returns
+        -------
+        str
+            The importable module name.
+        """
+        module_name = self._detect_module_name()
+        return module_name if module_name else self._normalize_package_name(package_name)
 
     def _detect_module_name(self) -> str | None:
         """
@@ -1265,22 +1334,31 @@ class GreatDocs:
 
     def _find_package_root(self) -> Path:
         """
-        Find the actual package root directory (where pyproject.toml or setup.py exists).
+        Find the actual package root directory.
 
-        When the docs directory is the current directory, project_root might point to
-        the docs dir rather than the package root. This method searches upward to find
-        the actual package root.
+        Searches upward from `project_root` for the first directory that contains a recognized
+        project manifest: `pyproject.toml`, `setup.py`, or `go.mod`. This allows great-docs to be
+        invoked from within a subdirectory (e.g. the `great-docs/` build output directory) and still
+        resolve the true project root, for both Python and Go projects.
 
         Returns
         -------
         Path
             The package root directory
         """
+        if hasattr(self, "_package_root_cache"):
+            return self._package_root_cache
+
         current = self.project_root
 
         # Search upward from current directory
         for _ in range(5):  # Limit search to 5 levels up
-            if (current / "pyproject.toml").exists() or (current / "setup.py").exists():
+            if (
+                (current / "pyproject.toml").exists()
+                or (current / "setup.py").exists()
+                or (current / "go.mod").exists()
+            ):
+                self._package_root_cache = current
                 return current
             parent = current.parent
             if parent == current:  # pragma: no cover — reached filesystem root
@@ -1288,7 +1366,25 @@ class GreatDocs:
             current = parent
 
         # Fallback to project_root if we can't find it
+        self._package_root_cache = self.project_root
         return self.project_root
+
+    def _detect_go_cli_project(self):
+        """Detect whether the project is a Go CLI project.
+
+        Delegates to `great_docs._go_cli.detect_go_cli_project` with the resolved project root. The
+        check is purely file-system based (reads `go.mod` and looks for `main.go` entry-points) and
+        never invokes the Go compiler.
+
+        Returns
+        -------
+        GoCliProject | None
+            A `~great_docs._go_cli.GoCliProject` instance when the project root contains a `go.mod`
+            and at least one main package, or `None` otherwise.
+        """
+        from great_docs._go_cli import detect_go_cli_project
+
+        return detect_go_cli_project(self._find_package_root())
 
     def _griffe_search_paths(self) -> list[str | Path]:
         """Return search paths for griffe so it can find src/python/lib layouts.
@@ -1375,6 +1471,9 @@ class GreatDocs:
         else:
             env["PYTHONPATH"] = new_pythonpath
 
+        # Ensure Python subprocesses (e.g. post-render.py via Quarto) use UTF-8 on Windows.
+        env.setdefault("PYTHONUTF8", "1")
+
         return env
 
     def _get_package_metadata(self) -> dict:
@@ -1389,6 +1488,10 @@ class GreatDocs:
         dict
             Dictionary containing package metadata and great-docs configuration.
         """
+        cache = getattr(self, "_package_metadata_cache", None)
+        if cache is not None:
+            return cache
+
         metadata = {}
         package_root = self._find_package_root()
         pyproject_path = package_root / "pyproject.toml"
@@ -1450,6 +1553,49 @@ class GreatDocs:
                     metadata["keywords"] = project.get("keywords", [])
                     metadata["description"] = project.get("description", "")
                     metadata["optional_dependencies"] = project.get("optional-dependencies", {})
+
+                    # Parse declared runtime dependencies (PEP 508 specifiers)
+                    raw_deps = project.get("dependencies", [])
+                    parsed_deps = []
+                    if raw_deps:
+                        from packaging.requirements import Requirement
+
+                        for dep_str in raw_deps:
+                            try:
+                                req = Requirement(dep_str)
+                                entry = {"name": req.name, "specifier": str(req.specifier)}
+                                if req.marker:
+                                    entry["marker"] = str(req.marker)
+                                if req.extras:
+                                    entry["extras"] = sorted(req.extras)
+                                parsed_deps.append(entry)
+                            except Exception:
+                                parsed_deps.append({"name": dep_str, "specifier": ""})
+                    metadata["dependencies"] = parsed_deps
+
+                    # Parse full optional dependency contents (not just group names)
+                    opt_deps_full: dict[str, list[dict]] = {}
+                    for group, specs in metadata["optional_dependencies"].items():
+                        group_deps = []
+                        if isinstance(specs, list):
+                            from packaging.requirements import Requirement
+
+                            for dep_str in specs:
+                                try:
+                                    req = Requirement(dep_str)
+                                    entry = {
+                                        "name": req.name,
+                                        "specifier": str(req.specifier),
+                                    }
+                                    if req.marker:
+                                        entry["marker"] = str(req.marker)
+                                    if req.extras:
+                                        entry["extras"] = sorted(req.extras)
+                                    group_deps.append(entry)
+                                except Exception:
+                                    group_deps.append({"name": dep_str, "specifier": ""})
+                        opt_deps_full[group] = group_deps
+                    metadata["optional_dependencies_full"] = opt_deps_full
 
             except Exception:
                 pass
@@ -1541,6 +1687,9 @@ class GreatDocs:
         metadata["cli_module"] = self._config.cli_module
         metadata["cli_name"] = self._config.cli_name
 
+        # Go CLI documentation configuration
+        metadata["go_cli_enabled"] = self._config.go_cli_enabled
+
         # MCP documentation configuration
         metadata["mcp_enabled"] = self._config.mcp_enabled
 
@@ -1565,6 +1714,8 @@ class GreatDocs:
         metadata["logo_show_title"] = self._config.logo_show_title
         metadata["favicon"] = self._config.favicon
 
+        if pyproject_path.exists():
+            self._package_metadata_cache = metadata
         return metadata
 
     def _update_navbar_github_link(
@@ -1602,8 +1753,12 @@ class GreatDocs:
 
         # Build the new GitHub entry based on style
         if github_style == "widget" and owner and repo:
+            stats = self._fetch_github_repo_stats(owner, repo)
+            stats_attrs = ""
+            if stats:
+                stats_attrs = f' data-stars="{stats["stars"]}" data-forks="{stats["forks"]}"'
             new_gh_entry = {
-                "text": f'<div id="github-widget" data-owner="{owner}" data-repo="{repo}"></div>'
+                "text": f'<div id="github-widget" data-owner="{owner}" data-repo="{repo}"{stats_attrs}></div>'
             }
         else:
             new_gh_entry = {"icon": "github", "href": repo_url}
@@ -1670,24 +1825,54 @@ class GreatDocs:
         if not repo_url or "github.com" not in repo_url:
             return None, None, None
 
-        # Parse the GitHub URL to extract owner and repo
-        # Handles formats like:
-        # - https://github.com/owner/repo
-        # - https://github.com/owner/repo.git
-        # - git@github.com:owner/repo.git
-        github_pattern = r"github\.com[/:]([^/]+)/([^/\s.]+)"
-        match = re.search(github_pattern, repo_url)
+        # Parse the GitHub URL to extract owner and repo. Handles https, ssh, and
+        # `.git`-suffixed forms; see great_docs._pr_preview.parse_github_url.
+        from ._pr_preview import parse_github_url
 
-        if match:
-            owner = match.group(1)
-            repo = match.group(2)
-            # Remove .git suffix if present (use removesuffix, not rstrip which removes characters)
-            if repo.endswith(".git"):
-                repo = repo[:-4]  # pragma: no cover
+        parsed = parse_github_url(repo_url)
+        if parsed:
+            owner, repo = parsed
             base_url = f"https://github.com/{owner}/{repo}"
             return owner, repo, base_url
 
         return None, None, None  # pragma: no cover
+
+    def _fetch_github_repo_stats(self, owner: str, repo: str) -> dict[str, int]:
+        """
+        Fetch repository star and fork counts from the GitHub API at build time.
+
+        Uses GITHUB_TOKEN / GH_TOKEN if available for higher rate limits.
+
+        Returns
+        -------
+        dict[str, int]
+            A dict with 'stars' and 'forks' keys, or empty dict on failure.
+        """
+        import requests
+
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        url = f"https://api.github.com/repos/{owner}/{repo}"
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "stars": data.get("stargazers_count", 0),
+                    "forks": data.get("forks_count", 0),
+                }
+        except requests.RequestException:
+            pass
+
+        return {}
 
     # =========================================================================
     # Changelog (GitHub Releases) Methods
@@ -1949,6 +2134,32 @@ class GreatDocs:
     # Page Tags Methods
     # =========================================================================
 
+    def _section_build_dir(self, section_cfg: dict[str, object]) -> Path | None:
+        """
+        Resolve the build-time destination directory for a custom section.
+
+        Mirrors the slug logic in `_process_sections` so that tag and status
+        scanning look at the same directory the section files were copied into.
+        The build directory is derived from `section_cfg["dir"]` (not the title),
+        which is what `_process_sections` uses as the copy destination.
+
+        Parameters
+        ----------
+        section_cfg
+            A single entry from the `sections` config.
+
+        Returns
+        -------
+        Path | None
+            The build directory under `project_path`, or `None` if the section
+            has no `dir`.
+        """
+        src_dir = section_cfg.get("dir")
+        if not src_dir or not isinstance(src_dir, str):
+            return None
+        slug = src_dir.replace("_", "-").replace(" ", "-").lower()
+        return self.project_path / slug
+
     def _collect_page_tags(self) -> dict[str, list[dict[str, str]]]:
         """
         Scan all built .qmd files for tags in frontmatter.
@@ -1978,9 +2189,12 @@ class GreatDocs:
         # Also scan custom sections (skip if already covered above)
         for section_cfg in self._config.sections:
             title = section_cfg.get("title", "")
-            slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") if title else ""
-            section_dir = self.project_path / slug
-            if section_dir.is_dir() and section_dir.resolve() not in seen_dirs:
+            section_dir = self._section_build_dir(section_cfg)
+            if (
+                section_dir is not None
+                and section_dir.is_dir()
+                and section_dir.resolve() not in seen_dirs
+            ):
                 scan_dirs.append((section_dir, title))
                 seen_dirs.add(section_dir.resolve())
 
@@ -2072,11 +2286,13 @@ class GreatDocs:
         from ._translations import get_translation
 
         lang = self._config.language
-        tags_title = get_translation("tags_title", lang)
+        tags_title = get_translation("site_tags", lang)
         tag_icons = self._config.tags_icons
 
         tags_dir = self.project_path / "tags"
         tags_dir.mkdir(parents=True, exist_ok=True)
+
+        tags_intro = get_translation("tags_intro", lang)
 
         lines: list[str] = [
             "---",
@@ -2085,6 +2301,8 @@ class GreatDocs:
             "toc: false",
             "body-classes: gd-tags-index",
             "---",
+            "",
+            tags_intro,
             "",
         ]
 
@@ -2215,15 +2433,15 @@ class GreatDocs:
         # and per-page tag_location overrides from frontmatter
         # Re-scan tagged directories
         page_tag_locations: dict[str, str] = {}
-        scan_dir_names = ["user-guide", "recipes"]
+        scan_dirs: list[Path] = [self.project_path / "user-guide", self.project_path / "recipes"]
+        seen_dirs: set[Path] = {d.resolve() for d in scan_dirs}
         # Include custom section directories
         for section_cfg in self._config.sections:
-            title = section_cfg.get("title", "")
-            slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") if title else ""
-            if slug and slug not in scan_dir_names:
-                scan_dir_names.append(slug)
-        for scan_dir_name in scan_dir_names:
-            scan_dir = self.project_path / scan_dir_name
+            section_dir = self._section_build_dir(section_cfg)
+            if section_dir is not None and section_dir.resolve() not in seen_dirs:
+                scan_dirs.append(section_dir)
+                seen_dirs.add(section_dir.resolve())
+        for scan_dir in scan_dirs:
             if not scan_dir.is_dir():
                 continue
             for qmd_file in sorted(scan_dir.rglob("*.qmd")):
@@ -2297,7 +2515,7 @@ class GreatDocs:
         from ._translations import get_translation
 
         lang = self._config.language
-        tags_label = get_translation("tags_nav", lang)
+        tags_label = get_translation("site_tags", lang)
 
         quarto_yml = self.project_path / "_quarto.yml"
         if not quarto_yml.exists():
@@ -2499,10 +2717,12 @@ class GreatDocs:
                 scan_dirs.append(d)
                 seen_dirs.add(d.resolve())
         for section_cfg in self._config.sections:
-            title = section_cfg.get("title", "")
-            slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") if title else ""
-            section_dir = self.project_path / slug
-            if section_dir.is_dir() and section_dir.resolve() not in seen_dirs:
+            section_dir = self._section_build_dir(section_cfg)
+            if (
+                section_dir is not None
+                and section_dir.is_dir()
+                and section_dir.resolve() not in seen_dirs
+            ):
                 scan_dirs.append(section_dir)
                 seen_dirs.add(section_dir.resolve())
 
@@ -2711,20 +2931,20 @@ class GreatDocs:
                 print(f"   ⚠️  Section '{title}' directory '{src_dir}' has no .qmd/.md files")
                 continue
 
-            # Determine the slug for the build directory (lowercase, hyphenated)
+            # Determine the slug for the build directory (lowercase, hyphenated).
+            # `_section_build_dir` mirrors this formula so tag/status scanning
+            # resolves the same destination directory.
             slug = src_dir.replace("_", "-").replace(" ", "-").lower()
             dest_dir = self.project_path / slug
             dest_dir.mkdir(parents=True, exist_ok=True)
 
-            # Copy asset directories (directories without .qmd files)
+            # Copy asset directories (images, data, code snippets, etc.)
             for item in source_path.iterdir():
-                if item.is_dir():
-                    has_qmd = any(f.suffix == ".qmd" for f in item.rglob("*"))
-                    if not has_qmd:
-                        dst_dir = dest_dir / item.name
-                        if dst_dir.exists():
-                            shutil.rmtree(dst_dir)
-                        shutil.copytree(item, dst_dir)
+                if item.is_dir() and self._is_asset_dir(item):
+                    dst_dir = dest_dir / item.name
+                    if dst_dir.exists():
+                        shutil.rmtree(dst_dir)
+                    shutil.copytree(item, dst_dir)
 
             if section_type == "blog":
                 # Blog sections use Quarto's native listing directive
@@ -2838,12 +3058,26 @@ class GreatDocs:
 
             # Strip numeric prefix from filename (e.g., 01-intro.qmd -> intro.qmd)
             clean_name = self._strip_numeric_prefix(rel.name)
-            dest_file = dest_dir / rel.parent / clean_name
+
+            # Strip numeric prefixes from subdirectory parts too (e.g.,
+            # 02-topic-b/page.qmd -> topic-b/page.qmd), mirroring the user-guide
+            # copy. This keeps on-disk paths in sync with the link rewriting done
+            # by _fix_numeric_prefix_links, which strips prefixes from every path
+            # component.
+            clean_parent = (
+                Path(*[self._strip_numeric_prefix(p) for p in rel.parent.parts])
+                if rel.parent.parts
+                else rel.parent
+            )
+            dest_file = dest_dir / clean_parent / clean_name
 
             # Ensure subdirectories exist
             dest_file.parent.mkdir(parents=True, exist_ok=True)
 
             content = src_file.read_text(encoding="utf-8")
+
+            # Expand {{< code-include >}} shortcodes before Quarto sees the file
+            content = self._expand_code_includes(content, src_file.parent)
 
             # Fix links to .qmd files with numeric prefixes
             content = self._fix_numeric_prefix_links(content)
@@ -2878,8 +3112,8 @@ class GreatDocs:
 
             copied.append(
                 {
-                    "filename": str(rel.parent / clean_name)
-                    if rel.parent != Path(".")
+                    "filename": str(clean_parent / clean_name)
+                    if clean_parent != Path(".")
                     else clean_name,
                     "title": title,
                     "description": description,
@@ -2936,6 +3170,9 @@ class GreatDocs:
             content_dirs.add(src_file.parent)
 
             content = src_file.read_text(encoding="utf-8")
+
+            # Expand {{< code-include >}} shortcodes before Quarto sees the file
+            content = self._expand_code_includes(content, src_file.parent)
 
             # Parse frontmatter for metadata (but don't modify it —
             # Quarto's listing needs the original frontmatter)
@@ -3291,7 +3528,11 @@ class GreatDocs:
             # Add subdirectory groups as section headers
             if dir_titles is None:
                 dir_titles = {}
-            for subdir in sorted(subdir_groups_dict.keys()):
+            # Preserve source discovery order rather than sorting the keys. The
+            # source file list is sorted with numeric prefixes intact, so first
+            # encounter order already reflects the author's intended ordering.
+            # Sorting here would use the prefix-stripped names and lose it.
+            for subdir in subdir_groups_dict:
                 clean_subdir = self._strip_numeric_prefix(subdir)  # pragma: no cover
                 section_title = dir_titles.get(  # pragma: no cover
                     clean_subdir,
@@ -3544,7 +3785,7 @@ class GreatDocs:
 
         if render_excludes:
             if "render" not in project:
-                project["render"] = ["**"]
+                project["render"] = list(_QUARTO_RENDER_GLOBS)
             render = project["render"]
             if isinstance(render, str):
                 render = [render]  # pragma: no cover
@@ -3629,7 +3870,9 @@ class GreatDocs:
     # CLI Documentation Methods
     # =========================================================================
 
-    def _discover_click_cli(self, package_name: str) -> dict | None:
+    def _discover_click_cli(
+        self, package_name: str, display_name: str | None = None
+    ) -> dict | None:
         """
         Discover Click CLI commands and groups from a package.
 
@@ -3639,7 +3882,11 @@ class GreatDocs:
         Parameters
         ----------
         package_name
-            The name of the package to search for CLI.
+            The importable module name to search for the CLI.
+        display_name
+            The name shown for the CLI entry point when `[project.scripts]` is
+            absent (typically the PyPI project name). Falls back to
+            `package_name` when not provided.
 
         Returns
         -------
@@ -3741,13 +3988,15 @@ class GreatDocs:
 
         print(f"Found Click CLI: {cli_name} in {cli_module_path}")
 
-        # Get the entry point name from pyproject.toml
+        # Get the entry point name from pyproject.toml. When [project.scripts]
+        # is absent, fall back to the display name (the project name) rather
+        # than the importable module name, which may differ.
         entry_point_name = self._get_cli_entry_point_name(package_name)
-        display_name = entry_point_name or package_name.replace("_", "-")
+        resolved_name = entry_point_name or (display_name or package_name).replace("_", "-")
 
         # Extract CLI structure
-        cli_info = self._extract_click_command(cli_obj, display_name)
-        cli_info["entry_point_name"] = display_name
+        cli_info = self._extract_click_command(cli_obj, resolved_name)
+        cli_info["entry_point_name"] = resolved_name
         return cli_info
 
     def _find_click_cli_obj(self, package_name: str) -> object | None:
@@ -4118,18 +4367,44 @@ class GreatDocs:
         generated_files: list[str | dict] = []
         generated_paths: list[str] = []
 
-        # Generate main CLI page
-        main_page = self._generate_cli_command_page(cli_info, is_main=True)
-        main_path = cli_ref_dir / "index.qmd"
-        with open(main_path, "w") as f:
-            f.write(main_page)
-        generated_files.append("reference/cli/index.qmd")
-        generated_paths.append(str(main_path.relative_to(self.project_path)))
+        entry_name = cli_info.get("entry_point_name") or cli_info["name"]
+        entry_safe = entry_name.replace("-", "_")
+
+        # Generate the CLI index (landing) page — a listing of all commands, modelled on the
+        # API reference index page rather than the root command's own --help dump.
+        index_page = self._generate_cli_index_page(cli_info, entry_safe)
+        index_path = cli_ref_dir / "index.qmd"
+        with open(index_path, "w") as f:
+            f.write(index_page)
+        # Label the index entry explicitly (mirrors the "API Index" link) so it reads distinctly
+        # from the enclosing "CLI Reference" sidebar section title.
+        from ._translations import get_translation
+
+        cli_index_label = get_translation("cli_index", self._config.language)
+        generated_files.append({"text": cli_index_label, "href": "reference/cli/index.qmd"})
+        generated_paths.append(str(index_path.relative_to(self.project_path)))
+
+        # Generate the root command page (global options, usage, full --help) on its own page so
+        # the index can stay a pure listing.
+        root_page = self._generate_cli_command_page(cli_info, is_main=True)
+        root_path = cli_ref_dir / f"{entry_safe}.qmd"
+        with open(root_path, "w") as f:
+            f.write(root_page)
+        generated_files.append(f"reference/cli/{entry_safe}.qmd")
+        generated_paths.append(str(root_path.relative_to(self.project_path)))
 
         # Generate pages for subcommands
-        generated_files.extend(
-            self._generate_subcommand_pages(cli_info, cli_ref_dir, _paths=generated_paths)
+        subcommand_items = self._generate_subcommand_pages(
+            cli_info, cli_ref_dir, _paths=generated_paths
         )
+
+        # When explicit sections are configured, order the flat top-level command entries to
+        # match the index sections (group entries keep their relative order at the end).
+        if self._config.cli_sections:
+            subcommand_items = self._order_cli_sidebar_items(
+                subcommand_items, self._config.cli_sections
+            )
+        generated_files.extend(subcommand_items)
 
         # Print grouped summary
         if generated_paths:
@@ -4138,6 +4413,117 @@ class GreatDocs:
                 print(f"  - {p}")
 
         return generated_files
+
+    def _generate_cli_index_page(self, cli_info: dict, entry_safe: str) -> str:
+        """
+        Generate the CLI reference index (landing) page.
+
+        Models the API reference index page: an optional intro paragraph followed by one or more
+        ``## Section {.doc-group}`` blocks, each a definition list of command links with their
+        short help. Sections come from ``cli.sections`` in great-docs.yml when configured;
+        otherwise commands are auto-grouped (leaf commands first, in code order, then one section
+        per command group).
+
+        Parameters
+        ----------
+        cli_info
+            The root command info dict (from `_extract_click_command`).
+        entry_safe
+            The filesystem-safe name of the entry point (used to link the root command page).
+
+        Returns
+        -------
+        str
+            Quarto markdown content for ``reference/cli/index.qmd``.
+        """
+        from ._translations import get_translation
+
+        lang = self._config.language
+        title = self._config.cli_title or get_translation("cli_reference", lang)
+
+        lines: list[str] = []
+
+        # --- Front matter (mirrors the API reference index) ---
+        lines.append("---")
+        lines.append(f'title: "{title}"')
+        lines.append("body-classes: doc-reference doc-cli-reference")
+        lines.append("sidebar: cli-reference")
+        lines.append("page-navigation: false")
+        lines.append("html-table-processing: none")
+        lines.append("---")
+        lines.append("")
+
+        # No body `# {title}` heading: the frontmatter title provides the page title block (as on
+        # the API reference index), which keeps the `## {.doc-group}` sections at level 2.
+
+        # --- Intro paragraph ---
+        if self._config.cli_desc:
+            lines.append("::: {.doc-description}")
+            lines.append(self._config.cli_desc.strip())
+            lines.append(":::")
+            lines.append("")
+
+        entry_name = cli_info.get("entry_point_name") or cli_info["name"]
+        top_commands = [c for c in cli_info.get("commands", []) if not c.get("hidden")]
+        by_name = {c["name"]: c for c in top_commands}
+
+        def emit_entry(cmd: dict, href: str) -> None:
+            label = "doc-label-cli-group" if cmd.get("is_group") else "doc-label-cli"
+            name = cmd["name"]
+            short = (cmd.get("short_help") or "").strip()
+            lines.append(f"[{name}]({href}){{.doc-function .doc-label .{label}}}")
+            lines.append(f":   {short}" if short else ":   &nbsp;")
+            lines.append("")
+
+        def emit_section(section_title: str, section_desc: str | None = None) -> None:
+            lines.append(f"## {section_title} {{.doc-group}}")
+            lines.append("")
+            if section_desc:
+                lines.append("::: {.doc-description}")
+                lines.append(section_desc.strip())
+                lines.append(":::")
+                lines.append("")
+
+        # --- Root command link (global options / usage live one click away) ---
+        root_short = (cli_info.get("short_help") or "").strip()
+        lines.append(
+            f"[{entry_name}]({entry_safe}.qmd){{.doc-function .doc-label .doc-label-cli-group}}"
+        )
+        lines.append(f":   {root_short}" if root_short else ":   &nbsp;")
+        lines.append("")
+
+        cli_sections = self._config.cli_sections
+        if cli_sections:
+            # Author-controlled sections: list exactly the named top-level commands, in order.
+            for section in cli_sections:
+                emit_section(section.get("title", ""), section.get("desc"))
+                for cmd_name in section.get("contents", []):
+                    cmd = by_name.get(cmd_name)
+                    if not cmd:
+                        continue
+                    emit_entry(cmd, f"{cmd_name.replace('-', '_')}.qmd")
+        else:
+            # Auto layout: leaf commands first (code order), then one section per group.
+            leaf = [c for c in top_commands if not c.get("is_group")]
+            groups = [c for c in top_commands if c.get("is_group")]
+
+            if leaf:
+                emit_section(get_translation("cli_commands", lang))
+                for cmd in leaf:
+                    emit_entry(cmd, f"{cmd['name'].replace('-', '_')}.qmd")
+
+            for group in groups:
+                gsafe = group["name"].replace("-", "_")
+                emit_section(group["name"], (group.get("short_help") or "").strip() or None)
+                # The group's own overview page, then each subcommand.
+                emit_entry(group, f"{gsafe}.qmd")
+                for sub in group.get("commands", []):
+                    if sub.get("hidden"):
+                        continue
+                    ssafe = sub["name"].replace("-", "_")
+                    emit_entry(sub, f"{gsafe}/{ssafe}.qmd")
+
+        return "\n".join(lines)
 
     def _generate_subcommand_pages(
         self,
@@ -4224,9 +4610,10 @@ class GreatDocs:
         lines.append(
             f'title: "[{title}]{{.doc-object-name .doc-function .doc-label .{label_class}}}"'
         )
-        lines.append("body-classes: doc-api-page")
+        lines.append("body-classes: doc-api-page doc-cli-reference")
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
+        lines.append("html-table-processing: none")
         lines.append("---")
         lines.append("")
 
@@ -4439,6 +4826,45 @@ class GreatDocs:
         return "\n".join(lines)
 
     @staticmethod
+    def _order_cli_sidebar_items(
+        items: list[str | dict], cli_sections: list[dict]
+    ) -> list[str | dict]:
+        """
+        Reorder flat top-level command entries to match the configured `cli.sections` order.
+
+        String entries (leaf commands) are sorted to follow the order in which their command
+        names appear across the configured sections; commands not mentioned keep their original
+        (code) order after the configured ones. Group `{"section": ...}` dicts retain their
+        relative order and are appended at the end.
+
+        Parameters
+        ----------
+        items
+            The sidebar items produced by `_generate_subcommand_pages`.
+        cli_sections
+            The `cli.sections` config list.
+
+        Returns
+        -------
+        list[str | dict]
+            The reordered sidebar items.
+        """
+        # Build the desired rank for each "reference/cli/<safe>.qmd" path.
+        rank: dict[str, int] = {}
+        for section in cli_sections:
+            for cmd_name in section.get("contents", []):
+                safe = cmd_name.replace("-", "_")
+                rank.setdefault(f"reference/cli/{safe}.qmd", len(rank))
+
+        strings = [i for i in items if isinstance(i, str)]
+        groups = [i for i in items if not isinstance(i, str)]
+
+        # Configured commands first (in section order); unmentioned ones keep their code order.
+        base = len(rank)
+        ordered = sorted(enumerate(strings), key=lambda iv: (rank.get(iv[1], base + iv[0]),))
+        return [path for _, path in ordered] + groups
+
+    @staticmethod
     def _count_cli_sidebar_items(items: list) -> int:
         """Count the total number of .qmd pages in a (possibly nested) sidebar list."""
         count = 0
@@ -4446,7 +4872,11 @@ class GreatDocs:
             if isinstance(item, str):
                 count += 1
             elif isinstance(item, dict):
-                count += GreatDocs._count_cli_sidebar_items(item.get("contents", []))
+                if item.get("href"):
+                    # A labeled link entry (e.g. the index link) is a single page.
+                    count += 1
+                else:
+                    count += GreatDocs._count_cli_sidebar_items(item.get("contents", []))
         return count
 
     def _update_sidebar_with_cli(self, cli_files: list[str | dict]) -> None:
@@ -4488,10 +4918,15 @@ class GreatDocs:
                 break
 
         if not cli_section_exists:
+            from ._translations import get_translation
+
+            cli_section_title = self._config.cli_title or get_translation(
+                "cli_reference", self._config.language
+            )
             # Add CLI section
             cli_section = {
                 "id": "cli-reference",
-                "title": "CLI Reference",
+                "title": cli_section_title,
                 "contents": cli_files,
             }
             sidebar.append(cli_section)
@@ -4519,6 +4954,22 @@ class GreatDocs:
 
         self._write_quarto_yml(quarto_yml, config)
 
+        # Ensure there's a "Reference" navbar entry so users can reach the CLI
+        # reference pages.  If a Python API reference already added the entry,
+        # that link (reference/index.qmd) takes precedence; otherwise we add one
+        # pointing directly to the CLI index.
+        navbar = config.get("website", {}).get("navbar", {})
+        left = navbar.get("left", [])
+        has_ref = any(
+            isinstance(item, dict) and item.get("text") in ("Reference", "CLI Reference")
+            for item in left
+        )
+        if not has_ref:
+            left.append({"text": "Reference", "href": "reference/cli/index.qmd"})
+            navbar["left"] = left
+            config["website"]["navbar"] = navbar
+            self._write_quarto_yml(quarto_yml, config)
+
         print(
             f"Updated sidebar with {self._count_cli_sidebar_items(cli_files)} CLI reference page(s)"
         )
@@ -4540,7 +4991,7 @@ class GreatDocs:
         if not module_path:
             # Try common MCP module locations based on the documented package
             package_name = self._normalize_package_name(
-                self._config.get("module") or self.project_path.name
+                self._config["module"] or self.project_path.name
             )
             common_mcp_modules = [
                 f"{package_name}.mcp",
@@ -4641,6 +5092,60 @@ class GreatDocs:
         n_pages = self._count_cli_sidebar_items(mcp_files)
         print(f"Updated sidebar with {n_pages} MCP reference page(s)")
 
+    def _remove_mcp_from_ref_sections(self) -> None:
+        """
+        Remove 'mcp' from the reference switcher data attribute in _quarto.yml.
+
+        Called when MCP is enabled in config but no MCP server is discovered
+        or no MCP pages are generated. This prevents a dangling MCP navigation
+        item that would lead to a 404 page.
+        """
+        quarto_yml = self.project_path / "_quarto.yml"
+        if not quarto_yml.exists():
+            return
+
+        with open(quarto_yml, "r") as f:
+            config = read_yaml(f) or {}
+
+        html_config = config.get("format", {}).get("html", {})
+        include_in_header = html_config.get("include-in-header", [])
+        include_after_body = html_config.get("include-after-body", [])
+
+        # Find and update the data-gd-ref-sections script
+        updated = False
+        for i, item in enumerate(include_in_header):
+            if isinstance(item, dict) and "data-gd-ref-sections" in item.get("text", ""):
+                # Extract current sections and remove 'mcp'
+                text = item["text"]
+                # The format is: ...setAttribute('data-gd-ref-sections','api,cli,mcp')...
+                match = re.search(r"'data-gd-ref-sections','([^']*)'", text)
+                if match:
+                    sections = [s for s in match.group(1).split(",") if s != "mcp"]
+                    if len(sections) <= 1:
+                        # Only 'api' remains — remove the ref-sections script entirely
+                        include_in_header.pop(i)
+                        # Also remove the reference-switcher.js script
+                        config["format"]["html"]["include-after-body"] = [
+                            entry
+                            for entry in include_after_body
+                            if not (
+                                isinstance(entry, dict)
+                                and "reference-switcher" in entry.get("text", "")
+                            )
+                        ]
+                    else:
+                        new_sections = ",".join(sections)
+                        item["text"] = re.sub(
+                            r"'data-gd-ref-sections','[^']*'",
+                            f"'data-gd-ref-sections','{new_sections}'",
+                            text,
+                        )
+                    updated = True
+                break
+
+        if updated:
+            self._write_quarto_yml(quarto_yml, config)
+
     def _generate_mcp_manifest(self, mcp_info: dict) -> None:
         """
         Generate a .well-known/mcp.json discovery manifest.
@@ -4659,7 +5164,7 @@ class GreatDocs:
         package_name = self._detect_package_name()
         owner, repo, _ = self._get_github_repo_info()
         repo_url = f"https://github.com/{owner}/{repo}" if owner and repo else None
-        site_url = self._config.get("site_url")
+        site_url = self._config["site_url"]
 
         generate_mcp_manifest(
             server_info=mcp_info,
@@ -4894,8 +5399,9 @@ class GreatDocs:
             if file_info:
                 files_info.append(file_info)
 
-                # Track if there's an index.qmd
-                if qmd_path.name == "index.qmd":
+                # Track if there's a root-level index.qmd (subdir index.qmd files
+                # are used only for section titles, not as the UG landing page)
+                if qmd_path.name == "index.qmd" and qmd_path.parent == user_guide_dir:
                     has_index = True
 
                 # Group by section
@@ -5079,6 +5585,9 @@ class GreatDocs:
             with open(src_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
+            # Expand {{< code-include >}} shortcodes before Quarto sees the file
+            content = self._expand_code_includes(content, src_path.parent)
+
             # In auto-discovery mode, fix links to .qmd files with numeric prefixes
             if not is_explicit:
                 content = self._fix_numeric_prefix_links(content)
@@ -5092,19 +5601,33 @@ class GreatDocs:
 
             copied_files.append(f"user-guide/{dest_rel_path}")
 
-        # Also copy any asset directories (directories without .qmd files)
+        # Also copy any asset directories (images, data, code snippets, etc.)
         for item in source_dir.iterdir():
-            if item.is_dir():
-                # Check if this directory has any .qmd files
-                has_qmd = any(f.suffix == ".qmd" for f in item.rglob("*"))
-                if not has_qmd:
-                    # This is likely an asset directory, copy it
-                    dst_dir = target_dir / item.name
-                    if dst_dir.exists():
-                        shutil.rmtree(dst_dir)  # pragma: no cover
-                    shutil.copytree(item, dst_dir)
+            if item.is_dir() and self._is_asset_dir(item):
+                dst_dir = target_dir / item.name
+                if dst_dir.exists():
+                    shutil.rmtree(dst_dir)  # pragma: no cover
+                shutil.copytree(item, dst_dir)
 
         return copied_files
+
+    @staticmethod
+    def _is_asset_dir(directory: Path) -> bool:
+        """
+        Determine whether *directory* is an asset directory (images, data, snippets, etc.).
+
+        A directory is considered an asset directory when either:
+
+        - It contains no ``.qmd`` files at any depth, **or**
+        - Its name starts with ``_`` (e.g., ``_includes/``, ``_snippets/``).
+
+        The underscore rule lets authors store ``.qmd`` snippets intended for
+        ``code-include`` (or other non-page purposes) alongside images and data
+        files without the directory being mistaken for a content subdirectory.
+        """
+        if directory.name.startswith("_"):
+            return True
+        return not any(f.suffix == ".qmd" for f in directory.rglob("*"))
 
     def _add_frontmatter_option(self, content: str, key: str, value) -> str:
         """
@@ -5153,6 +5676,193 @@ class GreatDocs:
 
         # No frontmatter, create one
         return f"---\n{key}: {yaml_value}\n---\n\n{content}"
+
+    # include double but ignore triple curly braces
+    _CODE_INCLUDE_RE = re.compile(
+        r"(?<!\{)\{\{<\s*include\s+(.*?)\s*>\}\}(?!\})",
+    )
+
+    _CONTENT_EXTENSIONS = {".qmd", ".md"}
+
+    _EXT_TO_LANG: dict[str, str] = {
+        ".py": "python",
+        ".r": "r",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".jsx": "jsx",
+        ".tsx": "tsx",
+        ".rb": "ruby",
+        ".rs": "rust",
+        ".go": "go",
+        ".java": "java",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".cxx": "cpp",
+        ".c": "c",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".cs": "csharp",
+        ".css": "css",
+        ".scss": "scss",
+        ".html": "html",
+        ".sql": "sql",
+        ".sh": "bash",
+        ".bash": "bash",
+        ".zsh": "bash",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".json": "json",
+        ".toml": "toml",
+        ".xml": "xml",
+        ".lua": "lua",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".scala": "scala",
+        ".jl": "julia",
+        ".m": "matlab",
+        ".pl": "perl",
+        ".php": "php",
+    }
+
+    def _expand_code_includes(self, content: str, source_dir: Path) -> str:
+        """
+        Replace ``{{< include path >}}`` shortcodes with fenced code blocks.
+
+        Only intercepts includes that target code files (non-``.qmd``/``.md``)
+        or that use the ``lang`` or ``lines`` keywords.  Plain
+        ``{{< include _shared.qmd >}}`` shortcodes are left untouched so
+        Quarto can handle them natively.
+
+        Supports optional keyword arguments:
+
+        - ``lang="python"`` — override the auto-detected language
+        - ``lines="5-10"`` — include only the specified line range (1-based, inclusive)
+
+        File paths are resolved first relative to *source_dir* (the directory
+        containing the source ``.qmd`` file), then relative to the project root.
+
+        Parameters
+        ----------
+        content
+            The ``.qmd`` file content.
+        source_dir
+            Directory of the source file (for relative path resolution).
+
+        Returns
+        -------
+        str
+            Content with code-file ``include`` shortcodes replaced by fenced
+            code blocks.
+        """
+
+        def _replace(m: re.Match) -> str:
+            raw_args = m.group(1)
+
+            file_path_str, lang, lines_spec = self._parse_code_include_args(raw_args)
+
+            if not file_path_str:
+                return m.group(0)
+
+            ext = Path(file_path_str).suffix.lower()
+            is_content_file = ext in self._CONTENT_EXTENSIONS
+
+            if is_content_file and not lang and not lines_spec:
+                return m.group(0)
+
+            resolved = self._resolve_code_include_path(file_path_str, source_dir)
+            if resolved is None:
+                return f"<!-- include error: file not found: {file_path_str} -->"
+
+            try:
+                file_content = resolved.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                return f"<!-- include error: {e} -->"
+
+            if lines_spec:
+                file_content = self._select_lines(file_content, lines_spec)
+
+            if not lang:
+                lang = self._EXT_TO_LANG.get(resolved.suffix.lower(), "")
+
+            longest_run = 0
+            current_run = 0
+            for ch in file_content:
+                if ch == "`":
+                    current_run += 1
+                    longest_run = max(longest_run, current_run)
+                else:
+                    current_run = 0
+            fence = "`" * max(3, longest_run + 1)
+            return f"{fence}{lang}\n{file_content.rstrip()}\n{fence}"
+
+        return self._CODE_INCLUDE_RE.sub(_replace, content)
+
+    @staticmethod
+    def _parse_code_include_args(raw: str) -> tuple[str, str, str]:
+        """
+        Parse ``include`` shortcode arguments.
+
+        Returns `(file_path, lang, lines)` where *lang* and *lines* may be empty strings if not
+        specified.
+        """
+        lang = ""
+        lines = ""
+        file_path = ""
+
+        # Extract keyword arguments
+        kw_re = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
+        for kw_match in kw_re.finditer(raw):
+            key, value = kw_match.group(1), kw_match.group(2)
+            if key == "lang":
+                lang = value
+            elif key == "lines":
+                lines = value
+
+        # The file path is whatever remains after stripping keyword args
+        remaining = kw_re.sub("", raw).strip()
+        # Remove surrounding quotes if present
+        if remaining and remaining[0] in ('"', "'") and remaining[-1] == remaining[0]:
+            remaining = remaining[1:-1]
+        file_path = remaining
+
+        return file_path, lang, lines
+
+    def _resolve_code_include_path(self, file_path_str: str, source_dir: Path) -> Path | None:
+        """
+        Resolve a code-include file path.
+
+        Tries *source_dir* first, then the project root.
+        """
+        candidates = [
+            source_dir / file_path_str,
+            self.project_root / file_path_str,
+        ]
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved.is_file():
+                return resolved
+        return None
+
+    @staticmethod
+    def _select_lines(content: str, lines_spec: str) -> str:
+        """
+        Select a range of lines from *content*.
+
+        *lines_spec* is `"start-end"` (1-based, inclusive) or `"N"` for a single line.
+        """
+        all_lines = content.splitlines(keepends=True)
+
+        if "-" in lines_spec:
+            parts = lines_spec.split("-", 1)
+            start = int(parts[0]) - 1
+            end = int(parts[1])
+        else:
+            start = int(lines_spec) - 1
+            end = start + 1
+
+        start = max(0, start)
+        end = min(len(all_lines), end)
+        return "".join(all_lines[start:end])
 
     # Regex for detecting a top-level `freeze:` key in YAML frontmatter
     _FREEZE_FM_RE = re.compile(r"^freeze:\s+(.+)$", re.MULTILINE)
@@ -5255,6 +5965,11 @@ class GreatDocs:
         """
         explicit_config = user_guide_info["explicit_config"]
         source_dir = user_guide_info["source_dir"]
+        title_lookup = {
+            fi["path"].relative_to(source_dir).as_posix(): fi["title"]
+            for fi in user_guide_info.get("files", [])
+            if fi.get("title")
+        }
         contents = []
 
         for section_entry in explicit_config:
@@ -5285,9 +6000,10 @@ class GreatDocs:
                     continue
 
                 href = f"user-guide/{filename}"
+                text = custom_text or title_lookup.get(filename)
 
-                if custom_text:
-                    sidebar_section_contents.append({"text": custom_text, "href": href})
+                if text:
+                    sidebar_section_contents.append({"text": text, "href": href})
                 else:
                     sidebar_section_contents.append(href)
 
@@ -5356,8 +6072,7 @@ class GreatDocs:
                     href = get_clean_href(file_info)
                     assigned_files.add(file_info["path"])
 
-                    # Use custom text for index.qmd if it has a title
-                    if file_info["path"].name == "index.qmd":
+                    if file_info.get("title"):
                         section_contents.append(
                             {
                                 "text": file_info["title"],
@@ -5378,7 +6093,11 @@ class GreatDocs:
             unsectioned = []
             for file_info in files_info:
                 if file_info["path"] not in assigned_files:
-                    unsectioned.append(get_clean_href(file_info))
+                    href = get_clean_href(file_info)
+                    if file_info.get("title"):
+                        unsectioned.append({"text": file_info["title"], "href": href})
+                    else:
+                        unsectioned.append(href)
 
             if unsectioned:
                 contents.extend(unsectioned)
@@ -5400,36 +6119,67 @@ class GreatDocs:
                     subdirs[parent_str].append(file_info)
 
             if subdirs:
-                # Put root-level files first (index.qmd at the very top)
-                root_files.sort(key=lambda fi: (fi["path"].name != "index.qmd", fi["path"].name))
-                for file_info in root_files:
-                    href = get_clean_href(file_info)
-                    if file_info["path"].name == "index.qmd":
-                        contents.append(
-                            {"text": file_info["title"], "href": href}
-                        )  # pragma: no cover
+                # Root index.qmd is always first; all other root files and subdir
+                # sections are sorted together so numeric prefixes control the order
+                # regardless of whether an item is a file or a directory.
+                root_index_file = next(
+                    (fi for fi in root_files if fi["path"].name == "index.qmd"), None
+                )
+                other_root_files = [fi for fi in root_files if fi["path"].name != "index.qmd"]
+
+                if root_index_file:
+                    href = get_clean_href(root_index_file)
+                    if root_index_file.get("title"):
+                        contents.append({"text": root_index_file["title"], "href": href})
                     else:
-                        contents.append(href)
+                        contents.append(href)  # pragma: no cover
 
-                # Then add subdirectory groups, sorted by directory name
-                for subdir in sorted(subdirs):
-                    dir_files = subdirs[subdir]
-                    # Use the index.qmd title as the section title if present,
-                    # otherwise derive from the directory name
-                    clean_subdir = self._strip_numeric_prefix(subdir)
-                    section_title = clean_subdir.replace("-", " ").replace("_", " ").title()
-                    section_contents = []
-                    for file_info in dir_files:
-                        if file_info["path"].name == "index.qmd":
-                            section_title = file_info["title"]
+                # Build a combined list keyed by each item's leading name component
+                # so that files and directory sections sort together.
+                nav_items: list = []
+                for file_info in other_root_files:
+                    nav_items.append(("file", file_info["path"].name, file_info))
+                for subdir, dir_files in subdirs.items():
+                    sort_key = Path(subdir).parts[0]
+                    nav_items.append(("section", sort_key, subdir, dir_files))
+                nav_items.sort(key=lambda x: x[1])
+
+                for item in nav_items:
+                    if item[0] == "file":
+                        file_info = item[2]
+                        href = get_clean_href(file_info)
+                        if file_info.get("title"):
+                            contents.append({"text": file_info["title"], "href": href})
                         else:
-                            section_contents.append(get_clean_href(file_info))
+                            contents.append(href)  # pragma: no cover
+                    else:
+                        _, _, subdir, dir_files = item
+                        # Use the index.qmd title as the section title if present,
+                        # otherwise derive from the directory name
+                        clean_subdir = self._strip_numeric_prefix(subdir)
+                        section_title = clean_subdir.replace("-", " ").replace("_", " ").title()
+                        section_contents = []
+                        for file_info in dir_files:
+                            if file_info["path"].name == "index.qmd":
+                                section_title = file_info["title"]
+                            else:
+                                href = get_clean_href(file_info)
+                                if file_info.get("title"):
+                                    section_contents.append(
+                                        {"text": file_info["title"], "href": href}
+                                    )
+                                else:
+                                    section_contents.append(href)
 
-                    contents.append({"section": section_title, "contents": section_contents})
+                        contents.append({"section": section_title, "contents": section_contents})
             else:
                 # All files at the root level — list in order
                 for file_info in files_info:
-                    contents.append(get_clean_href(file_info))
+                    href = get_clean_href(file_info)
+                    if file_info.get("title"):
+                        contents.append({"text": file_info["title"], "href": href})
+                    else:
+                        contents.append(href)
 
         return {
             "id": "user-guide",
@@ -5694,9 +6444,15 @@ class GreatDocs:
 
 """
 
-        # Reassemble with margin content inserted after frontmatter
+        # Reassemble with the metadata margin sidebar placed AFTER the body.
+        # On desktop `.gd-meta-sidebar` is absolutely positioned into the right
+        # margin (see great-docs.scss), so its position in the DOM is
+        # irrelevant there. On mobile it falls back into normal document flow;
+        # emitting it after the body keeps the hero/content first rather than
+        # pushing it below the metadata panel (links/developers/etc.). See
+        # https://github.com/posit-dev/great-docs/issues/220.
         if margin_content:
-            blended_content = f"{frontmatter_block}\n{hero_block}::: {{.gd-meta-sidebar}}\n{margin_content}\n:::\n\n{body}"
+            blended_content = f"{frontmatter_block}\n{hero_block}{body}\n\n::: {{.gd-meta-sidebar}}\n{margin_content}\n:::\n"
         else:
             blended_content = f"{frontmatter_block}\n{hero_block}{body}"
 
@@ -5828,7 +6584,7 @@ class GreatDocs:
                 ["git", "describe", "--tags", "--exact-match"],
                 cwd=package_root,
                 capture_output=True,
-                text=True,
+                **TEXT_MODE_KWARGS,
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -5838,7 +6594,7 @@ class GreatDocs:
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=package_root,
                 capture_output=True,
-                text=True,
+                **TEXT_MODE_KWARGS,
             )
             if result.returncode == 0:
                 branch = result.stdout.strip()
@@ -5894,20 +6650,77 @@ class GreatDocs:
 
         # Pre-warm the griffe cache so _get_source_location doesn't reload per-item
         try:
-            self._get_griffe_package(normalized_name)
+            pkg = self._get_griffe_package(normalized_name)
         except Exception:
-            pass  # _get_source_location will handle failures gracefully
+            pkg = None
 
-        # Categorize ALL exports in a single batch call (instead of per-export)
-        categories = self._categorize_api_objects(package_name, exports)
-        all_classes = set(categories.get("all_classes", []))
-        class_method_names = categories.get("class_method_names", {})
+        # Derive class membership directly from the griffe tree — avoids the
+        # expensive _categorize_api_objects() path which calls get_object() per
+        # method (dynamic imports, ~100-200ms each).
+        _INIT_DUNDERS = {"__init__", "__new__", "__init_subclass__"}
+        class_method_names: dict[str, list[str]] = {}
+        if pkg is not None:
+            for item_name in exports:
+                if item_name not in pkg.members:
+                    continue
+                obj = pkg.members[item_name]
+                try:
+                    if obj.kind.value != "class":
+                        continue
+                except Exception:
+                    continue
+                methods = []
+                try:
+                    for member_name, member in obj.members.items():
+                        if member_name.startswith("__") and member_name.endswith("__"):
+                            if member_name in _INIT_DUNDERS:
+                                continue
+                        elif member_name.startswith("_"):
+                            continue
+                        try:
+                            if member.kind.value in ("function", "method", "attribute"):
+                                methods.append(member_name)
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+                if methods:
+                    class_method_names[item_name] = methods
+                    print(f"{item_name}: class with {len(methods)} public methods")
+
+        # Hoist invariants for _build_github_source_url out of the loop
+        package_root = self._find_package_root()
+        metadata = self._get_package_metadata()
+        source_path = metadata.get("source_link_path")
+
+        def _make_github_url(source_loc: dict) -> str | None:
+            filepath = source_loc.get("file", "")
+            if source_path:
+                relative_path = f"{source_path}/{Path(filepath).name}"
+            else:
+                try:
+                    filepath_obj = Path(filepath)
+                    if filepath_obj.is_absolute():
+                        relative_path = str(filepath_obj.relative_to(package_root))
+                    else:
+                        relative_path = filepath
+                except ValueError:
+                    relative_path = filepath
+
+            start_line = source_loc.get("start_line", 1)
+            end_line = source_loc.get("end_line", start_line)
+            url = f"{base_url}/blob/{branch}/{relative_path}"
+            if start_line == end_line:
+                url += f"#L{start_line}"
+            else:
+                url += f"#L{start_line}-L{end_line}"
+            return url
 
         # Generate source links for each export (uses cached griffe pkg internally)
         for item_name in exports:
             source_loc = self._get_source_location(normalized_name, item_name)
             if source_loc:
-                github_url = self._build_github_source_url(source_loc, branch)
+                github_url = _make_github_url(source_loc)
                 if github_url:
                     source_links[item_name] = {
                         "url": github_url,
@@ -5917,13 +6730,12 @@ class GreatDocs:
                     }
 
             # Also get source links for methods of classes
-            if item_name in all_classes:
-                method_names = class_method_names.get(item_name, [])
-                for method_name in method_names:
+            if item_name in class_method_names:
+                for method_name in class_method_names[item_name]:
                     full_name = f"{item_name}.{method_name}"
                     method_loc = self._get_source_location(normalized_name, full_name)
                     if method_loc:
-                        method_url = self._build_github_source_url(method_loc, branch)
+                        method_url = _make_github_url(method_loc)
                         if method_url:
                             source_links[full_name] = {
                                 "url": method_url,
@@ -6130,11 +6942,18 @@ class GreatDocs:
             normalized = package_name.replace("-", "_")
             if normalized != package_name:
                 print(
-                    f"Could not locate __init__.py for package '{package_name}' (module name: '{normalized}')"
+                    f"Could not locate __init__.py for package '{package_name}' (module name: '{normalized}')",
+                    file=sys.stderr,
                 )
-                print(f"Tip: Ensure a '{normalized}/' directory exists with an __init__.py file")
+                print(
+                    f"Tip: Ensure a '{normalized}/' directory exists with an __init__.py file",
+                    file=sys.stderr,
+                )
             else:
-                print(f"Could not locate __init__.py for package '{package_name}'")
+                print(
+                    f"Could not locate __init__.py for package '{package_name}'",
+                    file=sys.stderr,
+                )
             return None
 
         print(f"Found package __init__.py at: {init_file.relative_to(self.project_root)}")
@@ -6238,8 +7057,6 @@ class GreatDocs:
         try:
             import griffe
 
-            _patch_griffe()
-
             # Normalize package name (replace dashes with underscores)
             normalized_name = package_name.replace("-", "_")
 
@@ -6247,10 +7064,14 @@ class GreatDocs:
             try:
                 pkg = self._get_griffe_package(normalized_name)
             except Exception as e:
-                print(f"Warning: Could not load package with griffe ({type(e).__name__})")
+                print(
+                    f"Warning: Could not load package with griffe ({type(e).__name__})",
+                    file=sys.stderr,
+                )
                 if package_name != normalized_name:
                     print(
-                        f"   (Looking for module '{normalized_name}' from project '{package_name}')"
+                        f"   (Looking for module '{normalized_name}' from project '{package_name}')",
+                        file=sys.stderr,
                     )
                 return None
 
@@ -6321,111 +7142,61 @@ class GreatDocs:
                         f"{', '.join(sorted(user_excluded_found))}"
                     )
 
-            # Super-safe filtering: try each object with the renderer's get_object
-            # If it fails for ANY reason, exclude it; this catches:
-            # - Cyclic aliases
-            # - Unresolvable aliases
-            # - Rust/PyO3 objects (KeyError)
-            # - Submodules (which would cause recursive documentation issues)
-            # - Any other edge case that would crash the API reference build
+            # Validate exports using the already-loaded griffe tree.
+            # This catches cyclic/unresolvable aliases, submodules, Rust/PyO3
+            # objects, and external re-exports without the cost of per-item
+            # dynamic imports (which dominated build time for large packages).
             safe_exports = []
-            failed_exports = {}  # name -> error type for reporting
-
-            # Try to use the renderer's `get_object()` for validation
-            # Note: we intentionally do NOT share a loader here because the
-            # re-export detection (canonical_path check) gives false positives
-            # when the loader has extra modules pre-loaded (e.g., type aliases
-            # like `HandlerFunc = Callable[..., None]` get traced back to typing).
-            gd_get_object = None
-            try:
-                from functools import partial
-
-                from great_docs._renderer.introspection import get_object as qd_get_object
-
-                gd_get_object = partial(qd_get_object, dynamic=True, parser="numpy")
-            except ImportError:  # pragma: no cover
-                pass
-
-            # Try to import the actual package to detect modules
-            actual_package = None
-            try:
-                import importlib
-
-                actual_package = importlib.import_module(normalized_name)
-            except ImportError:  # pragma: no cover
-                pass
+            failed_exports = {}
 
             for name in filtered:
-                # Check if this is a submodule; these are allowed through but will
-                # be introspected by _categorize_api_objects to discover their
-                # public classes and functions
-                is_submodule = False
+                if name not in pkg.members:
+                    failed_exports[name] = "not found"
+                    continue
 
-                # Check via runtime import first
-                if actual_package is not None:
-                    runtime_obj = getattr(actual_package, name, None)
-                    if runtime_obj is not None:
-                        import types
+                obj = pkg.members[name]
 
-                        if isinstance(runtime_obj, types.ModuleType):
-                            is_submodule = True
+                try:
+                    kind_val = obj.kind.value
+                except griffe.CyclicAliasError:
+                    failed_exports[name] = "cyclic alias"
+                    continue
+                except griffe.AliasResolutionError:
+                    failed_exports[name] = "unresolvable alias"
+                    continue
+                except KeyError:
+                    failed_exports[name] = "not found (likely Rust/PyO3)"
+                    continue
+                except Exception as e:
+                    failed_exports[name] = f"{type(e).__name__}"
+                    continue
 
-                # Fallback: check via griffe static analysis
-                # (handles packages where __all__ lists submodules that aren't
-                # auto-imported at runtime, e.g., lazy imports)
-                if not is_submodule and name in pkg.members:
-                    try:
-                        if pkg.members[name].kind.value == "module":
-                            is_submodule = True
-                    except Exception:  # pragma: no cover
-                        pass
-
-                if is_submodule:
-                    # Submodules are passed through to categorization which will
-                    # drill into them to discover classes/functions
+                if kind_val == "module":
                     safe_exports.append(name)
                     continue
 
-                if gd_get_object is not None:
-                    try:
-                        # Try to load the object exactly as the renderer would
-                        qd_obj = gd_get_object(f"{normalized_name}:{name}")
-                        # Try to access members to trigger any lazy resolution errors
-                        _ = qd_obj.members
-                        _ = qd_obj.kind
+                try:
+                    _ = obj.members
+                except griffe.CyclicAliasError:
+                    failed_exports[name] = "cyclic alias"
+                    continue
+                except griffe.AliasResolutionError:
+                    failed_exports[name] = "unresolvable alias"
+                    continue
+                except Exception as e:
+                    failed_exports[name] = f"{type(e).__name__}"
+                    continue
 
-                        # Exclude stdlib / third-party re-exports: if the object
-                        # is an alias whose canonical path lives outside this
-                        # package, it is a re-export and should not be documented.
-                        if (
-                            hasattr(qd_obj, "is_alias")
-                            and qd_obj.is_alias
-                            and hasattr(qd_obj, "canonical_path")
-                        ):
-                            canon = qd_obj.canonical_path
-                            if not canon.startswith(normalized_name + "."):
-                                failed_exports[name] = "external re-export"
-                                continue
-
-                        safe_exports.append(name)
-                    except griffe.CyclicAliasError:  # pragma: no cover
-                        failed_exports[name] = "cyclic alias"
-                    except griffe.AliasResolutionError:  # pragma: no cover
-                        failed_exports[name] = "unresolvable alias"
-                    except KeyError:  # pragma: no cover
-                        failed_exports[name] = "not found (likely Rust/PyO3)"
-                    except Exception as e:  # pragma: no cover
-                        # Catch-all for any other error that would crash the build
-                        failed_exports[name] = f"{type(e).__name__}"
-                else:
-                    # Fallback: use basic griffe check if renderer not available
+                if hasattr(obj, "is_alias") and obj.is_alias:
                     try:
-                        obj = pkg.members[name]
-                        _ = obj.kind
-                        _ = obj.members
-                        safe_exports.append(name)
-                    except Exception as e:  # pragma: no cover
-                        failed_exports[name] = f"{type(e).__name__}"
+                        canon = obj.canonical_path
+                        if not canon.startswith(normalized_name + "."):
+                            failed_exports[name] = "external re-export"
+                            continue
+                    except Exception:
+                        pass
+
+                safe_exports.append(name)
 
             # Report excluded items grouped by error type
             if failed_exports:
@@ -6475,8 +7246,6 @@ class GreatDocs:
         """
         try:
             import griffe
-
-            _patch_griffe()
 
             # Normalize package name
             normalized_name = package_name.replace("-", "_")
@@ -6619,9 +7388,7 @@ class GreatDocs:
         try:
             import griffe
 
-            _patch_griffe()
-
-            from great_docs._renderer.introspection import get_object as qd_get_object
+            from great_docs._apiref.introspect import get_object as qd_get_object
         except ImportError:  # pragma: no cover
             # If renderer isn't available, default to True (will fail at build time anyway)
             return True  # pragma: no cover
@@ -6692,10 +7459,17 @@ class GreatDocs:
         list | None
             List of exported/public names, or None if discovery failed.
         """
+        normalized = package_name.replace("-", "_")
+        if self._cached_package_name == normalized and self._cached_exports is not None:
+            return self._cached_exports
+
         exports = self._discover_package_exports(package_name)
         if exports is None:
-            print("Falling back to __all__ discovery")
-            return self._parse_package_exports(package_name)
+            print("Falling back to __all__ discovery", file=sys.stderr)
+            exports = self._parse_package_exports(package_name)
+
+        self._cached_package_name = normalized
+        self._cached_exports = exports
         return exports
 
     # ── Exception base classes (used for sub-classification) ─────────────
@@ -6893,7 +7667,8 @@ class GreatDocs:
         except Exception:  # pragma: no cover
             labels = set()  # pragma: no cover
 
-        # griffe >= 0.40 has a dedicated "type alias" kind
+        # griffe gives PEP 695 type aliases a dedicated "type alias" kind.
+        # Reading `.kind` can raise for an unresolved alias, hence the guard.
         try:
             if obj.kind.value == "type alias":
                 return "type_alias"
@@ -6995,6 +7770,11 @@ class GreatDocs:
         categories
             Dictionary returned by `_categorize_api_objects`.
         """
+        # Read-only callers (e.g. `documented_symbol_names`) must not drop
+        # build artifacts into the project root.
+        if self._suppress_artifact_writes:
+            return
+
         import json
 
         # Map each category key to the type label used by post-render
@@ -7092,8 +7872,6 @@ class GreatDocs:
         try:
             import griffe
 
-            _patch_griffe()
-
             # Load the package using griffe
             normalized_name = package_name.replace("-", "_")
 
@@ -7103,26 +7881,13 @@ class GreatDocs:
             try:
                 from functools import partial
 
-                from great_docs._renderer.introspection import (
-                    GriffeLoader,
-                    LinesCollection,
-                    ModulesCollection,
-                    Parser,
-                    get_parser_defaults,
-                )
-                from great_docs._renderer.introspection import (
+                from great_docs._apiref.introspect import (
                     get_object as qd_get_object,
                 )
+                from great_docs._apiref.introspect import make_loader
 
-                _shared_loader = GriffeLoader(
-                    docstring_parser=Parser("numpy"),
-                    docstring_options=get_parser_defaults("numpy"),
-                    modules_collection=ModulesCollection(),
-                    lines_collection=LinesCollection(),
-                )
-                gd_get_object = partial(
-                    qd_get_object, dynamic=True, parser="numpy", loader=_shared_loader
-                )
+                _shared_loader = make_loader("numpy")
+                gd_get_object = partial(qd_get_object, dynamic=True, loader=_shared_loader)
             except ImportError:  # pragma: no cover
                 pass  # pragma: no cover
 
@@ -7130,7 +7895,10 @@ class GreatDocs:
             try:
                 pkg = self._get_griffe_package(normalized_name)
             except Exception as e:
-                print(f"Warning: Could not load package with griffe ({type(e).__name__})")
+                print(
+                    f"Warning: Could not load package with griffe ({type(e).__name__})",
+                    file=sys.stderr,
+                )
                 # Fallback: use importlib + inspect to categorize exports
                 return self._categorize_api_objects_fallback(normalized_name, exports)
 
@@ -7342,7 +8110,7 @@ class GreatDocs:
                                     except Exception:  # pragma: no cover
                                         # Dynamic mode failed; try static (no dynamic=True)
                                         try:
-                                            from great_docs._renderer.introspection import (
+                                            from great_docs._apiref.introspect import (
                                                 get_object as qd_get,
                                             )
 
@@ -7409,7 +8177,7 @@ class GreatDocs:
                                                         except Exception:  # pragma: no cover
                                                             # Dynamic failed; try static
                                                             try:
-                                                                from great_docs._renderer.introspection import (
+                                                                from great_docs._apiref.introspect import (
                                                                     get_object as qd_get,
                                                                 )
 
@@ -7874,106 +8642,6 @@ class GreatDocs:
 
         return sections if sections else None
 
-    def _extract_all_directives(self, package_name: str) -> dict:
-        """
-        Extract Great Docs directives from all docstrings in the package.
-
-        Scans all exported classes, methods, and functions for @seealso
-        and @nodoc directives.
-
-        Parameters
-        ----------
-        package_name
-            The name of the package to scan.
-
-        Returns
-        -------
-        dict
-            Mapping of object names to their DocDirectives.
-            Keys are either simple names (e.g., "MyClass") or qualified names
-            (e.g., "MyClass.my_method").
-        """
-        from ._directives import extract_directives
-
-        try:
-            import griffe
-
-            _patch_griffe()
-
-            normalized_name = package_name.replace("-", "_")
-
-            try:
-                pkg = self._get_griffe_package(normalized_name)
-            except Exception as e:
-                print(f"Warning: Could not load package with griffe ({type(e).__name__})")
-                return {}
-
-            directive_map = {}
-
-            # Use list() to materialize the iterator and catch any alias resolution errors
-            try:
-                members_list = list(pkg.members.items())
-            except (griffe.CyclicAliasError, griffe.AliasResolutionError):  # pragma: no cover
-                # Some members have unresolvable aliases so try to iterate more carefully
-                members_list = []
-                for name in list(pkg.members.keys()):
-                    try:
-                        members_list.append((name, pkg.members[name]))
-                    except Exception:
-                        # Skip members that can't be accessed
-                        continue
-            except Exception:  # pragma: no cover
-                # Fall back to empty if we can't enumerate members at all
-                return {}
-
-            for name, obj in members_list:
-                # Skip private members
-                if name.startswith("_"):
-                    continue
-
-                # Skip aliases that can't be resolved (e.g., re-exports from external packages)
-                try:
-                    # Access kind to trigger alias resolution
-                    _ = obj.kind
-                except Exception:  # pragma: no cover
-                    # Silently skip unresolvable aliases since they're usually re-exports
-                    # from external packages that wouldn't be documented anyway
-                    continue
-
-                # Extract directives from the object's docstring
-                try:
-                    if obj.docstring:
-                        directives = extract_directives(obj.docstring.value)
-                        if directives:
-                            directive_map[name] = directives  # pragma: no cover
-                except Exception:  # pragma: no cover
-                    continue
-
-                # For classes, also process methods
-                try:
-                    if obj.kind.value == "class":
-                        for method_name, method in obj.members.items():
-                            if method_name.startswith("_"):
-                                continue
-                            try:
-                                if method.docstring:
-                                    method_directives = extract_directives(method.docstring.value)
-                                    if method_directives:
-                                        directive_map[f"{name}.{method_name}"] = (
-                                            method_directives  # pragma: no cover
-                                        )
-                            except Exception:  # pragma: no cover
-                                continue
-                except Exception:  # pragma: no cover
-                    # Skip if we can't introspect the class
-                    pass
-
-            return directive_map
-
-        except ImportError:  # pragma: no cover
-            print("Warning: griffe not available for directive extraction")  # pragma: no cover
-            return {}  # pragma: no cover
-
     def _build_sections_from_reference_config(
         self, reference_config: list[dict]
     ) -> list[dict] | None:
@@ -8077,8 +8745,6 @@ class GreatDocs:
         """
         import griffe
 
-        _patch_griffe()
-
         normalized_name = package_name.replace("-", "_")
 
         try:
@@ -8114,9 +8780,10 @@ class GreatDocs:
                 top_level_names.add(name)
 
         # Classify each top-level name
+        missing_names: list[str] = []
         for name in sorted(top_level_names):
             if name not in pkg.members:
-                categories["other"].append(name)
+                missing_names.append(name)
                 continue
 
             try:
@@ -8230,6 +8897,30 @@ class GreatDocs:
                     pass
             else:
                 categories["other"].append(name)
+
+        # Fail loudly if configured items cannot be found in the package,
+        # but only when the package is genuinely installed (has a resolvable version).
+        # If the package isn't installed (version unknown), this is likely a
+        # bootstrap/development scenario — fall back gracefully.
+        if missing_names:
+            try:
+                from importlib.metadata import version as _mv
+
+                pkg_ver = _mv(package_name)
+            except Exception:
+                pkg_ver = None
+
+            if pkg_ver is not None:
+                items_str = ", ".join(f"`{n}`" for n in missing_names)
+                raise SystemExit(
+                    f"ERROR: Configured reference item(s) not found in "
+                    f"`{package_name}` v{pkg_ver}: {items_str}\n"
+                    f"Check that the correct version of `{package_name}` is installed "
+                    f"and that these names exist in the package's public API."
+                )
+            else:
+                # Package not installed — treat missing items as "other" (old behavior)
+                categories["other"].extend(missing_names)
 
         # Classify explicitly-referenced methods (ClassName.method_name)
         for class_name, methods in method_refs.items():
@@ -8438,13 +9129,112 @@ class GreatDocs:
 
         return sections if sections else None
 
+    def documented_symbol_names(self, package_name: str) -> list[str]:
+        """Dotted reference-page stems for the documented public API
+
+        Each stem names one published reference page: a top-level class or
+        function, a submodule-qualified class (`scores.CosineScore`), or a
+        method (`scores.CosineScore.fit`). The set matches the rendered
+        reference — top-level objects and their documented members, `%nodoc`
+        excluded — whether from an explicit `reference:` config or
+        auto-discovery, so a versioned snapshot and the live build describe the
+        same API surface. Empty when the package documents nothing.
+
+        Parameters
+        ----------
+        package_name
+            The package name (may contain dashes).
+
+        Returns
+        -------
+        list[str]
+            Dotted stems, deduplicated, in first-occurrence order.
+        """
+        import contextlib
+        import io
+        import sys
+        from types import ModuleType
+
+        added_paths: list[str] = []
+        cached_modules: dict[str, ModuleType] = {}
+        modules_evicted = False
+        importable_name = self._normalize_package_name(package_name)
+
+        try:
+            # Suppress diagnostic prints from the resolution/filtering pipeline — this is a
+            # programmatic query method and its callers own their own output streams.
+            # `_suppress_artifact_writes` additionally prevents the pipeline from writing
+            # `_object_types.json` (and its sidecar) into the project root.
+            self._suppress_artifact_writes = True
+            # `APIReference` loads the package through a plain griffe loader (sys.path-based),
+            # unlike `_create_api_sections_with_config`'s own loader, which is handed explicit
+            # search paths. Temporarily extend sys.path so a package that isn't installed (e.g.
+            # a src-layout dev checkout) can still be found, then restore it.
+            added_paths = [str(p) for p in self._griffe_search_paths() if str(p) not in sys.path]
+            sys.path[:0] = added_paths
+            # Drop any cached import of the package (and its submodules) so dynamic
+            # resolution reflects what's on disk *now* — not a stale module object
+            # left in `sys.modules` by an earlier call in this process (e.g. a
+            # different git-tag checkout during a versioned-snapshot loop).
+            module_keys = [
+                k
+                for k in sys.modules
+                if k == importable_name or k.startswith(f"{importable_name}.")
+            ]
+            cached_modules = {key: sys.modules[key] for key in module_keys}
+            for key in module_keys:
+                del sys.modules[key]
+            modules_evicted = True
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                sections = self._create_api_sections_with_config(package_name)
+                if not sections:
+                    return []
+                from great_docs._apiref.api_reference import APIReference
+                from great_docs._apiref.resolve import ObjectNotFoundError
+
+                # In `dynamic` mode, resolving `documented_symbols` below performs a real
+                # import of the target package (executing its top-level code). The
+                # `sys.modules` eviction above only refreshes the target package's own
+                # modules, not third-party packages it imports — so a same-process loop
+                # over different checkouts can still see third-party global-state
+                # carryover (e.g. module-level caches or singletons).
+                ref = APIReference(
+                    {
+                        "api-reference": {
+                            "package": importable_name,
+                            "sections": sections,
+                            "parser": self._config.parser or "numpy",
+                            "dynamic": self._config.dynamic,
+                        }
+                    }
+                )
+                try:
+                    return ref.documented_symbols
+                except (ObjectNotFoundError, ImportError, AttributeError):
+                    return []
+        finally:
+            self._suppress_artifact_writes = False
+            if modules_evicted:
+                for key in [
+                    k
+                    for k in sys.modules
+                    if k == importable_name or k.startswith(f"{importable_name}.")
+                ]:
+                    del sys.modules[key]
+                sys.modules.update(cached_modules)
+            for p in added_paths:
+                if p in sys.path:
+                    sys.path.remove(p)
+
     def _create_api_sections_with_config(self, package_name: str) -> list | None:
         """
         Create API reference sections, prioritizing explicit config over auto-discovery.
 
         First checks for explicit `reference` configuration in great-docs.yml.
         If not found, falls back to auto-generating sections from discovered exports.
-        After obtaining sections, filters out any items marked with `%nodoc`.
 
         Parameters
         ----------
@@ -8462,76 +9252,9 @@ class GreatDocs:
             sections = config_sections
         else:
             # Fall back to auto-generated sections from discovered exports
-            print("No reference config found, using auto-discovery")
             sections = self._create_api_sections(package_name)
 
-        # Apply %nodoc filtering to remove excluded items
-        if sections:
-            sections = self._apply_nodoc_filter(package_name, sections)
-
         return sections
-
-    def _apply_nodoc_filter(self, package_name: str, sections: list[dict]) -> list[dict] | None:
-        """
-        Filter out items marked with `%nodoc` from API reference sections.
-
-        Extracts directives from all docstrings in the package and removes
-        any items (and their companion method sections) whose docstrings
-        contain the `%nodoc` directive.
-
-        Parameters
-        ----------
-        package_name
-            The name of the package to scan for directives.
-        sections
-            The API reference sections to filter.
-
-        Returns
-        -------
-        list[dict] | None
-            Filtered sections with `%nodoc` items removed, or None if all
-            items were excluded.
-        """
-        directive_map = self._extract_all_directives(package_name)
-        if not directive_map:
-            return sections
-
-        # Collect names of items marked with %nodoc
-        nodoc_names: set[str] = set()
-        for name, directives in directive_map.items():
-            if directives.nodoc:
-                nodoc_names.add(name)
-
-        if not nodoc_names:
-            return sections  # pragma: no cover
-
-        print(
-            f"Excluding {len(nodoc_names)} item(s) marked with %nodoc: {', '.join(sorted(nodoc_names))}"
-        )
-
-        def _item_name(item: str | dict) -> str:
-            """Extract the bare object name from a section content item."""
-            if isinstance(item, dict):
-                return item.get("name", "")
-            return item
-
-        filtered_sections = []
-        for section in sections:
-            contents = section.get("contents", [])
-            filtered_contents = [item for item in contents if _item_name(item) not in nodoc_names]
-
-            # Also drop companion method sections whose parent class is %nodoc
-            title = section.get("title", "")
-            # Companion sections have titles like "ClassName Methods"
-            if title.endswith(" Methods"):
-                class_name = title[: -len(" Methods")]
-                if class_name in nodoc_names:
-                    continue
-
-            if filtered_contents:
-                filtered_sections.append({**section, "contents": filtered_contents})
-
-        return filtered_sections if filtered_sections else None
 
     def _extract_authors_from_pyproject(self) -> list[dict[str, str]]:
         """
@@ -8611,13 +9334,7 @@ class GreatDocs:
         if not authors:
             return ""
 
-        lines = [
-            "# Author Information",
-            "# ------------------",
-            "# Author metadata for display in the landing page sidebar",
-            "# You can add additional fields: github, orcid, affiliation, homepage",
-            "authors:",
-        ]
+        lines = ["authors:"]
 
         for author in authors:
             lines.append(f"  - name: {author['name']}")
@@ -8635,141 +9352,13 @@ class GreatDocs:
 
         return "\n".join(lines)
 
-    @staticmethod
-    def _format_preserved_extras_yaml(
-        display_name: str | None = None,
-        site: dict | None = None,
-        funding: dict | None = None,
-    ) -> tuple[str, str, str]:
-        """
-        Build YAML fragments for preserved config values.
-
-        Returns
-        -------
-        tuple[str, str, str]
-            `(display_name_yaml, site_yaml, funding_yaml)`: each is either
-            an active YAML block or the commented-out template placeholder.
-        """
-        # ── display_name ─────────────────────────────────────────────
-        if display_name:
-            dn_yaml = (
-                "# Display Name\n"
-                "# ------------\n"
-                "# Custom display name for the site navbar/title\n"
-                f'display_name: "{display_name}"\n'
-            )
-        else:
-            dn_yaml = ""
-
-        # ── site settings ────────────────────────────────────────────
-        if site:
-            parts = [
-                "# Site Settings",
-                "# -------------",
-                "site:",
-            ]
-            for k, v in site.items():
-                if isinstance(v, bool):
-                    parts.append(f"  {k}: {'true' if v else 'false'}")
-                elif isinstance(v, str):
-                    parts.append(f"  {k}: {v}")
-                else:
-                    parts.append(f"  {k}: {v}")
-            site_yaml = "\n".join(parts) + "\n"
-        else:
-            site_yaml = (
-                "# Site Settings\n"
-                "# -------------\n"
-                "# site:\n"
-                "#   theme: flatly              # Quarto theme (default: flatly)\n"
-                "#   toc: true                  # Show table of contents (default: true)\n"
-                "#   toc-depth: 2               # TOC heading depth (default: 2)\n"
-                '#   toc-title: On this page    # TOC title (default: "On this page")\n'
-            )
-
-        # ── funding ──────────────────────────────────────────────────
-        if funding and isinstance(funding, dict) and funding.get("name"):
-            parts = [
-                "# Funding / Copyright Holder",
-                "# --------------------------",
-                "funding:",
-                f'  name: "{funding["name"]}"',
-            ]
-            if funding.get("roles"):
-                parts.append("  roles:")
-                for role in funding["roles"]:
-                    parts.append(f"    - {role}")
-            if funding.get("homepage"):
-                parts.append(f"  homepage: {funding['homepage']}")
-            if funding.get("ror"):
-                parts.append(f"  ror: {funding['ror']}")
-            funding_yaml = "\n".join(parts) + "\n"
-        else:
-            funding_yaml = (
-                "# Funding / Copyright Holder\n"
-                "# --------------------------\n"
-                "# Credit the organization that funds or holds copyright for this package.\n"
-                "# Displays in sidebar and footer. Homepage and ROR provide links.\n"
-                "# funding:\n"
-                '#   name: "Posit Software, PBC"\n'
-                "#   roles:\n"
-                "#     - Copyright holder\n"
-                "#     - funder\n"
-                "#   homepage: https://posit.co\n"
-                "#   ror: https://ror.org/03wc8by49\n"
-            )
-
-        return dn_yaml, site_yaml, funding_yaml
-
-    @staticmethod
-    def _format_cli_yaml(cli_config: dict | None = None) -> str:
-        """
-        Build YAML fragment for CLI documentation configuration.
-
-        Parameters
-        ----------
-        cli_config
-            CLI config dict (e.g. `{"enabled": True, "module": "pkg.cli"}`),
-            or `None` to emit a commented-out template.
-
-        Returns
-        -------
-        str
-            Active `cli:` YAML block when enabled, or a commented-out template.
-        """
-        if cli_config and cli_config.get("enabled"):
-            parts = [
-                "# CLI Documentation",
-                "# -----------------",
-                "cli:",
-                "  enabled: true",
-            ]
-            if cli_config.get("module"):
-                parts.append(f"  module: {cli_config['module']}")
-            if cli_config.get("name"):
-                parts.append(f"  name: {cli_config['name']}")
-            return "\n".join(parts) + "\n"
-
-        return (
-            "\n".join(
-                [
-                    "# CLI Documentation",
-                    "# -----------------",
-                    "# cli:",
-                    "#   enabled: true              # Enable CLI documentation",
-                    "#   module: my_package.cli     # Module containing Click commands",
-                    "#   name: cli                  # Name of the Click command object",
-                ]
-            )
-            + "\n"
-        )
-
     def _generate_initial_config(self, force: bool = False) -> bool:
         """
         Generate an initial great-docs.yml with discovered exports.
 
-        Creates a great-docs.yml file in the project root with sensible defaults
-        and a reference section populated from discovered package exports.
+        Renders the shipped `great-docs.default.yml` template with detected
+        values (`parser`, `dynamic`, and optionally `module`, `authors`,
+        `reference`) spliced in as live keys.
 
         Parameters
         ----------
@@ -8783,7 +9372,6 @@ class GreatDocs:
         """
         config_path = self._find_package_root() / "great-docs.yml"
 
-        # Check if config already exists
         if config_path.exists() and not force:
             print(
                 f"great-docs.yml already exists at {config_path}\n"
@@ -8795,43 +9383,46 @@ class GreatDocs:
         package_name = self._detect_package_name()
         if not package_name:
             print("Warning: Could not detect package name, creating minimal config")
-            # Create minimal config without reference section
-            config_content = self._generate_minimal_config()
-            config_path.write_text(config_content, encoding="utf-8")
+            # No importable name to detect from; fall back to the documented
+            # parser/dynamic defaults so the emitted config is never empty.
+            minimal_overrides = {"parser": "parser: numpy", "dynamic": "dynamic: true"}
+            config_path.write_text(create_default_config(minimal_overrides), encoding="utf-8")
             print(f"Created {config_path}")
             return True
 
-        # Get normalized package name for imports
-        importable_name = self._normalize_package_name(package_name)
+        overrides: dict[str, str] = {}
 
-        # Try to detect the actual module name (handles namespace packages,
-        # src-layout mismatches, compiled extensions, etc.)
+        # Resolve the importable module name.
+        importable_name = self._normalize_package_name(package_name)
         module_name = self._detect_module_name()
         if module_name:
             importable_name = module_name
-
-        # Only write an explicit 'module:' line when the detected module name
-        # differs from the simple hyphen→underscore normalized project name.
         normalized_name = self._normalize_package_name(package_name)
         explicit_module = module_name if module_name != normalized_name else None
+        if explicit_module:
+            overrides["module"] = f"module: {explicit_module}"
 
         # Detect docstring style
         print("Detecting docstring style...")
         parser_style = self._detect_docstring_style(importable_name)
+        overrides["parser"] = f"parser: {parser_style}"
+
+        # Authors from pyproject.toml
+        authors_yaml = self._format_authors_yaml(self._extract_authors_from_pyproject())
+        if authors_yaml:
+            overrides["authors"] = authors_yaml
 
         # Discover exports
         exports = self._get_package_exports(importable_name)
         if not exports:
-            print("Warning: Could not discover exports, creating minimal config")
-            # Without exports, we still try to detect dynamic mode
+            print(
+                "Warning: Could not discover exports; edit the commented "
+                "'reference:' section in great-docs.yml to list your API."
+            )
             print("Testing dynamic introspection mode...")
             dynamic_mode = self._detect_dynamic_mode(importable_name)
-            config_content = self._generate_minimal_config(
-                parser=parser_style,
-                dynamic=dynamic_mode,
-                module=explicit_module,
-            )
-            config_path.write_text(config_content, encoding="utf-8")
+            overrides["dynamic"] = f"dynamic: {'true' if dynamic_mode else 'false'}"
+            config_path.write_text(create_default_config(overrides), encoding="utf-8")
             print(f"Created {config_path}")
             return True
 
@@ -8839,7 +9430,6 @@ class GreatDocs:
         print("Categorizing API objects...")
         categories = self._categorize_api_objects(importable_name, exports)
 
-        # Determine dynamic mode based on cyclic alias detection during categorization
         cyclic_alias_count = categories.get("cyclic_alias_count", 0)
         if cyclic_alias_count > 0:
             print(
@@ -8847,260 +9437,41 @@ class GreatDocs:
             )  # pragma: no cover
             dynamic_mode = False  # pragma: no cover
         else:
-            # Run the explicit detection as a fallback
             print("Testing dynamic introspection mode...")
             dynamic_mode = self._detect_dynamic_mode(importable_name)
+        overrides["dynamic"] = f"dynamic: {'true' if dynamic_mode else 'false'}"
 
-        # Generate config content
-        config_content = self._generate_config_with_reference(
-            categories,
-            importable_name,
-            parser=parser_style,
-            dynamic=dynamic_mode,
-            module=explicit_module,
-        )
+        reference_yaml = self._build_reference_yaml(categories)
+        if "  - title:" in reference_yaml:
+            overrides["reference"] = reference_yaml
 
-        config_path.write_text(config_content, encoding="utf-8")
+        config_path.write_text(create_default_config(overrides), encoding="utf-8")
         print(f"Created {config_path}")
         return True
 
-    def _generate_minimal_config(
-        self,
-        parser: str = "numpy",
-        dynamic: bool = True,
-        module: str | None = None,
-    ) -> str:
+    def _build_reference_yaml(self, categories: dict) -> str:
         """
-        Generate minimal great-docs.yml without reference section.
-
-        Parameters
-        ----------
-        parser
-            The docstring parser style ("numpy", "google", or "sphinx").
-        dynamic
-            Whether to use dynamic introspection mode for API reference generation.
-        module
-            Explicit module name when it differs from the project name.
-
-        Returns
-        -------
-        str
-            YAML content for a minimal configuration file.
-        """
-        dynamic_str = "true" if dynamic else "false"
-
-        # Extract authors from pyproject.toml
-        authors = self._extract_authors_from_pyproject()
-        authors_yaml = self._format_authors_yaml(authors)
-
-        # Build the config with optional authors section
-        authors_section = f"\n{authors_yaml}\n" if authors_yaml else ""
-
-        # Build default YAML fragments for site, funding, etc.
-        _dn_yaml, site_yaml, funding_yaml = self._format_preserved_extras_yaml()
-
-        # Build CLI section (default commented-out template)
-        cli_yaml = self._format_cli_yaml()
-
-        return f"""# Great Docs Configuration
-# See https://posit-dev.github.io/great-docs/user-guide/configuration.html
-
-# Module Name (optional)
-# ----------------------
-# Set this if your importable module name differs from the project name.
-# Example: project 'py-yaml12' with module name 'yaml12'
-{f"module: {module}" if module else "# module: yaml12"}
-
-# Docstring Parser
-# ----------------
-# The docstring format used in your package (numpy, google, or sphinx)
-parser: {parser}
-
-# Dynamic Introspection
-# ---------------------
-# Use runtime introspection for more accurate documentation (default: true)
-# Set to false if your package has cyclic alias issues (e.g., PyO3/Rust bindings)
-dynamic: {dynamic_str}
-
-# Exclusions
-# ----------
-# Items to exclude from auto-documentation (affects 'init' and 'scan')
-# exclude:
-#   - InternalClass
-#   - helper_function
-
-# Logo & Favicon
-# ---------------
-# Point to a single logo file (replaces the text title in the navbar):
-# logo: assets/logo.svg
-#
-# For light/dark variants:
-# logo:
-#   light: assets/logo-light.svg
-#   dark: assets/logo-dark.svg
-#
-# To show the text title alongside the logo, add: show_title: true
-{authors_section}
-{funding_yaml}
-# Site URL
-# --------
-# Canonical address of the deployed documentation site.
-# Required for subdirectory deployments, skills page install commands,
-# .well-known/ discovery, and sitemaps.
-# site_url: "https://your-org.github.io/your-package/"
-
-{site_yaml}
-# Jupyter Kernel
-# --------------
-# Jupyter kernel to use for executing code cells in .qmd files.
-# This is set at the project level so it applies to all pages, including
-# auto-generated API reference pages. Can be overridden in individual .qmd
-# file frontmatter if needed for special cases.
-jupyter: python3
-
-{cli_yaml}
-# API Reference Structure
-# -----------------------
-# Auto-discovery couldn't determine your package's public API.
-# You can manually specify which items to document here.
-#
-# Uncomment and customize the reference section below:
-#
-# reference:
-#   - title: Functions
-#     desc: Public functions provided by the package
-#     contents:
-#       - my_function
-#       - another_function
-#
-#   - title: Classes
-#     desc: Main classes for working with the package
-#     contents:
-#       - name: MyClass
-#         members: false       # Don't document methods inline
-#       - SimpleClass          # Methods documented inline (default)
-#
-# After editing, run 'great-docs build' to generate your documentation.
-"""
-
-    def _generate_config_with_reference(
-        self,
-        categories: dict,
-        package_name: str,
-        parser: str = "numpy",
-        dynamic: bool = True,
-        module: str | None = None,
-    ) -> str:
-        """
-        Generate great-docs.yml with a reference section from discovered exports.
+        Build the `reference:` YAML block from categorized exports
 
         Parameters
         ----------
         categories
-            Dictionary from _categorize_api_objects with classes, functions, other.
-        package_name
-            The package name (for method threshold comments).
-        parser
-            The docstring parser style ("numpy", "google", or "sphinx").
-        dynamic
-            Whether to use dynamic introspection mode for API reference generation.
-        module
-            Explicit module name when it differs from the project name.
+            Dictionary from `_categorize_api_objects` with class-like and flat
+            export groups plus method-count metadata.
 
         Returns
         -------
         str
-            YAML content for the configuration file.
+            A YAML block beginning with `reference:`; bare `reference:` when no
+            category has items.
         """
-        dynamic_str = "true" if dynamic else "false"
+        lines = ["reference:"]
 
-        # Extract authors from pyproject.toml
-        authors = self._extract_authors_from_pyproject()
-        authors_yaml = self._format_authors_yaml(authors)
-
-        lines = [
-            "# Great Docs Configuration",
-            "# See https://posit-dev.github.io/great-docs/user-guide/configuration.html",
-            "",
-            "# Module Name (optional)",
-            "# ----------------------",
-            "# Set this if your importable module name differs from the project name.",
-            "# Example: project 'py-yaml12' with module name 'yaml12'",
-            f"module: {module}" if module else "# module: yaml12",
-            "",
-        ]
-
-        lines.extend(
-            [
-                "# Docstring Parser",
-                "# ----------------",
-                "# The docstring format used in your package (numpy, google, or sphinx)",
-                f"parser: {parser}",
-                "",
-                "# Dynamic Introspection",
-                "# ---------------------",
-                "# Use runtime introspection for more accurate documentation (default: true)",
-                "# Set to false if your package has cyclic alias issues (e.g., PyO3/Rust bindings)",
-                f"dynamic: {dynamic_str}",
-                "",
-                "# API Discovery Settings",
-                "# ----------------------",
-                "# Exclude items from auto-documentation",
-                "# exclude:",
-                "#   - InternalClass",
-                "#   - helper_function",
-                "",
-                "# Logo & Favicon",
-                "# ---------------",
-                "# Point to a single logo file (replaces the text title in the navbar):",
-                "# logo: assets/logo.svg",
-                "#",
-                "# For light/dark variants:",
-                "# logo:",
-                "#   light: assets/logo-light.svg",
-                "#   dark: assets/logo-dark.svg",
-                "#",
-                "# To show the text title alongside the logo, add: show_title: true",
-                "",
-            ]
-        )
-
-        # Add authors section if we found any
-        if authors_yaml:
-            lines.append(authors_yaml)
-            lines.append("")
-
-        # Add funding section (default commented-out template)
-        _dn_yaml, site_yaml, funding_yaml = self._format_preserved_extras_yaml()
-        lines.extend(funding_yaml.rstrip("\n").splitlines())
-        lines.append("")
-
-        # Add reference section
-        lines.extend(
-            [
-                "# API Reference Structure",
-                "# -----------------------",
-                "# Customize the sections below to organize your API documentation.",
-                "# - Reorder items within a section to change their display order",
-                "# - Move items between sections or create new sections",
-                "# - Use 'members: false' to exclude methods from documentation",
-                "# - Add 'desc:' to sections for descriptions",
-                "",
-                "reference:",
-            ]
-        )
-
-        # Auto-generate reference sections from discovered exports
         class_methods = categories.get("class_methods", {})
         class_method_names = categories.get("class_method_names", {})
-
-        # Track large classes that need separate method sections
         large_classes: list[str] = []
-
-        # Track whether we've emitted any section yet (for blank-line spacing)
         has_prev_section = False
 
-        # --- Class-like sections (support big-class splitting) ---
         _class_like_sections = [
             ("classes", "Classes", "Main classes provided by the package"),
             ("dataclasses", "Dataclasses", "Dataclass definitions"),
@@ -9129,7 +9500,6 @@ jupyter: python3
                     lines.append(f"      - {class_name}")
             has_prev_section = True
 
-        # Add separate method sections for large classes
         for class_name in large_classes:
             method_names = class_method_names.get(class_name, [])
             if method_names:
@@ -9140,7 +9510,6 @@ jupyter: python3
                 for method_name in method_names:
                     lines.append(f"      - {class_name}.{method_name}")
 
-        # --- Flat sections (simple lists, no big-class splitting) ---
         _flat_sections = [
             ("enums", "Enumerations", "Enumeration types"),
             ("exceptions", "Exceptions", "Exception classes"),
@@ -9166,40 +9535,7 @@ jupyter: python3
                 lines.append(f"      - {name}")
             has_prev_section = True
 
-        # Add trailing sections for site URL and site settings (default templates)
-        lines.extend(
-            [
-                "",
-                "# Site URL",
-                "# --------",
-                "# Canonical address of the deployed documentation site.",
-                "# Required for subdirectory deployments, skills page install commands,",
-                "# .well-known/ discovery, and sitemaps.",
-                '# site_url: "https://your-org.github.io/your-package/"',
-                "",
-            ]
-        )
-        lines.extend(site_yaml.rstrip("\n").splitlines())
-
-        lines.extend(
-            [
-                "",
-                "# Jupyter Kernel",
-                "# --------------",
-                "# Jupyter kernel to use for executing code cells in .qmd files.",
-                "# This is set at the project level so it applies to all pages, including",
-                "# auto-generated API reference pages. Can be overridden in individual .qmd",
-                "# file frontmatter if needed for special cases.",
-                "jupyter: python3",
-                "",
-            ]
-        )
-
-        # Add CLI documentation section (default commented-out template)
-        cli_yaml = self._format_cli_yaml()
-        lines.extend(cli_yaml.rstrip("\n").splitlines())
-
-        return "\n".join(lines) + "\n"
+        return "\n".join(lines)
 
     def _find_index_source_file(self) -> tuple[Path | None, list[str]]:
         """
@@ -9279,7 +9615,7 @@ jupyter: python3
             result = subprocess.run(
                 [*pandoc_cmd, str(rst_path), "-f", "rst", "-t", "markdown", "--wrap=none"],
                 capture_output=True,
-                text=True,
+                **TEXT_MODE_KWARGS,
                 timeout=30,
             )
             if result.returncode == 0:
@@ -9701,15 +10037,27 @@ jupyter: python3
         # ── 1. Links ─────────────────────────────────────────────────────
         links_items: list[str] = []
 
+        # Lucide arrow-up-right icon (indicates external link)
+        _ext_arrow = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" '
+            'fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round" '
+            'style="vertical-align: -0.05em; margin-left: 0em; margin-top: 0.1em;" '
+            'viewBox="0 0 24 24">'
+            '<path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>'
+        )
+
+        package_name = self._detect_package_name()
         pypi_setting = self._config.pypi
         if pypi_setting is not False:
             if isinstance(pypi_setting, str):
                 pypi_url = pypi_setting
             else:
-                package_name = self._detect_package_name()
                 pypi_url = f"https://pypi.org/project/{package_name}/" if package_name else None
             if pypi_url:
-                links_items.append(f"[{get_translation('view_on_pypi', lang)}]({pypi_url})<br>")
+                links_items.append(
+                    f'<a href="{pypi_url}">{get_translation("view_on_pypi", lang)}{_ext_arrow}</a><br>'
+                )
 
         if metadata.get("urls"):
             urls = metadata["urls"]
@@ -9723,7 +10071,7 @@ jupyter: python3
                 name_lower = name.lower().replace(" ", "_")
                 display_name = url_map.get(name_lower, name.replace("_", " ").title())
                 if display_name:
-                    links_items.append(f"[{display_name}]({url})<br>")
+                    links_items.append(f'<a href="{url}">{display_name}{_ext_arrow}</a><br>')
 
         if links_items:
             margin_sections.append(f"#### {get_translation('links', lang)}\n")
@@ -9732,7 +10080,25 @@ jupyter: python3
         # ── 2. AI / Agents ───────────────────────────────────────────────
         ai_items: list[str] = []
         if self._config.skill_enabled:
-            ai_items.append("[Skills](skills.html)<br>")
+            # Determine if skills are hand-written/curated (intensify effect)
+            _curated_skill = bool(self._config.skill_file or self._config.skill_skills)
+            if not _curated_skill:
+                pkg_name = self._detect_package_name() or ""
+                for cand in [pkg_name.replace("_", "-"), pkg_name]:
+                    if cand and (package_root / "skills" / cand / "SKILL.md").exists():
+                        _curated_skill = True
+                        break
+
+            _sparkle_class = "gd-sparkle-curated" if _curated_skill else "gd-sparkle"
+            _sparkle_svg = (
+                '<svg class="' + _sparkle_class + '" xmlns="http://www.w3.org/2000/svg" '
+                'width="0.85em" height="0.85em" viewBox="0 0 24 24" fill="none" '
+                'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                'stroke-linejoin="round" style="vertical-align: -0.1em; margin-left: 0.25em;">'
+                '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>'
+                '<path d="M20 3v4"/><path d="M22 5h-4"/></svg>'
+            )
+            ai_items.append(f'<a href="skills.html">Skills{_sparkle_svg}</a><br>')
         ai_items.append("[llms.txt](llms.txt)<br>")
         ai_items.append("[llms-full.txt](llms-full.txt)<br>")
 
@@ -10036,14 +10402,60 @@ title: "Security Policy"
                 meta_items.append(f"**{_provides}:** {extras_formatted}")
 
         if self._config.tags_enabled and self._config.tags_index_page:
-            tags_label = get_translation("tags_nav", lang)
+            tags_label = get_translation("site_tags", lang)
             meta_items.append(f"[{tags_label}](tags/index.html)")
+
+        # Package Info page link
+        pkg_info_qmd = self.project_path / "package-info.qmd"
+        if pkg_info_qmd.exists():
+            _pkg_info_label = get_translation("package_info", lang)
+            meta_items.append(f"[{_pkg_info_label}](package-info.html)")
 
         if meta_items:
             margin_sections.append(f"\n#### {get_translation('meta', lang)}\n")
             margin_sections.append("<br>\n".join(meta_items))
 
         return "\n".join(margin_sections) if margin_sections else ""
+
+    @staticmethod
+    def _bump_heading_levels(content: str) -> str:
+        """
+        Bump every Markdown heading up by one level, skipping fenced code blocks.
+
+        Headings (`# ` … `###### `) are promoted one level deeper so that the
+        embedded README body sits below the homepage wrapper. Lines inside
+        fenced code blocks (delimited by ``` or ~~~) are left untouched, which
+        prevents the bump from turning Quarto cell options like
+        `#| code-fold: true` into `##| code-fold: true` (a plain comment Quarto
+        ignores).
+        """
+        import re
+
+        fence_re = re.compile(r"^\s*(`{3,}|~{3,})")
+        heading_re = re.compile(r"^(#{1,6})(\s+)")
+
+        lines = content.split("\n")
+        in_fence = False
+        fence_char = ""
+        for i, line in enumerate(lines):
+            fence_match = fence_re.match(line)
+            if fence_match:
+                marker = fence_match.group(1)
+                if not in_fence:
+                    in_fence = True
+                    fence_char = marker[0]
+                elif marker[0] == fence_char:
+                    in_fence = False
+                    fence_char = ""
+                continue
+
+            if in_fence:
+                continue
+
+            if heading_re.match(line):
+                lines[i] = "#" + line
+
+        return "\n".join(lines)
 
     def _create_index_from_readme(self, force_rebuild: bool = False) -> None:
         """
@@ -10076,7 +10488,11 @@ title: "Security Policy"
                 license_content = f.read()
 
             # Build optional license-features section from SPDX data
-            from ._license import build_license_features_html, get_license_info
+            from ._license import (
+                BADGE_TOOLTIP_KEYS,
+                build_license_features_html,
+                get_license_info,
+            )
             from ._translations import get_translation
 
             metadata_for_license = self._get_package_metadata()
@@ -10087,12 +10503,18 @@ title: "Security Policy"
                 if license_info is not None:  # pragma: no cover
                     _lang = self._config.language  # pragma: no cover
                     features_label = get_translation("license_features", _lang)  # pragma: no cover
+                    # Build translated tooltips for each badge
+                    _tooltips = {  # pragma: no cover
+                        label: get_translation(key, _lang)
+                        for label, key in BADGE_TOOLTIP_KEYS.items()
+                    }
                     license_features_html = build_license_features_html(  # pragma: no cover
                         license_info,
                         features_label=features_label,
                         permissions_label=get_translation("license_permissions", _lang),
                         conditions_label=get_translation("license_conditions", _lang),
                         limitations_label=get_translation("license_limitations", _lang),
+                        tooltips=_tooltips,
                     )
 
             # Wrap all HTML in raw blocks so Quarto passes them through verbatim
@@ -10108,6 +10530,7 @@ toc: false
 sidebar: false
 page-layout: full
 body-classes: "gd-license-page"
+anchor-sections: false
 ---
 
 {features_block}```{{=html}}
@@ -10329,6 +10752,9 @@ title: "Authors and Citation"
             print(f"Created {citation_qmd}")
             citation_link = "citation.qmd"
 
+        # Always create package-info.qmd if enabled and package has dependencies
+        self._generate_package_info_page()
+
         # Now check if we should create index.qmd
         index_qmd = self.project_path / "index.qmd"
 
@@ -10351,6 +10777,11 @@ title: "Authors and Citation"
         for warning in warnings:
             print(warning)
 
+        # Title for the generated homepage. Empty by default so "Home" doesn't
+        # appear on an auto-generated landing page; a user-authored source file
+        # may override it via its frontmatter title.
+        homepage_title = ""
+
         if source_file is None:
             print("No index source file found (index.qmd, index.md, README.md, or README.rst)")
             print("Generating landing page from package metadata...")
@@ -10369,6 +10800,17 @@ title: "Authors and Citation"
             # Convert RST to Markdown using Quarto's bundled pandoc
             if source_file.suffix.lower() == ".rst":
                 readme_content = self._convert_rst_to_markdown(source_file)
+
+            # Strip any leading YAML frontmatter from the source file. The
+            # wrapper template below supplies its own frontmatter, so embedding
+            # the source's frontmatter mid-document would render it as a
+            # horizontal rule plus visible raw YAML text (e.g. index.qmd files,
+            # which universally start with a `---` block). The source title is
+            # carried over into the wrapper so an authored title survives.
+            source_fm, readme_content = self._split_frontmatter(readme_content)
+            source_title = source_fm.get("title", "")
+            if isinstance(source_title, str) and source_title:
+                homepage_title = source_title
 
             # Copy images referenced in the source file to the build directory
             self._copy_readme_images(source_file)
@@ -10394,17 +10836,11 @@ title: "Authors and Citation"
                     readme_content = readme_content.replace(first_h1.group(0), "", 1).lstrip("\n")
 
         if source_file is not None:
-            # Adjust heading levels: bump all headings up by one level
-            # This prevents h1 from becoming paragraphs and keeps proper hierarchy
-            # Replace headings from highest to lowest level to avoid double-replacement
-            import re
-
-            readme_content = re.sub(r"^######\s+", r"####### ", readme_content, flags=re.MULTILINE)
-            readme_content = re.sub(r"^#####\s+", r"###### ", readme_content, flags=re.MULTILINE)
-            readme_content = re.sub(r"^####\s+", r"##### ", readme_content, flags=re.MULTILINE)
-            readme_content = re.sub(r"^###\s+", r"#### ", readme_content, flags=re.MULTILINE)
-            readme_content = re.sub(r"^##\s+", r"### ", readme_content, flags=re.MULTILINE)
-            readme_content = re.sub(r"^#\s+", r"## ", readme_content, flags=re.MULTILINE)
+            # Adjust heading levels: bump all headings up by one level. This
+            # prevents h1 from becoming paragraphs and keeps proper hierarchy.
+            # Lines inside fenced code blocks are skipped so Quarto cell options
+            # (`#| code-fold: true`) and shell-style comments aren't mangled.
+            readme_content = self._bump_heading_levels(readme_content)
 
         # Build margin content using the shared helper
         margin_content = self._build_metadata_margin()
@@ -10423,7 +10859,6 @@ section.level2:first-of-type > h2:first-child,
 """
 
         # Create a qmd file with the README content
-        # Use empty title so "Home" doesn't appear on landing page
         # Add margin content in a special div that Quarto will place in the margin
         # Prepend hero section (raw HTML block) when enabled
         hero_block = ""
@@ -10433,9 +10868,13 @@ section.level2:first-of-type > h2:first-child,
 
 """
 
+        # Render the title line YAML-safe (quotes/colons in an authored title
+        # are escaped). Empty title renders as `title: ""`.
+        title_line = format_yaml({"title": homepage_title}).rstrip()
+
         if margin_content:
             qmd_content = f"""---
-title: ""
+{title_line}
 toc: false
 body-classes: "gd-homepage"
 ---
@@ -10448,7 +10887,7 @@ body-classes: "gd-homepage"
 """
         else:
             qmd_content = f"""---  # pragma: no cover
-title: ""
+{title_line}
 toc: false
 body-classes: "gd-homepage"
 ---
@@ -10460,6 +10899,229 @@ body-classes: "gd-homepage"
             f.write(qmd_content)
 
         print(f"Created {index_qmd}")
+
+    @staticmethod
+    def _fetch_pypi_dates(package_names: set[str]) -> dict[str, str]:
+        """
+        Fetch the latest release date for each package from PyPI.
+
+        Uses the PyPI JSON API (`https://pypi.org/pypi/{name}/json`) to look up the most recent
+        upload timestamp. Requests are made with a short timeout and failures are silently skipped
+        (the date simply shows "—").
+
+        Parameters
+        ----------
+        package_names
+            Set of PyPI package names to look up.
+
+        Returns
+        -------
+        dict[str, str]
+            Mapping of package name to a formatted date string (`YYYY-MM-DD`).
+        """
+        import concurrent.futures
+
+        import requests
+
+        dates: dict[str, str] = {}
+        if not package_names:
+            return dates
+
+        def _fetch_one(name: str) -> tuple[str, str]:
+            try:
+                resp = requests.get(
+                    f"https://pypi.org/pypi/{name}/json",
+                    timeout=5,
+                    headers={"Accept": "application/json"},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # The "info" dict has the latest version; look up its upload time
+                    latest_version = data.get("info", {}).get("version", "")
+                    releases = data.get("releases", {})
+                    if latest_version and latest_version in releases:
+                        files = releases[latest_version]
+                        if files:
+                            upload_time = files[0].get("upload_time_iso_8601", "")
+                            if upload_time:
+                                return name, upload_time[:10]  # YYYY-MM-DD
+            except Exception:
+                pass
+            return name, ""
+
+        # Fetch in parallel with a bounded thread pool
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(_fetch_one, n): n for n in package_names}
+            for future in concurrent.futures.as_completed(futures):
+                pkg_name, date_str = future.result()
+                if date_str:
+                    dates[pkg_name] = date_str
+
+        return dates
+
+    def _generate_package_info_page(self) -> str | None:
+        """
+        Generate package-info.qmd with dependency details.
+
+        Creates a page listing runtime dependencies, optional dependency groups (with full package
+        lists), and a summary. The page is linked from the homepage Meta section.
+
+        Returns
+        -------
+        str | None
+            The relative path `"package-info.qmd"` when the page is created, or `None` when
+            generation is skipped (disabled or no deps found).
+        """
+        if not self._config.package_info_page:
+            return None
+
+        from ._icons import get_icon_svg
+        from ._translations import get_translation
+
+        metadata = self._get_package_metadata()
+        lang = self._config.language
+
+        runtime_deps: list[dict] = metadata.get("dependencies", [])
+        opt_deps_full: dict[str, list[dict]] = metadata.get("optional_dependencies_full", {})
+        requires_python: str = metadata.get("requires_python", "")
+
+        # Skip if there's nothing to show
+        if not runtime_deps and not opt_deps_full and not requires_python:
+            return None
+
+        # Translated labels
+        _title = get_translation("package_info", lang)
+        _runtime = get_translation("runtime_dependencies", lang)
+        _optional = get_translation("optional_dependencies", lang)
+        _summary = get_translation("dependency_summary", lang)
+        _pkg_col = get_translation("dep_package", lang)
+        _ver_col = get_translation("dep_version_constraint", lang)
+        _marker_col = get_translation("dep_environment_marker", lang)
+
+        # Build a small inline SVG link icon for PyPI column
+        _link_svg = get_icon_svg("external-link", size=14, css_class="")
+
+        # Fetch latest release dates from PyPI for all unique dep names
+        all_dep_names = {d["name"] for d in runtime_deps}
+        for deps in opt_deps_full.values():
+            all_dep_names |= {d["name"] for d in deps}
+        pypi_dates = self._fetch_pypi_dates(all_dep_names)
+
+        sections: list[str] = []
+
+        # ── Runtime Dependencies ──────────────────────────────────────
+        if runtime_deps:
+            has_markers = any(d.get("marker") for d in runtime_deps)
+            header_cols = f"| {_pkg_col} | {_ver_col} | Last Published | PyPI |"
+            separator = "|----|----|----|----|"
+            if has_markers:
+                header_cols = f"| {_pkg_col} | {_ver_col} | {_marker_col} | Last Published | PyPI |"
+                separator = "|----|----|----|----|----|"
+
+            rows: list[str] = []
+            for dep in runtime_deps:
+                name = dep["name"]
+                spec = f"`{dep['specifier']}`" if dep["specifier"] else "—"
+                date_str = pypi_dates.get(name, "—")
+                pypi_cell = f"[{_link_svg}](https://pypi.org/project/{name}/){{.gd-pypi-link}}"
+                if has_markers:
+                    marker = f"`{dep['marker']}`" if dep.get("marker") else ""
+                    rows.append(
+                        f"| `{name}`{{.gd-no-link}} | {spec} | {marker}"
+                        f" | {date_str} | {pypi_cell} |"
+                    )
+                else:
+                    rows.append(f"| `{name}`{{.gd-no-link}} | {spec} | {date_str} | {pypi_cell} |")
+
+            sections.append(f"## {_runtime}\n")
+            sections.append(header_cols)
+            sections.append(separator)
+            sections.extend(rows)
+            sections.append("")
+
+        # ── Optional Dependencies ─────────────────────────────────────
+        if opt_deps_full:
+            sections.append(f"## {_optional}\n")
+
+            for group_name, group_deps in sorted(opt_deps_full.items()):
+                sections.append(f"### `{group_name}`\n")
+
+                if group_deps:
+                    has_markers = any(d.get("marker") for d in group_deps)
+                    header_cols = f"| {_pkg_col} | {_ver_col} | Last Published | PyPI |"
+                    separator = "|----|----|----|----|"
+                    if has_markers:
+                        header_cols = (
+                            f"| {_pkg_col} | {_ver_col} | {_marker_col} | Last Published | PyPI |"
+                        )
+                        separator = "|----|----|----|----|----|"
+
+                    sections.append(header_cols)
+                    sections.append(separator)
+
+                    for dep in group_deps:
+                        name = dep["name"]
+                        spec = f"`{dep['specifier']}`" if dep["specifier"] else "—"
+                        date_str = pypi_dates.get(name, "—")
+                        pypi_cell = (
+                            f"[{_link_svg}](https://pypi.org/project/{name}/){{.gd-pypi-link}}"
+                        )
+                        if has_markers:
+                            marker = f"`{dep['marker']}`" if dep.get("marker") else ""
+                            sections.append(
+                                f"| `{name}`{{.gd-no-link}} | {spec} | {marker}"
+                                f" | {date_str} | {pypi_cell} |"
+                            )
+                        else:
+                            sections.append(
+                                f"| `{name}`{{.gd-no-link}} | {spec} | {date_str} | {pypi_cell} |"
+                            )
+                    sections.append("")
+                else:
+                    sections.append("*No dependencies declared.*\n")
+
+        # ── Summary ───────────────────────────────────────────────────
+        sections.append(f"## {_summary}\n")
+
+        n_runtime = len(runtime_deps)
+        n_opt_groups = len(opt_deps_full)
+        all_opt_names = {dep["name"] for deps in opt_deps_full.values() for dep in deps}
+        n_opt_unique = len(all_opt_names)
+        all_names = {dep["name"] for dep in runtime_deps} | all_opt_names
+        n_total = len(all_names)
+
+        summary_items: list[str] = []
+        if requires_python:
+            _requires_label = get_translation("requires_python", lang)
+            summary_items.append(f"- **{_requires_label}:** Python `{requires_python}`")
+        summary_items.append(f"- **{_runtime}:** {n_runtime}")
+        if n_opt_groups:
+            summary_items.append(
+                f"- **{_optional}:** {n_opt_groups} groups ({n_opt_unique} unique packages)"
+            )
+        summary_items.append(f"- **Total unique dependencies:** {n_total}")
+
+        sections.extend(summary_items)
+        sections.append("")
+
+        body = "\n".join(sections)
+
+        qmd_content = f"""---
+title: "{_title}"
+toc: true
+sidebar: false
+body-classes: "gd-package-info-page"
+anchor-sections: true
+---
+
+{body}
+"""
+
+        pkg_info_qmd = self.project_path / "package-info.qmd"
+        with open(pkg_info_qmd, "w", encoding="utf-8") as f:
+            f.write(qmd_content)
+        print(f"Created {pkg_info_qmd}")
+        return "package-info.qmd"
 
     def _add_api_reference_config(self) -> None:
         """
@@ -10474,6 +11136,14 @@ body-classes: "gd-homepage"
         # Explicit opt-out via great-docs.yml
         if not self._config.reference_enabled:
             print("API reference disabled (reference: false), skipping")
+            self._has_api_reference = False
+            return
+
+        # Python API reference only applies to projects with a Python component.
+        # Non-Python projects (e.g. project_type: go) have no importable package
+        # to introspect — skip rather than prompting for a package name.
+        if not self._config.is_python_project:
+            print("API reference skipped (non-Python project)")
             self._has_api_reference = False
             return
 
@@ -10538,15 +11208,21 @@ body-classes: "gd-homepage"
             return
 
         # Add API reference configuration with sensible defaults
-        # Use the importable name (actual module name) for the package field
-        ref_title = self._config.reference_title or "Reference"
+        # Use the importable name (actual module name) for the package field.
+        # The reference index *page* title defaults to "API Reference" (consistent with the
+        # "CLI Reference" / "MCP Reference" index titles). The *navbar* keeps the shorter
+        # "Reference" umbrella label, since that entry covers the API, CLI, and MCP references
+        # via the reference switcher (and other code locates it by the literal text "Reference").
+        ref_title = self._config.reference_title or "API Reference"
+        nav_title = self._config.reference_title or "Reference"
         ref_desc = self._config.reference_desc
 
-        # Translate default reference title for i18n
+        # Translate default titles for i18n
         if not self._config.reference_title and self._config.language != "en":
             from ._translations import get_translation  # pragma: no cover
 
-            ref_title = get_translation("reference", self._config.language)  # pragma: no cover
+            ref_title = get_translation("api_reference", self._config.language)  # pragma: no cover
+            nav_title = get_translation("reference", self._config.language)  # pragma: no cover
 
         # Configure the API reference
         api_ref_config = {
@@ -10594,7 +11270,7 @@ body-classes: "gd-homepage"
                 for item in left
             )
             if not has_ref:
-                left.append({"text": ref_title, "href": "reference/index.qmd"})
+                left.append({"text": nav_title, "href": "reference/index.qmd"})
                 navbar["left"] = left
 
         # Add reference sidebar
@@ -10962,11 +11638,52 @@ body-classes: "gd-homepage"
             if "_marimo_islands/**" not in config["project"]["resources"]:
                 config["project"]["resources"].append("_marimo_islands/**")
 
+        # Add gd-lightbox assets as resources
+        for lb_res in (
+            "gd-lightbox.js",
+            "gd-lightbox.css",
+            "gd-lightbox-compare.js",
+            "gd-lightbox-compare.css",
+            "gd-lightbox-annotate.js",
+            "gd-lightbox-annotate.css",
+        ):
+            if lb_res not in config["project"]["resources"]:
+                config["project"]["resources"].append(lb_res)
+
+        # Add all user-guide asset directories to resources so that images
+        # referenced only via data attributes (e.g., dark-mode variants) get
+        # copied to _site
+        ug_dir = self.project_path / "user-guide"
+        if ug_dir.exists() and ug_dir.is_dir():
+            for item in ug_dir.iterdir():
+                if item.is_dir() and self._is_asset_dir(item):
+                    res_glob = f"user-guide/{item.name}/**"
+                    if res_glob not in config["project"]["resources"]:
+                        config["project"]["resources"].append(res_glob)
+
         # Add assets directory to resources if it exists
         assets_dir = self.project_path / "assets"
         if assets_dir.exists() and assets_dir.is_dir():
             if "assets/**" not in config["project"]["resources"]:
                 config["project"]["resources"].append("assets/**")
+
+        # Add custom section asset directories to resources
+        sections_config = self._config.sections
+        if sections_config and isinstance(sections_config, list):
+            for section_cfg in sections_config:
+                if not isinstance(section_cfg, dict):
+                    continue
+                src_dir = section_cfg.get("dir")
+                if not src_dir:
+                    continue
+                slug = src_dir.replace("_", "-").replace(" ", "-").lower()
+                section_build_dir = self.project_path / slug
+                if section_build_dir.exists() and section_build_dir.is_dir():
+                    for item in section_build_dir.iterdir():
+                        if item.is_dir() and self._is_asset_dir(item):
+                            res_glob = f"{slug}/{item.name}/**"
+                            if res_glob not in config["project"]["resources"]:
+                                config["project"]["resources"].append(res_glob)
 
         # Add skill.md and .well-known to resources (so Quarto copies them to _site)
         # Also exclude them from rendering so Quarto doesn't convert them to HTML
@@ -10974,10 +11691,12 @@ body-classes: "gd-homepage"
             if "skill.md" not in config["project"]["resources"]:
                 config["project"]["resources"].append("skill.md")
 
-            # Exclude skill.md from rendering (Quarto renders .md by default)
-            # The render list needs "**" first (render everything), then exclusions
+            # Exclude skill.md from rendering (Quarto renders .md by default).
+            # The render list enumerates Quarto's default input globs before the
+            # exclusions; a recursive `**` would overpower the `!skill.md`
+            # negation and render skill.md anyway (see issue #228).
             if "render" not in config["project"]:
-                config["project"]["render"] = ["**"]
+                config["project"]["render"] = list(_QUARTO_RENDER_GLOBS)
             if "!skill.md" not in config["project"]["render"]:
                 config["project"]["render"].append("!skill.md")
 
@@ -10987,16 +11706,18 @@ body-classes: "gd-homepage"
                 if "!.well-known/**" not in config["project"]["render"]:
                     config["project"]["render"].append("!.well-known/**")
 
-        # Apply site settings from great-docs.yml (forwarded to format.html)
-        site_settings = self._config.site
-        config["format"]["html"]["theme"] = site_settings.get("theme", "flatly")
-        config["format"]["html"]["toc"] = site_settings.get("toc", True)
-        config["format"]["html"]["toc-depth"] = site_settings.get("toc-depth", 2)
+        # Site settings are a pure Quarto passthrough: the whole subtree
+        # (theme, toc, toc-depth, html-math-method defaults from
+        # great-docs.default.yml, plus any user format.html keys) merges into
+        # format.html. Legacy great-docs keys were normalized to the top level
+        # at load, and css is applied separately below.
+        config["format"]["html"] = Config._merge(config["format"]["html"], self._config.site_quarto)
 
-        # Use translated toc-title unless the user explicitly overrode it
-        if "toc-title" in site_settings:
-            config["format"]["html"]["toc-title"] = site_settings["toc-title"]  # pragma: no cover
-        else:
+        # toc-title: use the translated label unless the user overrode it via
+        # site.toc-title. Test the user's `site` rather than the merged result —
+        # a label this method wrote on an earlier pass must be refreshed from the
+        # current language, not treated as an override.
+        if "toc-title" not in self._config.site_quarto:
             from ._translations import get_translation
 
             config["format"]["html"]["toc-title"] = get_translation(
@@ -11006,9 +11727,33 @@ body-classes: "gd-homepage"
         # Disable Quarto's native code-copy — we supply our own via copy-code.js
         config["format"]["html"]["code-copy"] = False
 
+        # Disable Quarto's built-in GLightbox — we supply gd-lightbox instead
+        config["lightbox"] = False
+
+        # Forward project-level bibliography/CSL from great-docs.yml. The files
+        # are copied into the build directory (see _prepare_build_directory), so
+        # the _quarto.yml keys reference them by basename.
+        bib_files = self._config.bibliography
+        if bib_files:
+            bib_names = [Path(b).name for b in bib_files]
+            config["bibliography"] = bib_names[0] if len(bib_names) == 1 else bib_names
+            print(f"Using bibliography: {', '.join(bib_names)}")
+            # Note: the auto-generated references heading is localized by Quarto
+            # itself from the document `lang` (set below), e.g. "Les références"
+            # for French. We deliberately do not set `reference-section-title`:
+            # under our `shift-heading-level-by: -1` it would be demoted to a
+            # stray <p> and duplicated alongside Quarto's appendix heading.
+        csl_path = self._config.csl
+        if csl_path:
+            config["csl"] = Path(csl_path).name
+
         # Set document language for Quarto built-in i18n (search widget, etc.)
         if self._config.language and self._config.language != "en":
             config["lang"] = self._config.language  # pragma: no cover
+
+        # Disable Quarto's HTML table processing so that GT tables (and other
+        # pre-styled HTML tables) are not affected by Bootstrap striping/styles
+        config["format"]["html"]["html-table-processing"] = "none"
 
         # Configure Mermaid diagrams - use 'default' (light) theme always
         # We provide a light background container in dark mode via CSS
@@ -11018,6 +11763,11 @@ body-classes: "gd-homepage"
             if isinstance(config["format"]["html"]["theme"], str):
                 config["format"]["html"]["theme"] = [config["format"]["html"]["theme"]]
             config["format"]["html"]["theme"].append("great-docs.scss")
+
+        # Add the custom CSS from site.css
+        css_files = self._config.css
+        if css_files:
+            config["format"]["html"]["css"] = [Path(c).name for c in css_files]
 
         if "shift-heading-level-by" not in config["format"]["html"]:
             config["format"]["html"]["shift-heading-level-by"] = -1
@@ -11103,6 +11853,94 @@ body-classes: "gd-homepage"
             ):
                 config["format"]["html"]["include-in-header"].append(marimo_css_entry)
 
+        # Add gd-lightbox CSS (uses quarto:offset for subdirectory-safe paths)
+        lb_css_entry = {
+            "text": (
+                "<script>document.head.appendChild(Object.assign("
+                "document.createElement('link'),{rel:'stylesheet',"
+                "href:(document.querySelector('meta[name=\"quarto:offset\"]')"
+                "||{content:''}).content+'gd-lightbox.css'}));</script>"
+            )
+        }
+        if not any(
+            "gd-lightbox.css" in str(item) for item in config["format"]["html"]["include-in-header"]
+        ):
+            config["format"]["html"]["include-in-header"].append(lb_css_entry)
+
+        # Add gd-lightbox JS (deferred, uses quarto:offset)
+        lb_js_entry = {
+            "text": (
+                "<script>(function(){var s=document.createElement('script');"
+                "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
+                "s.src=(m?m.content:'')+'gd-lightbox.js';s.defer=true;"
+                "document.head.appendChild(s);})();</script>"
+            )
+        }
+        if not any(
+            "gd-lightbox.js" in str(item) for item in config["format"]["html"]["include-in-header"]
+        ):
+            config["format"]["html"]["include-in-header"].append(lb_js_entry)
+
+        # Add gd-lightbox-compare CSS (uses quarto:offset)
+        lb_compare_css_entry = {
+            "text": (
+                "<script>document.head.appendChild(Object.assign("
+                "document.createElement('link'),{rel:'stylesheet',"
+                "href:(document.querySelector('meta[name=\"quarto:offset\"]')"
+                "||{content:''}).content+'gd-lightbox-compare.css'}));</script>"
+            )
+        }
+        if not any(
+            "gd-lightbox-compare.css" in str(item)
+            for item in config["format"]["html"]["include-in-header"]
+        ):
+            config["format"]["html"]["include-in-header"].append(lb_compare_css_entry)
+
+        # Add gd-lightbox-compare JS (deferred, uses quarto:offset)
+        lb_compare_js_entry = {
+            "text": (
+                "<script>(function(){var s=document.createElement('script');"
+                "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
+                "s.src=(m?m.content:'')+'gd-lightbox-compare.js';s.defer=true;"
+                "document.head.appendChild(s);})();</script>"
+            )
+        }
+        if not any(
+            "gd-lightbox-compare.js" in str(item)
+            for item in config["format"]["html"]["include-in-header"]
+        ):
+            config["format"]["html"]["include-in-header"].append(lb_compare_js_entry)
+
+        # Add gd-lightbox-annotate CSS (uses quarto:offset)
+        lb_annotate_css_entry = {
+            "text": (
+                "<script>document.head.appendChild(Object.assign("
+                "document.createElement('link'),{rel:'stylesheet',"
+                "href:(document.querySelector('meta[name=\"quarto:offset\"]')"
+                "||{content:''}).content+'gd-lightbox-annotate.css'}));</script>"
+            )
+        }
+        if not any(
+            "gd-lightbox-annotate.css" in str(item)
+            for item in config["format"]["html"]["include-in-header"]
+        ):
+            config["format"]["html"]["include-in-header"].append(lb_annotate_css_entry)
+
+        # Add gd-lightbox-annotate JS (deferred, uses quarto:offset)
+        lb_annotate_js_entry = {
+            "text": (
+                "<script>(function(){var s=document.createElement('script');"
+                "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
+                "s.src=(m?m.content:'')+'gd-lightbox-annotate.js';s.defer=true;"
+                "document.head.appendChild(s);})();</script>"
+            )
+        }
+        if not any(
+            "gd-lightbox-annotate.js" in str(item)
+            for item in config["format"]["html"]["include-in-header"]
+        ):
+            config["format"]["html"]["include-in-header"].append(lb_annotate_js_entry)
+
         # Add website navigation if not present
         if "website" not in config:
             config["website"] = {}
@@ -11123,6 +11961,12 @@ body-classes: "gd-homepage"
                 config["website"]["title"] = display_name
             else:
                 package_name = self._detect_package_name()
+                if not package_name and self._config.go_cli_enabled:
+                    # For Go CLI-only projects there is no Python package name; fall
+                    # back to the Go binary name so the navbar shows a home link.
+                    go_project = self._detect_go_cli_project()
+                    if go_project:
+                        package_name = go_project.binary_name
                 if package_name:
                     config["website"]["title"] = package_name
 
@@ -11139,9 +11983,11 @@ body-classes: "gd-homepage"
 
             # Add GitHub link on the right if repository URL is available
             if owner and repo and repo_url and github_style == "widget":
-                gh_widget_html = (
-                    f'<div id="github-widget" data-owner="{owner}" data-repo="{repo}"></div>'
-                )
+                stats = self._fetch_github_repo_stats(owner, repo)
+                stats_attrs = ""
+                if stats:
+                    stats_attrs = f' data-stars="{stats["stars"]}" data-forks="{stats["forks"]}"'
+                gh_widget_html = f'<div id="github-widget" data-owner="{owner}" data-repo="{repo}"{stats_attrs}></div>'
                 navbar_config["right"] = [{"text": gh_widget_html}]
             elif repo_url:
                 navbar_config["right"] = [{"icon": "github", "href": repo_url}]
@@ -11636,10 +12482,17 @@ body-classes: "gd-homepage"
                     page_status_entry
                 )  # pragma: no cover
 
-        # Add reference switcher script (if CLI or MCP is enabled)
+        # Add reference switcher script (if CLI, Go CLI, or MCP is enabled)
         cli_enabled = metadata.get("cli_enabled", False)
-        mcp_enabled = metadata.get("mcp_enabled", False)
-        if cli_enabled or mcp_enabled:
+        go_cli_enabled = metadata.get("go_cli_enabled", False)
+        # Use the runtime flag if MCP discovery has already run; otherwise fall
+        # back to the config value (optimistic, will be patched later if needed)
+        mcp_enabled = (
+            self._mcp_pages_generated
+            if self._mcp_pages_generated is not None
+            else metadata.get("mcp_enabled", False)
+        )
+        if cli_enabled or go_cli_enabled or mcp_enabled:
             if "include-after-body" not in config["format"]["html"]:
                 config["format"]["html"]["include-after-body"] = []  # pragma: no cover
             elif isinstance(config["format"]["html"]["include-after-body"], str):
@@ -11647,9 +12500,12 @@ body-classes: "gd-homepage"
                     config["format"]["html"]["include-after-body"]
                 ]
 
-            # Build the sections list for the data attribute
-            ref_sections = ["api"]
-            if cli_enabled:
+            # Build the sections list for the data attribute.
+            # Only include "api" if a Python API reference was actually generated.
+            ref_sections = []
+            if self._has_api_reference:
+                ref_sections.append("api")
+            if cli_enabled or go_cli_enabled:
                 ref_sections.append("cli")
             if mcp_enabled:
                 ref_sections.append("mcp")
@@ -11669,12 +12525,18 @@ body-classes: "gd-homepage"
                     "</script>"
                 )
             }
-            has_ref_sections = any(
-                "data-gd-ref-sections" in str(item)
-                for item in config["format"]["html"]["include-in-header"]
-            )
-            if not has_ref_sections:
-                config["format"]["html"]["include-in-header"].append(ref_sections_script)
+            # Always replace the ref-sections script so a later call to
+            # _update_quarto_config (at Step 13) can correct stale values
+            # written during prepare() when _has_api_reference was still True.
+            headers = config["format"]["html"]["include-in-header"]
+            replaced = False
+            for i, item in enumerate(headers):
+                if "data-gd-ref-sections" in str(item):
+                    headers[i] = ref_sections_script
+                    replaced = True
+                    break
+            if not replaced:
+                headers.append(ref_sections_script)
 
             ref_switcher_script_entry = {"text": '<script src="reference-switcher.js"></script>'}
             has_ref_switcher = any(
@@ -11700,17 +12562,16 @@ body-classes: "gd-homepage"
             config["format"]["html"]["include-after-body"].append(tooltips_script_entry)
 
         # Add color-swatch script (always enabled — loaded after tooltips)
-        # Use inline loader to resolve path relative to site root (Quarto does not
-        # rewrite bare src= paths for scripts appended after its processing pass).
+        # Use an inline loader that resolves the path against the site root via
+        # Quarto's quarto:offset meta tag (always present). Bare src= paths and
+        # canonical-URL stripping both 404 on nested pages; quarto:offset is the
+        # robust pattern shared with termshow.js, on-this-page.js, etc.
         color_swatch_entry = {
             "text": (
-                "<script>"
-                "(function(){var s=document.createElement('script');"
-                "s.src=(document.querySelector('link[rel=\"canonical\"]')||{href:location.href})"
-                ".href.replace(/\\/[^\\/]*$/,'').replace(/\\/[^\\/]*$/,'')+'/color-swatch.js';"
-                "var h=document.currentScript;"
-                "h.parentNode.insertBefore(s,h.nextSibling);})()"
-                "</script>"
+                "<script>(function(){var s=document.createElement('script');"
+                "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
+                "s.src=(m?m.content:'')+'color-swatch.js';"
+                "document.body.appendChild(s);})();</script>"
             )
         }
         # Remove any stale plain <script src="color-swatch.js"> entries so the
@@ -11736,7 +12597,29 @@ body-classes: "gd-homepage"
             config["format"]["html"]["include-after-body"].append(responsive_tables_script_entry)
 
         # Add video embed script (always enabled — lazy loading + YouTube thumbnails)
-        video_embed_script_entry = {"text": '<script src="video-embed.js"></script>'}
+        # Use an inline loader that resolves the path against the site root via
+        # Quarto's quarto:offset meta tag (always present). A bare src= path 404s
+        # on nested pages; quarto:offset is the robust pattern shared with
+        # termshow.js, on-this-page.js, etc.
+        video_embed_script_entry = {
+            "text": (
+                "<script>(function(){var s=document.createElement('script');"
+                "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
+                "s.src=(m?m.content:'')+'video-embed.js';"
+                "document.body.appendChild(s);})();</script>"
+            )
+        }
+        # Remove any stale plain <script src="video-embed.js"> entries so the
+        # dynamic loader below is used instead.
+        config["format"]["html"]["include-after-body"] = [
+            item
+            for item in config["format"]["html"]["include-after-body"]
+            if not (
+                isinstance(item, dict)
+                and "video-embed.js" in item.get("text", "")
+                and "createElement" not in item.get("text", "")
+            )
+        ]
         has_video_embed = any(
             "video-embed.js" in str(item) for item in config["format"]["html"]["include-after-body"]
         )
@@ -11901,7 +12784,7 @@ body-classes: "gd-homepage"
                     ["git", "config", "--get", "remote.origin.url"],
                     cwd=gd_source_dir,
                     capture_output=True,
-                    text=True,
+                    **TEXT_MODE_KWARGS,
                     timeout=5,
                 )
                 remote_url = remote_result.stdout.strip() if remote_result.returncode == 0 else ""
@@ -11910,7 +12793,7 @@ body-classes: "gd-homepage"
                         ["git", "rev-parse", "--short", "HEAD"],
                         cwd=gd_source_dir,
                         capture_output=True,
-                        text=True,
+                        **TEXT_MODE_KWARGS,
                         timeout=5,
                     )
                     if result.returncode == 0:
@@ -11979,6 +12862,7 @@ body-classes: "gd-homepage"
             ann_dismissable = "true" if announcement.get("dismissable", True) else "false"
             ann_url = html_mod.escape(announcement.get("url") or "")
             ann_style = html_mod.escape(announcement.get("style") or "")
+            ann_position = html_mod.escape(announcement.get("position", "above-navbar"))
 
             ann_meta_tag = (
                 f'<meta name="gd-announcement"'
@@ -11986,7 +12870,8 @@ body-classes: "gd-homepage"
                 f' data-type="{ann_type}"'
                 f' data-dismissable="{ann_dismissable}"'
                 f' data-url="{ann_url}"'
-                f' data-style="{ann_style}">'
+                f' data-style="{ann_style}"'
+                f' data-position="{ann_position}">'
             )
 
             # Add meta tag to header (replace any existing announcement meta)
@@ -12112,87 +12997,87 @@ body-classes: "gd-homepage"
                     toggler_stroke = "rgba(0,0,0,0.65)"
 
                 if mode == "light":
-                    selector = "html.quarto-light, :root[data-bs-theme='light']"
+                    prefixes = ("html.quarto-light", ":root[data-bs-theme='light']")
                 else:
-                    selector = "html.quarto-dark, :root[data-bs-theme='dark']"
+                    prefixes = ("html.quarto-dark", ":root[data-bs-theme='dark']")
 
-                css_parts.append(f"""{selector} {{
+                # Distribute each suffix across both theme prefixes.  Writing
+                # this as a comma-joined `selector` and then appending
+                # ` .navbar` is a trap: `html.quarto-dark, :root[...] .navbar`
+                # parses as two selectors — `html.quarto-dark` (the bare root
+                # element) and `:root[...] .navbar` — so the navbar styling
+                # leaks onto <html>.  Firefox then paints that leaked
+                # background/border in the transparent regions of the blended
+                # homepage as gray bars behind the content (issue #230).
+                def sel(*suffixes: str) -> str:
+                    return ",\n".join(p + suffix for suffix in suffixes for p in prefixes)
+
+                css_parts.append(f"""{sel("")} {{
     --gd-navbar-bg: {bg_hex};
     --gd-navbar-text: {text_hex};
 }}
-{selector} .navbar {{
+{sel(" .navbar")} {{
     background: {bg_hex} !important;
     border-bottom: 1px solid {border_col};
 }}
-{selector} .navbar .navbar-title,
-{selector} .navbar .nav-link {{
+{sel(" .navbar .navbar-title", " .navbar .nav-link")} {{
     color: {text_hex} !important;
 }}
-{selector} .navbar .nav-link:hover {{
+{sel(" .navbar .nav-link:hover")} {{
     background-color: {hover_bg} !important;
     color: {text_hex} !important;
 }}
-{selector} .navbar .nav-item:has(#github-widget) .nav-link:hover {{
+{sel(" .navbar .nav-item:has(#github-widget) .nav-link:hover")} {{
     background-color: transparent !important;
 }}
-{selector} .navbar .nav-link.active {{
+{sel(" .navbar .nav-link.active")} {{
     text-decoration-color: {active_underline} !important;
 }}
-{selector} .navbar .dark-mode-toggle,
-{selector} #quarto-search .aa-DetachedSearchButton {{
+{sel(" .navbar .dark-mode-toggle", " #quarto-search .aa-DetachedSearchButton")} {{
     background: {btn_bg};
     border-color: {btn_border};
     color: {text_hex};
 }}
-{selector} .navbar .dark-mode-toggle:hover,
-{selector} #quarto-search .aa-DetachedSearchButton:hover {{
+{sel(" .navbar .dark-mode-toggle:hover", " #quarto-search .aa-DetachedSearchButton:hover")} {{
     background: {btn_hover_bg};
     border-color: {btn_hover_border};
 }}
-{selector} .navbar .gh-widget-trigger {{
+{sel(" .navbar .gh-widget-trigger")} {{
     background: {btn_bg};
     border-color: {btn_border};
     color: {text_hex};
 }}
-{selector} .navbar .gh-widget-trigger:hover {{
+{sel(" .navbar .gh-widget-trigger:hover")} {{
     background: {btn_hover_bg};
     border-color: {btn_hover_border};
 }}
-{selector} .navbar .quarto-navbar-tools button,
-{selector} .navbar .quarto-navbar-tools .quarto-navigation-tool {{
+{sel(" .navbar .quarto-navbar-tools button", " .navbar .quarto-navbar-tools .quarto-navigation-tool")} {{
     background: {btn_bg};
     border-color: {btn_border};
     color: {text_hex};
 }}
-{selector} .navbar .quarto-navbar-tools button:hover,
-{selector} .navbar .quarto-navbar-tools .quarto-navigation-tool:hover {{
+{sel(" .navbar .quarto-navbar-tools button:hover", " .navbar .quarto-navbar-tools .quarto-navigation-tool:hover")} {{
     background: {btn_hover_bg};
     border-color: {btn_hover_border};
 }}
-{selector} .navbar .nav-item.compact .nav-link,
-{selector} .navbar .gd-navbar-icon {{
+{sel(" .navbar .nav-item.compact .nav-link", " .navbar .gd-navbar-icon")} {{
     background: {btn_bg};
     border: 1px solid {btn_border};
     border-radius: 6px;
     color: {text_hex};
 }}
-{selector} .navbar .nav-item.compact .nav-link:hover,
-{selector} .navbar .gd-navbar-icon:hover {{
+{sel(" .navbar .nav-item.compact .nav-link:hover", " .navbar .gd-navbar-icon:hover")} {{
     background: {btn_hover_bg};
     border-color: {btn_hover_border};
 }}
-{selector} .navbar .navbar-toggler-icon {{
+{sel(" .navbar .navbar-toggler-icon")} {{
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='{toggler_stroke}' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
 }}
-{selector} .navbar .bi,
-{selector} .navbar .aa-SubmitIcon,
-{selector} .navbar .aa-SearchIcon,
-{selector} .navbar .aa-DetachedSearchButtonIcon,
-{selector} .navbar .aa-DetachedSearchButtonIcon svg {{
+{sel(" .navbar .bi", " .navbar .aa-SubmitIcon", " .navbar .aa-SearchIcon", " .navbar .aa-DetachedSearchButtonIcon", " .navbar .aa-DetachedSearchButtonIcon svg")} {{
     color: {text_hex} !important;
     fill: {text_hex} !important;
 }}
-{selector} .navbar .version-badge {{
+{sel(" .navbar .version-badge")} {{
     color: {text_hex};
     opacity: 0.75;
     background-color: {btn_bg};
@@ -12307,6 +13192,8 @@ body-classes: "gd-homepage"
             config["filters"].append("output-title")
         if "details" not in config["filters"]:
             config["filters"].append("details")
+        if "gd-lightbox" not in config["filters"]:
+            config["filters"].append("gd-lightbox")
 
         # Write back to file
         self._write_quarto_yml(quarto_yml, config)
@@ -12394,6 +13281,10 @@ body-classes: "gd-homepage"
         if not package_name:
             return
 
+        # griffe loads by importable module name, which can differ from the
+        # PyPI project name.
+        importable_name = self._resolve_importable_name(package_name)
+
         # Determine version label
         version = "dev"
         try:
@@ -12401,7 +13292,7 @@ body-classes: "gd-homepage"
                 ["git", "describe", "--tags", "--exact-match", "HEAD"],
                 cwd=self.project_root,
                 capture_output=True,
-                text=True,
+                **TEXT_MODE_KWARGS,
                 timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
@@ -12409,14 +13300,14 @@ body-classes: "gd-homepage"
         except Exception:
             pass
 
-        snap = snapshot_from_griffe(package_name, version=version)
+        snap = snapshot_from_griffe(importable_name, version=version)
 
         # Include CLI snapshot when CLI documentation is enabled
         if self._config.cli_enabled:
             try:
                 from great_docs._api_diff import snapshot_cli_from_click
 
-                cli_obj = self._find_click_cli_obj(package_name)
+                cli_obj = self._find_click_cli_obj(importable_name)
                 if cli_obj is not None:
                     snap.cli_commands = snapshot_cli_from_click(cli_obj)
             except Exception:
@@ -12455,14 +13346,14 @@ body-classes: "gd-homepage"
             for item in section.get("contents", []):
                 # Handle both string and dict formats
                 if isinstance(item, str):
-                    section_entry["contents"].append(f"reference/{item}.qmd")
+                    item_name = item
                 elif isinstance(item, dict):
-                    # Extract the name from dict format (e.g., {'name': 'Graph', 'members': []})
                     item_name = item.get("name", str(item))
-                    section_entry["contents"].append(f"reference/{item_name}.qmd")
                 else:
-                    # Fallback for unexpected types
-                    section_entry["contents"].append(f"reference/{item}.qmd")  # pragma: no cover
+                    item_name = str(item)  # pragma: no cover
+                section_entry["contents"].append(
+                    {"text": item_name, "href": f"reference/{item_name}.qmd"}
+                )
 
             sidebar_contents.append(section_entry)
 
@@ -12502,14 +13393,17 @@ body-classes: "gd-homepage"
 
         # Check if frontmatter already exists; if so, inject page-navigation
         if content.startswith("---"):
-            if "page-navigation:" not in content.split("---", 2)[1]:
+            fm_section = content.split("---", 2)[1]
+            if "page-navigation:" not in fm_section:
                 content = content.replace("---\n", "---\npage-navigation: false\n", 1)
-                with open(index_path, "w") as f:
-                    f.write(content)
+            if "html-table-processing:" not in fm_section:
+                content = content.replace("---\n", "---\nhtml-table-processing: none\n", 1)
+            with open(index_path, "w") as f:
+                f.write(content)
             return
 
         # Add minimal frontmatter if none exists
-        content = f"---\npage-navigation: false\n---\n\n{content}"
+        content = f"---\npage-navigation: false\nhtml-table-processing: none\n---\n\n{content}"
 
         # Write updated content
         with open(index_path, "w") as f:
@@ -12927,8 +13821,14 @@ body-classes: "gd-homepage"
 
         repo_url = urls.get("Repository", "") or urls.get("Source", "")
 
-        # Derive install name from package name (PyPI name uses hyphens)
-        install_name = package_name.replace("_", "-") if package_name else ""
+        # Use the distribution name (from pyproject.toml) for the pip install command.
+        # package_name_for_skill comes from _detect_package_name() which reads project.name, so it
+        # holds the real PyPI distribution name (e.g. "toast-analytics") even when the importable
+        # module name differs (e.g. "toast"). Fall back to normalizing the module name only when no
+        # pyproject.toml / setup.cfg / setup.py is available.
+        install_name = package_name_for_skill or (
+            package_name.replace("_", "-") if package_name else ""
+        )
 
         # Build skill name: lowercase, hyphens only, max 64 chars
         skill_name = install_name.lower()[:64] if install_name else "package"
@@ -13087,9 +13987,9 @@ body-classes: "gd-homepage"
         (`references/`, `scripts/`, `assets/`), a directory tree is rendered before the SKILL.md and
         each `.md` / `.sh` file is displayed in its own text area with anchor links.
 
-        When *extra_skills* is provided (a list of ``(skill_path, skill_dir)`` tuples for
-        additional skills beyond the primary one), a sticky pill-style switcher bar is rendered
-        at the top of the page so users can toggle between skills without leaving the page.
+        When *extra_skills* is provided (a list of `(skill_path, skill_dir)` tuples for additional
+        skills beyond the primary one), a sticky pill-style switcher bar is rendered at the top of
+        the page so users can toggle between skills without leaving the page.
 
         Parameters
         ----------
@@ -13099,8 +13999,8 @@ body-classes: "gd-homepage"
             Optional path to the curated skill directory containing SKILL.md and its companion
             subdirectories.
         extra_skills
-            Optional list of additional ``(skill_path, skill_dir)`` tuples. Each entry is rendered
-            as a switchable panel alongside the primary skill.
+            Optional list of additional `(skill_path, skill_dir)` tuples. Each entry is rendered as
+            a switchable panel alongside the primary skill.
         """
         import re
 
@@ -13905,6 +14805,19 @@ body-classes: "gd-homepage"
                 lines.append(f"Sitemap: {base_url}sitemap.xml")
                 lines.append("")
 
+        # Add llms.txt references for AI agent discoverability
+        base_url = self._get_canonical_base_url()
+        if base_url:
+            llms_path = site_dir / "llms.txt"
+            llms_full_path = site_dir / "llms-full.txt"
+            if llms_path.exists() or llms_full_path.exists():
+                lines.append("# AI agent context files")
+                if llms_path.exists():
+                    lines.append(f"Llms-txt: {base_url}llms.txt")
+                if llms_full_path.exists():
+                    lines.append(f"Llms-txt: {base_url}llms-full.txt")
+                lines.append("")
+
         # Write robots.txt
         robots_path = site_dir / "robots.txt"
         robots_path.write_text("\n".join(lines), encoding="utf-8")
@@ -14153,7 +15066,10 @@ body-classes: "gd-homepage"
         if not package_name:
             return ""  # pragma: no cover
 
-        cli_info = self._discover_click_cli(package_name)
+        # The Click CLI is imported from the package's module, which can differ
+        # from the PyPI project name.
+        importable_name = self._resolve_importable_name(package_name)
+        cli_info = self._discover_click_cli(importable_name, display_name=package_name)
         if not cli_info:
             return ""  # pragma: no cover
 
@@ -14313,6 +15229,54 @@ body-classes: "gd-homepage"
             print(f"Removed {self.project_path.relative_to(self.project_root)}/ directory")
 
         print("✅ Great-docs uninstalled successfully!")
+
+    def _persist_freeze_cache(self) -> int | None:
+        """Copy _freeze/ from build directories back to the project root.
+
+        Handles both single-version builds (freeze in project_path/_freeze)
+        and versioned builds (freeze in _great_docs_build/v__*/_freeze).
+
+        Returns the number of cached files, or None if no freeze cache exists.
+        """
+        freeze_sources: list[Path] = []
+
+        # Single-version build
+        single = self.project_path / "_freeze"
+        if single.is_dir():
+            freeze_sources.append(single)
+
+        # Versioned build
+        versioned_root = self.project_root / "_great_docs_build"
+        if versioned_root.is_dir():
+            for ver_dir in versioned_root.iterdir():
+                candidate = ver_dir / "_freeze"
+                if candidate.is_dir():
+                    freeze_sources.append(candidate)
+
+        if not freeze_sources:
+            return None
+
+        freeze_dst = self.project_root / "_freeze"
+        if freeze_dst.exists():
+            shutil.rmtree(freeze_dst)
+        freeze_dst.mkdir()
+
+        for src in freeze_sources:
+            for item in src.iterdir():
+                dest = freeze_dst / item.name
+                if item.is_dir():
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+
+        for js_file in freeze_dst.rglob("*.js"):
+            data = js_file.read_bytes()
+            if data and not data.endswith(b"\n"):
+                js_file.write_bytes(data + b"\n")
+
+        return sum(1 for _ in freeze_dst.rglob("*") if _.is_file())
 
     def _prepare_for_freeze(self) -> None:
         """Run the build preparation steps (1-14 + normalization) without rendering.
@@ -14529,6 +15493,7 @@ body-classes: "gd-homepage"
         # --- Gather metadata for the build header -------------------------
         package_name = self._detect_package_name() or ""
         package_version = ""
+        package_location = ""
         if package_name:
             try:
                 from importlib.metadata import version as _pkg_version
@@ -14536,6 +15501,44 @@ body-classes: "gd-homepage"
                 package_version = _pkg_version(package_name)
             except Exception:
                 pass
+            # Show the location Griffe will actually use for introspection
+            # (prioritizes project root / src layout over sys.path)
+            _normalized_pkg = package_name.replace("-", "_")
+            for _sp in self._griffe_search_paths():
+                _candidate = Path(_sp) / _normalized_pkg
+                if _candidate.is_dir() and (_candidate / "__init__.py").exists():
+                    package_location = str(_candidate)
+                    break
+            if not package_location:
+                try:
+                    import importlib.util
+
+                    _spec = importlib.util.find_spec(_normalized_pkg)
+                    if _spec and _spec.origin:
+                        package_location = str(Path(_spec.origin).parent)
+                except Exception:
+                    pass
+            # For --from-repo builds (temp clone dirs), show the git remote URL
+            # instead of the opaque temp path
+            if package_location:
+                try:
+                    import subprocess as _sp_sub
+                    import tempfile
+
+                    _git_remote = _sp_sub.run(
+                        ["git", "config", "--get", "remote.origin.url"],
+                        cwd=str(self.project_root),
+                        capture_output=True,
+                        **TEXT_MODE_KWARGS,
+                    )
+                    if _git_remote.returncode == 0 and _git_remote.stdout.strip():
+                        _remote_url = _git_remote.stdout.strip()
+                        # Check if the package lives inside a temp clone directory
+                        _tmp_prefixes = ("/tmp/", "/var/folders/", tempfile.gettempdir())
+                        if any(package_location.startswith(p) for p in _tmp_prefixes):
+                            package_location = _remote_url
+                except Exception:
+                    pass
 
         # Count total pages for time estimate (API items from config)
         n_api_items = 0
@@ -14589,7 +15592,7 @@ body-classes: "gd-homepage"
         except Exception:
             pass  # never let estimation crash the build
 
-        total_steps = 18
+        total_steps = 19
         est_seconds = estimate_build_time(
             n_api_items=n_api_items,
             n_total_pages=n_total_pages,
@@ -14599,6 +15602,7 @@ body-classes: "gd-homepage"
         log = BuildLog(
             package_name=package_name,
             package_version=package_version,
+            package_location=package_location,
             total_steps=total_steps,
             estimated_seconds=est_seconds,
         )
@@ -14629,7 +15633,7 @@ body-classes: "gd-homepage"
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                **TEXT_MODE_KWARGS,
                 env=env,
                 bufsize=1,
             )
@@ -14793,12 +15797,18 @@ body-classes: "gd-homepage"
             # ── Step 5: Generate source links ──────────────────────────
             step += 1
             log.step_start(step, "Generate source links")
-            pkg_name = self._detect_package_name()
-            if pkg_name:
+            package_name = self._detect_package_name()
+            if package_name:
+                # Source-link generation (and the CLI reference in Step 7,
+                # which reuses pkg_name) load the importable module, which can
+                # differ from the PyPI project name. Honor an explicit
+                # ``module:`` and build-backend hints via _detect_module_name.
+                pkg_name = self._resolve_importable_name(package_name)
                 with _quiet_prints():
                     self._generate_source_links_json(pkg_name)
                 log.step_done(f"Source links generated for {pkg_name}")
             else:
+                pkg_name = None
                 log.step_skip(step, "no package detected")
 
             # ── Step 6: Generate changelog ─────────────────────────────
@@ -14827,10 +15837,12 @@ body-classes: "gd-homepage"
             step += 1
             log.step_start(step, "Generate CLI reference")
             metadata = self._get_package_metadata()
-            if metadata.get("cli_enabled", False):
+            if metadata.get("cli_enabled", False) and not pkg_name:
+                log.step_skip(step, "no package detected")
+            elif metadata.get("cli_enabled", False):
                 try:
                     with _quiet_prints():
-                        cli_info = self._discover_click_cli(pkg_name)
+                        cli_info = self._discover_click_cli(pkg_name, display_name=package_name)
                     if cli_info:
                         with _quiet_prints():
                             cli_files = self._generate_cli_reference_pages(cli_info)
@@ -14849,6 +15861,40 @@ body-classes: "gd-homepage"
             else:
                 log.step_skip(step, "CLI not enabled")
 
+            # ── Step 7a: Generate Go CLI reference ─────────────────────
+            step += 1
+            log.step_start(step, "Generate Go CLI reference")
+            if self._config.go_cli_enabled:
+                try:
+                    from great_docs._go_cli import introspect_cobra_cli
+
+                    with _quiet_prints():
+                        go_project = self._detect_go_cli_project()
+                    if go_project:
+                        with _quiet_prints():
+                            cli_info = introspect_cobra_cli(go_project)
+                        if cli_info:
+                            with _quiet_prints():
+                                cli_files = self._generate_cli_reference_pages(cli_info)
+                            if cli_files:
+                                with _quiet_prints():
+                                    self._update_sidebar_with_cli(cli_files)
+                                n_pages = self._count_cli_sidebar_items(cli_files)
+                                log.step_done(
+                                    f"{n_pages} Go CLI reference page(s) ({go_project.binary_name})"
+                                )
+                            else:
+                                log.step_done("No Go CLI pages generated")  # pragma: no cover
+                        else:
+                            log.step_skip(step, "Go CLI introspection failed (is 'go' on PATH?)")
+                    else:
+                        log.step_skip(step, "no Go CLI project detected")
+                except Exception as e:
+                    log.warn(f"Error generating Go CLI docs: {e}")
+                    log.step_done("Go CLI generation had issues")
+            else:
+                log.step_skip(step, "Go CLI not enabled")
+
             # ── Step 7b: Generate MCP server reference ─────────────────
             step += 1
             log.step_start(step, "Generate MCP server reference")
@@ -14860,6 +15906,7 @@ body-classes: "gd-homepage"
                         with _quiet_prints():
                             mcp_files = self._generate_mcp_reference_pages(mcp_info)
                         if mcp_files:
+                            self._mcp_pages_generated = True
                             with _quiet_prints():
                                 self._update_sidebar_with_mcp(mcp_files)
                             # Generate .well-known/mcp.json discovery manifest
@@ -14868,11 +15915,17 @@ body-classes: "gd-homepage"
                             n_tools = len(mcp_info.get("tools", []))
                             log.step_done(f"{n_tools} MCP tool page(s) + manifest")
                         else:
+                            self._mcp_pages_generated = False
+                            self._remove_mcp_from_ref_sections()
                             log.step_done("No MCP pages generated")
                     else:
+                        self._mcp_pages_generated = False
+                        self._remove_mcp_from_ref_sections()
                         log.step_skip(step, "no MCP server found")
                 except Exception as e:
+                    self._mcp_pages_generated = False
                     log.warn(f"Error generating MCP docs: {e}")
+                    self._remove_mcp_from_ref_sections()
                     log.step_done("MCP generation had issues")
             else:
                 log.step_skip(step, "MCP not enabled")
@@ -14962,8 +16015,9 @@ body-classes: "gd-homepage"
             try:
                 with _quiet_prints():
                     assets_copied = self._copy_assets()
-                    if assets_copied:
-                        self._update_quarto_config()
+                    # Always update quarto config after user guide + assets steps
+                    # (registers user-guide/images/** and other dynamic resources)
+                    self._update_quarto_config()
                 if assets_copied:
                     log.step_done("Assets copied")
                 else:
@@ -14984,16 +16038,21 @@ body-classes: "gd-homepage"
 
                 quarto_yml = self.project_path / "_quarto.yml"
                 try:
-                    from great_docs._renderer.introspection import Builder
+                    from great_docs._apiref.api_reference import APIReference
 
                     with _quiet_prints():
-                        builder = Builder.from_quarto_config(str(quarto_yml))
-                        builder.build()
+                        APIReference(str(quarto_yml)).build()
                     log.step_done("API reference generated")
+                except SystemExit:
+                    # Missing config items or other fatal errors — don't mask them
+                    raise
                 except Exception as e:
                     dynamic = self._config.dynamic
                     if dynamic:
-                        log.warn("Dynamic introspection failed, retrying static...")
+                        log.warn(
+                            "Dynamic introspection failed for a resolved item, "
+                            "retrying with static analysis..."
+                        )
                         log.detail(str(e))
                         with open(quarto_yml, "r") as f:
                             qconfig = read_yaml(f) or {}
@@ -15003,8 +16062,7 @@ body-classes: "gd-homepage"
                                 write_yaml(qconfig, f)
                         try:
                             with _quiet_prints():
-                                builder = Builder.from_quarto_config(str(quarto_yml))
-                                builder.build()
+                                APIReference(str(quarto_yml)).build()
                             log.step_done("API reference generated (static analysis)")
                         except Exception as e2:
                             log.step_fail(f"API reference build failed: {e2}")
@@ -15105,7 +16163,7 @@ body-classes: "gd-homepage"
                     site_url=self._config.site_url,
                     progress_callback=_progress_cb,
                     on_renders_done=_on_renders_done,
-                    badge_expiry_raw=self._config.get("new_is_old"),
+                    badge_expiry_raw=self._config["new_is_old"],
                 )
 
                 if not vb_result["success"]:
@@ -15154,6 +16212,11 @@ body-classes: "gd-homepage"
                 )
                 if timing_path:
                     log.detail(f"Wrote {timing_path.name}")
+
+                # ── Persist freeze cache ──────────────────────────
+                n_frozen = self._persist_freeze_cache()
+                if n_frozen is not None:
+                    log.detail(f"Saved freeze cache ({n_frozen} files)")
 
                 # ── Auto-save API snapshot (Strategy C) ────────────
                 try:
@@ -15267,6 +16330,11 @@ body-classes: "gd-homepage"
                     if timing_path:  # pragma: no cover
                         log.detail(f"Wrote {timing_path.name}")  # pragma: no cover
 
+                    # ── Persist freeze cache ──────────────────────────
+                    n_frozen = self._persist_freeze_cache()  # pragma: no cover
+                    if n_frozen is not None:  # pragma: no cover
+                        log.detail(f"Saved freeze cache ({n_frozen} files)")  # pragma: no cover
+
                     # ── Auto-save API snapshot (Strategy C) ────────────
                     if self._config.has_versions:  # pragma: no cover
                         try:  # pragma: no cover
@@ -15375,7 +16443,7 @@ body-classes: "gd-homepage"
             if branch:
                 clone_cmd += ["--branch", branch]
             clone_cmd += [repo_url, str(clone_dir)]
-            result = subprocess.run(clone_cmd, capture_output=True, text=True)
+            result = subprocess.run(clone_cmd, capture_output=True, **TEXT_MODE_KWARGS)
             if result.returncode != 0:
                 raise RuntimeError(
                     f"git clone failed (exit {result.returncode}):\n{result.stderr.strip()}"
@@ -15390,13 +16458,13 @@ body-classes: "gd-homepage"
                         ["git", "fetch", "--unshallow"],
                         cwd=str(clone_dir),
                         capture_output=True,
-                        text=True,
+                        **TEXT_MODE_KWARGS,
                     )
                     subprocess.run(
                         ["git", "fetch", "--tags"],
                         cwd=str(clone_dir),
                         capture_output=True,
-                        text=True,
+                        **TEXT_MODE_KWARGS,
                     )
                 elif needs == "tags":
                     print("   Fetching tags for source link detection...")
@@ -15404,7 +16472,7 @@ body-classes: "gd-homepage"
                         ["git", "fetch", "--tags"],
                         cwd=str(clone_dir),
                         capture_output=True,
-                        text=True,
+                        **TEXT_MODE_KWARGS,
                     )
             print("   Cloned to temporary directory")
 
@@ -15424,7 +16492,7 @@ body-classes: "gd-homepage"
             result = subprocess.run(
                 [str(venv_pip), "install", "great-docs"],
                 capture_output=True,
-                text=True,
+                **TEXT_MODE_KWARGS,
             )
             if result.returncode != 0:
                 # Fall back to installing from the current source tree if
@@ -15433,7 +16501,7 @@ body-classes: "gd-homepage"
                 result = subprocess.run(
                     [str(venv_pip), "install", str(src_root)],
                     capture_output=True,
-                    text=True,
+                    **TEXT_MODE_KWARGS,
                 )
                 if result.returncode != 0:
                     raise RuntimeError(f"Failed to install great-docs:\n{result.stderr.strip()}")
@@ -15447,13 +16515,13 @@ body-classes: "gd-homepage"
                 install_cmd.append(f"{clone_dir}[{extras}]")
             else:
                 install_cmd.append(str(clone_dir))
-            result = subprocess.run(install_cmd, capture_output=True, text=True)
+            result = subprocess.run(install_cmd, capture_output=True, **TEXT_MODE_KWARGS)
             if result.returncode != 0:
                 # Retry without extras
                 result = subprocess.run(
                     [str(venv_pip), "install", "-e", str(clone_dir)],
                     capture_output=True,
-                    text=True,
+                    **TEXT_MODE_KWARGS,
                 )
                 if result.returncode != 0:
                     raise RuntimeError(
@@ -15514,7 +16582,13 @@ body-classes: "gd-homepage"
                 pass  # Best-effort cleanup
 
     @staticmethod
-    def preview_site(site_dir: str | Path, port: int = 3000) -> None:
+    def preview_site(
+        site_dir: str | Path,
+        port: int = 3000,
+        *,
+        open_path: str = "",
+        open_browser: bool = True,
+    ) -> None:
         """Preview a pre-built documentation site from any directory.
 
         Starts a local HTTP server and opens the site in the default browser. This is useful for
@@ -15526,10 +16600,16 @@ body-classes: "gd-homepage"
             Path to the directory containing the built site (must have `index.html`).
         port
             The port number for the local HTTP server (default `3000`).
+        open_path
+            Optional site-relative page to open in the browser (e.g.
+            `reference/mcp/gd_config.html`). Defaults to the site root. If the page does not
+            exist under `site_dir`, a warning is printed and the root is opened instead.
+        open_browser
+            Whether to launch the default browser. When `False`, the URL is printed but no
+            browser is opened.
         """
         import functools
         import http.server
-        import socketserver
         import sys
         import threading
         import webbrowser
@@ -15541,24 +16621,42 @@ body-classes: "gd-homepage"
             print(f"❌ No index.html found in {site_path}")
             sys.exit(1)
 
+        # Normalize the requested deep-link page and confirm it exists on disk before we
+        # advertise/open it; fall back to the root otherwise.
+        rel_path = (open_path or "").strip().lstrip("/")
+        if rel_path:
+            target = site_path / rel_path
+            if not target.is_file():
+                print(f"⚠️  Page '{rel_path}' not found in the site; opening the home page instead.")
+                rel_path = ""
+
         handler = functools.partial(
             http.server.SimpleHTTPRequestHandler,
             directory=str(site_path),
         )
-        socketserver.TCPServer.allow_reuse_address = True
+        # Reap half-open sockets (e.g. Safari's idle speculative connections) so a
+        # stalled connection cannot tie up a worker thread indefinitely.
+        http.server.SimpleHTTPRequestHandler.timeout = 10
+        http.server.ThreadingHTTPServer.allow_reuse_address = True
 
         try:
-            httpd = socketserver.TCPServer(("", port), handler)
+            # Use a threading server so one idle/speculative connection (notably from
+            # Safari) cannot block the whole preview. See issue #219.
+            httpd = http.server.ThreadingHTTPServer(("", port), handler)
         except OSError:
             print(f"❌ Port {port} is already in use. Try a different port.")
             sys.exit(1)
 
-        url = f"http://localhost:{port}/"
-        print(f"\n🌐 Serving site at {url}")
+        base_url = f"http://localhost:{port}/"
+        url = base_url + rel_path
+        print(f"\n🌐 Serving site at {base_url}")
         print(f"   Site directory: {site_path}")
+        if rel_path:
+            print(f"   Opening: {url}")
         print("   Press Ctrl+C to stop\n")
 
-        threading.Timer(0.3, webbrowser.open, args=(url,)).start()
+        if open_browser:
+            threading.Timer(0.3, webbrowser.open, args=(url,)).start()
 
         try:
             httpd.serve_forever()
@@ -15646,9 +16744,17 @@ body-classes: "gd-homepage"
         if versions:
             return "full"
 
-        # Page metadata dates need git log for first-commit detection
-        site = cfg.get("site", {})
-        if isinstance(site, dict) and site.get("show_dates"):
+        # Page metadata dates need git log for first-commit detection.
+        # `show_dates` lives at the top level; `site.show_dates` is kept as a
+        # legacy fallback since this raw-YAML inspection runs before any
+        # `Config`-level normalization (Config._lift_legacy_site_keys never
+        # sees this clone).
+        show_dates = cfg.get("show_dates")
+        if show_dates is None:
+            site = cfg.get("site")
+            if isinstance(site, dict):
+                show_dates = site.get("show_dates")
+        if show_dates:
             return "full"
 
         # Source links benefit from tags for _detect_git_ref()
@@ -15691,7 +16797,6 @@ body-classes: "gd-homepage"
         """
         import functools
         import http.server
-        import socketserver
         import sys
         import threading
         import webbrowser
@@ -15714,11 +16819,16 @@ body-classes: "gd-homepage"
             http.server.SimpleHTTPRequestHandler,
             directory=str(site_path),
         )
+        # Reap half-open sockets (e.g. Safari's idle speculative connections) so a
+        # stalled connection cannot tie up a worker thread indefinitely.
+        http.server.SimpleHTTPRequestHandler.timeout = 10
         # Allow quick restart after Ctrl-C
-        socketserver.TCPServer.allow_reuse_address = True
+        http.server.ThreadingHTTPServer.allow_reuse_address = True
 
         try:
-            httpd = socketserver.TCPServer(("", port), handler)
+            # Use a threading server so one idle/speculative connection (notably from
+            # Safari) cannot block the whole preview. See issue #219.
+            httpd = http.server.ThreadingHTTPServer(("", port), handler)
         except OSError:
             print(f"❌ Port {port} is already in use. Try a different port.")
             sys.exit(1)
@@ -15854,10 +16964,14 @@ body-classes: "gd-homepage"
         files_to_scan: list[Path] = []
 
         if include_source:
-            # Find package directory
+            # Find package directory (the importable module name, which can
+            # differ from the PyPI project name).
             package_name = self._detect_package_name()
             if package_name:
-                package_dir = self.project_root / package_name.replace("-", "_")
+                importable_name = self._resolve_importable_name(package_name)
+                # Dotted module names (e.g. namespace packages "firebird.base")
+                # map to nested directories.
+                package_dir = self.project_root.joinpath(*importable_name.split("."))
                 if package_dir.exists():
                     files_to_scan.extend(package_dir.rglob("*.py"))
 
@@ -16203,9 +17317,16 @@ body-classes: "gd-homepage"
         # Add Python files if checking docstrings
         py_files: list[Path] = []
         if include_docstrings:
-            package_dir = self.project_root / self._detect_package_name()  # pragma: no cover
-            if package_dir.exists():  # pragma: no cover
-                py_files.extend(package_dir.rglob("*.py"))  # pragma: no cover
+            # Scan the importable module directory, which can differ from the
+            # PyPI project name. Skip when no package is detectable.
+            package_name = self._detect_package_name()
+            if package_name:
+                importable_name = self._resolve_importable_name(package_name)
+                # Dotted module names (e.g. namespace packages "firebird.base")
+                # map to nested directories.
+                package_dir = self.project_root.joinpath(*importable_name.split("."))
+                if package_dir.exists():
+                    py_files.extend(package_dir.rglob("*.py"))
 
         # Build custom dictionary file if needed
         dict_path = None

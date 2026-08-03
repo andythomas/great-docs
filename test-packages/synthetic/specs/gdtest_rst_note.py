@@ -20,6 +20,7 @@ SPEC = {
             "build-backend": "setuptools.build_meta",
         },
     },
+    "config": {"parser": "sphinx"},
     "files": {
         "gdtest_rst_note/__init__.py": '''\
             """Package testing note RST directives."""
@@ -88,6 +89,6 @@ SPEC = {
         "detected_parser": "numpy",
         "export_names": ["configure", "get_config", "reset_defaults"],
         "num_exports": 3,
-        "coverage_exclude": ['nodoc', 'bigcl', 'ug', 'supp', 'sechdg', 'sbsec', 'hdg'],
-},
+        "coverage_exclude": ["nodoc", "bigcl", "ug", "supp", "sechdg", "sbsec", "hdg"],
+    },
 }

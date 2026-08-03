@@ -11,6 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from pathlib import Path
 from typing import Any, Callable
 
+from great_docs._subprocess import TEXT_MODE_KWARGS
 from great_docs._versioning import (
     VersionEntry,
     build_version_map,
@@ -183,14 +184,15 @@ def _prune_cli_pages(dest_dir: Path, snap: object) -> None:
         return
 
     # Build the set of valid command file stems from the snapshot.
-    # CliCommandInfo.subcommands holds the actual commands; the group itself
-    # maps to `index.qmd`.
+    # CliCommandInfo.subcommands holds the actual commands; the index page maps to `index.qmd`
+    # and the root command's own page maps to the entry point's safe name.
     valid_stems: set[str] = {"index"}
-    valid_names: set[str] = set()
+    entry_name = getattr(cli_commands, "name", "") or ""
+    if entry_name:
+        valid_stems.add(entry_name.replace("-", "_"))
     for sub in getattr(cli_commands, "subcommands", []):
         # Click command names use hyphens; file stems use underscores
         valid_stems.add(sub.name.replace("-", "_"))
-        valid_names.add(sub.name)
 
     # Remove QMD files for commands not present at this version
     for qmd_file in list(cli_ref_dir.iterdir()):
@@ -199,47 +201,53 @@ def _prune_cli_pages(dest_dir: Path, snap: object) -> None:
         if qmd_file.stem not in valid_stems:
             qmd_file.unlink()
 
-    # Rewrite the index.qmd to remove stale commands from the help text
+    # Rewrite the index.qmd to remove stale commands from the listing
     index_qmd = cli_ref_dir / "index.qmd"
-    if index_qmd.exists() and valid_names:
-        _rewrite_cli_index(index_qmd, valid_names)
+    if index_qmd.exists():
+        _rewrite_cli_index(index_qmd, valid_stems)
 
     # Prune the CLI sidebar in _quarto.yml
     _prune_quarto_cli_sidebar(dest_dir, valid_stems)
 
 
-def _rewrite_cli_index(index_qmd: Path, valid_names: set[str]) -> None:
-    """Remove lines for non-existent commands from the CLI index help block."""
+def _rewrite_cli_index(index_qmd: Path, valid_stems: set[str]) -> None:
+    """Remove command entries for non-existent commands from the CLI index listing.
+
+    The index is a definition list of ``[name](href){...}`` entries. An entry is kept when the
+    first path component of its href (e.g. ``init`` from ``init.qmd``, or ``skill`` from
+    ``skill/install.qmd``) is a valid command stem at this version. Dropping an entry also drops
+    its ``:   description`` line and the trailing blank line.
+    """
     content = index_qmd.read_text(encoding="utf-8")
     lines = content.split("\n")
+    entry_re = re.compile(r"^\[[^\]]+\]\((?P<href>[^)]+)\)\{")
+
     new_lines: list[str] = []
-    in_commands_block = False
+    i = 0
+    n = len(lines)
+    while i < n:
+        match = entry_re.match(lines[i].strip())
+        if match:
+            stem = match.group("href").split("/")[0]
+            if stem.endswith(".qmd"):
+                stem = stem[:-4]
+            elif stem.endswith(".md"):
+                stem = stem[:-3]
 
-    for line in lines:
-        stripped = line.strip()
-
-        # Detect the "Commands:" header in the help text
-        if stripped == "Commands:":
-            in_commands_block = True
-            new_lines.append(line)
+            if stem in valid_stems:
+                new_lines.append(lines[i])
+                i += 1
+            else:
+                # Skip the link line, its ":   description" line, and one trailing blank line.
+                i += 1
+                if i < n and lines[i].lstrip().startswith(":"):
+                    i += 1
+                if i < n and not lines[i].strip():
+                    i += 1
             continue
 
-        if in_commands_block:
-            # End of commands block: blank line or closing fence
-            if not stripped or stripped.startswith("```") or stripped.startswith(":::"):
-                in_commands_block = False
-                new_lines.append(line)
-                continue
-
-            # Each command line looks like "  command-name   Description text..."
-            # Extract the command name (first non-whitespace token)
-            tokens = stripped.split()
-            if tokens and tokens[0] in valid_names:
-                new_lines.append(line)
-            # Skip lines for commands not in valid_names
-            continue
-
-        new_lines.append(line)
+        new_lines.append(lines[i])
+        i += 1
 
     index_qmd.write_text("\n".join(new_lines), encoding="utf-8")
 
@@ -595,7 +603,6 @@ def _rebuild_api_from_snapshot(
     ref_dir = dest_dir / "reference"
 
     snapshot_symbols = set(snap.symbols.keys())
-    snapshot_classes = {name for name, sym in snap.symbols.items() if sym.kind == "class"}
 
     # --- Prune existing pages not in the snapshot ---
     if ref_dir.exists():
@@ -607,7 +614,7 @@ def _rebuild_api_from_snapshot(
             stem = qmd_file.stem
             if stem == "index":
                 continue
-            if not _is_valid_ref_name(stem, snapshot_symbols, snapshot_classes):
+            if not _is_valid_ref_name(stem, snapshot_symbols):
                 qmd_file.unlink()
     else:
         ref_dir.mkdir(parents=True, exist_ok=True)
@@ -678,7 +685,7 @@ def _rebuild_api_from_snapshot(
 
     if _has_rich_index:
         # Preserve the styled index — just remove entries for symbols not in this version
-        _prune_reference_index(index_path, snapshot_symbols, snapshot_classes)
+        _prune_reference_index(index_path, snapshot_symbols)
     else:
         # No existing index or it's a plain placeholder; generate from snapshot
         index_lines = [
@@ -710,7 +717,7 @@ def _rebuild_api_from_snapshot(
     generated.append("reference/index.html")
 
     # --- Update _quarto.yml sidebar to remove missing reference entries ---
-    _prune_quarto_sidebar(dest_dir, "reference", snapshot_symbols, snapshot_classes)
+    _prune_quarto_sidebar(dest_dir, "reference", snapshot_symbols)
 
     return generated
 
@@ -741,20 +748,31 @@ def _format_param(p) -> str:
     return "".join(parts)
 
 
-def _is_valid_ref_name(name: str, valid_symbols: set[str], valid_classes: set[str]) -> bool:
-    """Check if a symbol or method name is valid for this version."""
+def _is_valid_ref_name(name: str, valid_symbols: set[str]) -> bool:
+    """Whether a reference page stem names a symbol documented in this version.
+
+    A *deep* snapshot lists every valid stem explicitly (including method
+    stems like `Class.method` and submodule-qualified names like `sub.Widget`)
+    so exact set membership is sufficient and authoritative.
+
+    A *shallow* snapshot holds only the package's top-level exports; it is the
+    back-compat fallback used when no documented set can be resolved (e.g.
+    `documented_symbol_names()` returned nothing). Such a snapshot carries no
+    dotted keys, so a `Class.method` page would be wrongly pruned under exact
+    membership. For that case only, fall back to validating a dotted stem by
+    its top-level prefix, matching the pre-deep-snapshot behavior and keeping
+    the failure mode non-destructive.
+    """
     if name == "index" or name in valid_symbols:
         return True
-    # Method page: `ClassName.method` (check the class prefix)
-    if "." in name:
-        class_name = name.split(".")[0]
-        return class_name in valid_classes
+    # Shallow-snapshot safety net: a snapshot with no dotted keys cannot speak
+    # to method/submodule pages, so keep `Prefix.rest` when `Prefix` is known.
+    if "." in name and not any("." in symbol for symbol in valid_symbols):
+        return name.split(".")[0] in valid_symbols
     return False
 
 
-def _prune_reference_index(
-    index_qmd: Path, valid_symbols: set[str], valid_classes: set[str]
-) -> None:
+def _prune_reference_index(index_qmd: Path, valid_symbols: set[str]) -> None:
     """Remove links/rows for symbols not in the snapshot from reference/index.qmd.
 
     This handles three levels of cleanup:
@@ -777,7 +795,7 @@ def _prune_reference_index(
         qmd_ref = re.search(r"\(([^)]+)\.qmd(?:#[^)]*)?\)", stripped)
         if qmd_ref:
             symbol_name = qmd_ref.group(1)
-            if not _is_valid_ref_name(symbol_name, valid_symbols, valid_classes):
+            if not _is_valid_ref_name(symbol_name, valid_symbols):
                 remove_indices.add(i)
                 # Also remove the following definition-list description line(s)
                 # Pattern: `:   description text` (Pandoc definition list)
@@ -799,7 +817,7 @@ def _prune_reference_index(
         bare_ref = re.match(r"^\s*-\s+(\S+)\.qmd\s*$", stripped)
         if bare_ref:
             symbol_name = bare_ref.group(1)
-            if not _is_valid_ref_name(symbol_name, valid_symbols, valid_classes):
+            if not _is_valid_ref_name(symbol_name, valid_symbols):
                 remove_indices.add(i)
 
     filtered = [line for i, line in enumerate(lines) if i not in remove_indices]
@@ -861,9 +879,7 @@ def _prune_reference_index(
     index_qmd.write_text("\n".join(result), encoding="utf-8")
 
 
-def _prune_quarto_sidebar(
-    dest_dir: Path, section: str, valid_symbols: set[str], valid_classes: set[str]
-) -> None:
+def _prune_quarto_sidebar(dest_dir: Path, section: str, valid_symbols: set[str]) -> None:
     """Remove sidebar entries for missing symbols/commands from _quarto.yml.
 
     Handles both flat string entries (`reference/Name.qmd`) and nested section groups
@@ -913,7 +929,7 @@ def _prune_quarto_sidebar(
                             new_items.append(item)
                         else:
                             stem = Path(item).stem
-                            if _is_valid_ref_name(stem, valid_symbols, valid_classes):
+                            if _is_valid_ref_name(stem, valid_symbols):
                                 new_items.append(item)
                             else:
                                 changed = True
@@ -974,7 +990,7 @@ def _validate_git_ref_is_tag(project_root: Path, git_ref: str) -> bool:
             ["git", "tag", "--list", git_ref],
             cwd=project_root,
             capture_output=True,
-            text=True,
+            **TEXT_MODE_KWARGS,
             timeout=10,
         )
         return result.returncode == 0 and git_ref in result.stdout.strip().split("\n")
@@ -1042,7 +1058,11 @@ def _rebuild_api_from_git_ref(
         if not pkg_name:
             return []
 
-        snap = snapshot_at_tag(project_root, git_ref, pkg_name)
+        from great_docs.core import GreatDocs
+
+        documented = GreatDocs(project_path=str(project_root)).documented_symbol_names(pkg_name)
+
+        snap = snapshot_at_tag(project_root, git_ref, pkg_name, documented_names=documented or None)
         if snap is None:
             return []
 
@@ -1339,7 +1359,7 @@ def _render_single_version(
                 ["quarto", "render"],
                 cwd=build_dir,
                 capture_output=True,
-                text=True,
+                **TEXT_MODE_KWARGS,
                 env=env,
                 timeout=600,
             )
@@ -1383,7 +1403,7 @@ def _render_single_version_streaming(
             cwd=build_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            **TEXT_MODE_KWARGS,
             env=env,
             bufsize=1,
         )
@@ -1439,7 +1459,7 @@ def _render_single_version_streaming(
                 cwd=build_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                **TEXT_MODE_KWARGS,
                 env=env,
                 bufsize=1,
             )

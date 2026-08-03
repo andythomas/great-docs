@@ -5,6 +5,30 @@ import html
 import json
 import os
 import re
+import sys
+
+
+def _configure_stdio_for_unicode() -> None:
+    """Use UTF-8 for console output when the platform default is narrow (e.g. cp1252)."""
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
+_configure_stdio_for_unicode()
+
+try:
+    from great_docs._subprocess import TEXT_MODE_KWARGS as _SUBPROCESS_TEXT_KWARGS
+except ImportError:
+    _SUBPROCESS_TEXT_KWARGS = {"text": True, "encoding": "utf-8", "errors": "replace"}
 
 # Skip post-render processing during freeze-only renders
 if os.environ.get("GD_FREEZE_ONLY"):
@@ -1105,44 +1129,6 @@ def format_signature_multiline(html_content):
     return signature_pattern.sub(reformat_signature, html_content)
 
 
-def strip_directives_from_html(html_content):
-    """
-    Remove Great Docs %directive lines from rendered HTML.
-
-    Directives like %seealso and %nodoc are used for organizing documentation but they should not
-    appear in the final rendered output. This function removes them after rendering.
-    """
-    # Match directives wrapped in <p> tags
-    # e.g., <p>%seealso func_a, func_b</p>
-    p_directive_pattern = re.compile(
-        r"<p>\s*%(?:seealso|nodoc)(?:\s+[^<]*)?\s*</p>\s*\n?",
-        re.IGNORECASE,
-    )
-
-    # Match standalone directive lines (plain text)
-    # e.g., %seealso func_a
-    standalone_directive_pattern = re.compile(
-        r"^\s*%(?:seealso|nodoc)(?:\s+.*)?\s*$\n?",
-        re.MULTILINE | re.IGNORECASE,
-    )
-
-    # Match directives that might be inline within text
-    inline_directive_pattern = re.compile(
-        r"%(?:seealso|nodoc)(?:\s+[^\n<]*)?",
-        re.IGNORECASE,
-    )
-
-    # Apply patterns in order of specificity
-    cleaned = p_directive_pattern.sub("", html_content)
-    cleaned = standalone_directive_pattern.sub("", cleaned)
-    cleaned = inline_directive_pattern.sub("", cleaned)
-
-    # Clean up any resulting empty paragraphs
-    cleaned = re.sub(r"<p>\s*</p>\s*\n?", "", cleaned)
-
-    return cleaned
-
-
 def strip_colgroup_tags(html_content):
     """
     Remove `<colgroup>` tags from tables, preserving those inside GT tables.
@@ -1569,189 +1555,6 @@ def translate_sphinx_roles(html_content):
     return html_content
 
 
-def translate_rst_directives(html_content):
-    """
-    Convert RST admonition / version directives into styled HTML callouts.
-
-    Handles directives that appear as literal text in `<p>` tags after rendering, for example:
-
-    * `<p>.. versionadded:: 2.8.1</p>`
-    * `<p>.. deprecated:: 2.6 Use X instead.</p>`
-    * `<p>.. note:: Some important note.</p>`
-    * `<p>.. warning:: Be careful.</p>`
-
-    Each directive type gets a distinct icon, colour and label.
-    """
-
-    _DIRECTIVE_STYLES = {
-        # (icon, bg_color, border_color, i18n_key, english_fallback)
-        "versionadded": ("🆕", "#ECFDF5", "#059669", "added_in_version", "Added in version"),
-        "versionchanged": ("🔄", "#EFF6FF", "#3B82F6", "changed_in_version", "Changed in version"),
-        "deprecated": (
-            "⚠️",
-            "#FEF2F2",
-            "#DC2626",
-            "deprecated_since_version",
-            "Deprecated since version",
-        ),
-        "note": ("ℹ️", "#EFF6FF", "#3B82F6", "note_callout", "Note"),
-        "warning": ("⚠️", "#FFFBEB", "#D97706", "warning_callout", "Warning"),
-        "caution": ("⚠️", "#FFFBEB", "#D97706", "caution_callout", "Caution"),
-        "danger": ("🚨", "#FEF2F2", "#DC2626", "danger_callout", "Danger"),
-        "important": ("❗", "#FFF7ED", "#EA580C", "important_callout", "Important"),
-        "tip": ("💡", "#ECFDF5", "#059669", "tip_callout", "Tip"),
-        "hint": ("💡", "#ECFDF5", "#059669", "hint_callout", "Hint"),
-    }
-
-    # Version directives have the version number right after ::
-    # e.g.  .. versionadded:: 2.8.1
-    #       .. deprecated:: 2.6 Use X instead.
-    _VERSION_DIRECTIVES = {"versionadded", "versionchanged", "deprecated"}
-
-    directive_names = "|".join(_DIRECTIVE_STYLES.keys())
-
-    def _replace_directive(m):
-        directive = m.group("directive")
-        body = (m.group("body") or "").strip()
-        style = _DIRECTIVE_STYLES[directive]
-        icon, bg, border, i18n_key, fallback = style
-        label = _t(i18n_key, fallback)
-
-        if directive in _VERSION_DIRECTIVES:
-            # Split version number from optional description
-            parts = body.split(None, 1) if body else []
-            version = parts[0] if parts else ""
-            desc = parts[1] if len(parts) > 1 else ""
-            if "{v}" in label and version:
-                title = label.replace("{v}", version)
-            elif version:
-                title = f"{label} {version}"
-            else:
-                title = label.replace(" {v}", "").replace("{v}", "")
-            content = desc
-        else:
-            title = label
-            content = body
-
-        # Build the callout HTML
-        content_html = f'<p style="margin: 0; color: #1f2937;">{content}</p>' if content else ""
-        return (
-            f'<div style="margin: 1rem 0; padding: 0.75rem 1rem; '
-            f"background-color: {bg}; "
-            f"border-left: 4px solid {border}; "
-            f'border-radius: 4px; color: #1f2937;">'
-            f'<p style="margin: 0 0 0.25rem 0; font-weight: 600; '
-            f'font-size: 0.875rem; color: #1f2937;">{icon} {title}</p>'
-            f"{content_html}"
-            f"</div>"
-        )
-
-    # Pattern 1: directive <p> followed by a <pre><code> block body.
-    # RST block directives like `.. note::` with indented body text
-    # become: <p>.. note::</p>\n<pre><code>body text</code></pre>
-    def _replace_block_directive(m):
-        directive = m.group("directive")
-        pre_body = m.group("pre_body").strip()
-        style = _DIRECTIVE_STYLES[directive]
-        icon, bg, border, i18n_key, fallback = style
-        label = _t(i18n_key, fallback)
-
-        if directive in _VERSION_DIRECTIVES:
-            parts = pre_body.split(None, 1) if pre_body else []
-            version = parts[0] if parts else ""
-            desc = parts[1] if len(parts) > 1 else ""
-            title = f"{label} {version}" if version else label
-            content = desc
-        else:
-            title = label
-            content = pre_body
-
-        content_html = f'<p style="margin: 0; color: #1f2937;">{content}</p>' if content else ""
-        return (
-            f'<div style="margin: 1rem 0; padding: 0.75rem 1rem; '
-            f"background-color: {bg}; "
-            f"border-left: 4px solid {border}; "
-            f'border-radius: 4px; color: #1f2937;">'
-            f'<p style="margin: 0 0 0.25rem 0; font-weight: 600; '
-            f'font-size: 0.875rem; color: #1f2937;">{icon} {title}</p>'
-            f"{content_html}"
-            f"</div>"
-        )
-
-    html_content = re.sub(
-        rf"<p>\s*\.\.\s+(?P<directive>{directive_names})::\s*</p>"
-        r"\s*<pre><code>(?P<pre_body>.*?)</code></pre>",
-        _replace_block_directive,
-        html_content,
-        flags=re.DOTALL,
-    )
-
-    # Pattern 2: directive with inline body text in the same <p> tag.
-    # e.g. <p>.. versionadded:: 2.8.1</p>
-    # The body may contain inline HTML tags (e.g. <code>...</code>) produced
-    # by the Sphinx-role translation step that runs before this function.
-    html_content = re.sub(
-        rf"<p>\s*\.\.\s+(?P<directive>{directive_names})::\s*(?P<body>.*?)\s*</p>",
-        _replace_directive,
-        html_content,
-    )
-
-    # Pattern 3: directive misinterpreted as a return-type annotation in a
-    # <dt>/<dd> pair.  the renderer's numpy parser sometimes treats directives
-    # like `.. versionadded:: 2.0` at the end of a docstring as an extra
-    # return entry, producing:
-    #   <dt><code>...<span class="parameter-annotation">.. versionadded:: 2.0
-    #   </span></code></dt>
-    #   <dd><p>Optional description.</p></dd>
-    def _replace_dt_directive(m):
-        directive = m.group("directive")
-        body = (m.group("body") or "").strip()
-        dd_body = (m.group("dd_body") or "").strip()
-        style = _DIRECTIVE_STYLES[directive]
-        icon, bg, border, i18n_key, fallback = style
-        label = _t(i18n_key, fallback)
-
-        if directive in _VERSION_DIRECTIVES:
-            parts = body.split(None, 1) if body else []
-            version = parts[0] if parts else ""
-            desc = parts[1] if len(parts) > 1 else ""
-            if dd_body and not desc:
-                desc = dd_body
-            elif dd_body:
-                desc = f"{desc} {dd_body}"
-            title = f"{label} {version}" if version else label
-            content = desc
-        else:
-            title = label
-            content = dd_body if dd_body else body
-
-        content_html = f'<p style="margin: 0; color: #1f2937;">{content}</p>' if content else ""
-        return (
-            f'<div style="margin: 1rem 0; padding: 0.75rem 1rem; '
-            f"background-color: {bg}; "
-            f"border-left: 4px solid {border}; "
-            f'border-radius: 4px; color: #1f2937;">'
-            f'<p style="margin: 0 0 0.25rem 0; font-weight: 600; '
-            f'font-size: 0.875rem; color: #1f2937;">{icon} {title}</p>'
-            f"{content_html}"
-            f"</div>"
-        )
-
-    _dt_pattern = re.compile(
-        rf'<dt><code><span class="parameter-name">[^<]*</span>\s*'
-        rf'<span class="parameter-annotation-sep"[^>]*>[^<]*</span>\s*'
-        rf'<span class="parameter-annotation">'
-        rf"\.\.\s+(?P<directive>{directive_names})::\s*(?P<body>[^<]*?)"
-        rf"</span></code></dt>"
-        rf"\s*<dd>\s*(?:<p>(?P<dd_body>.*?)</p>\s*)?</dd>",
-        re.DOTALL,
-    )
-    _dt_count = len(_dt_pattern.findall(html_content))
-    html_content = _dt_pattern.sub(_replace_dt_directive, html_content)
-
-    return html_content
-
-
 def translate_bold_section_headers(html_content):
     """
     Convert bold-text section headings into proper doc-section markup.
@@ -1933,15 +1736,6 @@ def translate_renderer_headings(html_content):
         r"(?P<text>[^<]+)"
         r"</a>",
         _replace_toc,
-        html_content,
-    )
-
-    # ── Translate <div class="see-also"> headings ───────────────────────
-    # q renders See Also sections as:
-    #   <div class="see-also" ...><h3/h4 ...>See Also</h3/h4>
-    html_content = re.sub(
-        r'(<div\s[^>]*class="see-also"[^>]*>\s*<(?:h[1-6])[^>]*>)See Also(</(?:h[1-6])>)',
-        lambda m: f"{m.group(1)}{_t('see_also', 'See Also')}{m.group(2)}",
         html_content,
     )
 
@@ -2155,71 +1949,6 @@ def fix_plain_doctest_code_blocks(html_content):
     return _PLAIN_DOCTEST_RE.sub(_replace_plain_doctest, html_content)
 
 
-def translate_rst_math(html_content):
-    """
-    Convert RST `.. math::` directives into display-math blocks.
-
-    After rendering, a `.. math::` block in a docstring becomes literal HTML of the form:
-
-    ```html
-    <p>.. math::</p>
-    <pre><code>LATEX EXPRESSION</code></pre>
-    ```
-
-    This function converts that pattern into a proper KaTeX display math block and injects the KaTeX
-    CSS/JS from a CDN so the browser can render the equations.
-    """
-    _KATEX_VERSION = "0.16.11"
-    _KATEX_CDN = f"https://cdn.jsdelivr.net/npm/katex@{_KATEX_VERSION}/dist"
-
-    _KATEX_HEAD = (
-        f'<link rel="stylesheet" href="{_KATEX_CDN}/katex.min.css"'
-        ' crossorigin="anonymous">\n'
-        f'<script defer src="{_KATEX_CDN}/katex.min.js"'
-        ' crossorigin="anonymous"></script>\n'
-        f'<script defer src="{_KATEX_CDN}/contrib/auto-render.min.js"'
-        ' crossorigin="anonymous"'
-        ' onload="renderMathInElement(document.body, {'
-        "delimiters: ["
-        "{left: '\\\\[', right: '\\\\]', display: true},"
-        "{left: '\\\\(', right: '\\\\)', display: false}"
-        "]"
-        '});"></script>\n'
-    )
-
-    # Replace <p>.. math::</p><pre><code>...</code></pre>  →  display math
-    # (original two-colon pattern from RST)
-    new_content, count = re.subn(
-        r"<p>\s*\.\.\s*math::\s*</p>\s*<pre><code>(.*?)</code></pre>",
-        lambda m: '<p><span class="math display">\\[' + m.group(1).strip() + "\\]</span></p>",
-        html_content,
-        flags=re.DOTALL,
-    )
-
-    # Also handle the single-colon variant produced when Pandoc reduces
-    # trailing :: to : (e.g. <p>.. math:</p> followed by a sourceCode block)
-    new_content, count2 = re.subn(
-        r"<p>\s*\.\.\s*math:\s*</p>\s*"
-        r"(?:<div[^>]*>\s*)?"  # optional wrapper div
-        r"<pre[^>]*><code[^>]*>(.*?)</code></pre>"
-        r"(?:\s*</div>)?",  # optional closing wrapper div
-        lambda m: (
-            '<p><span class="math display">\\['
-            + re.sub(r"</?span[^>]*>", "", m.group(1)).strip()
-            + "\\]</span></p>"
-        ),
-        new_content,
-        flags=re.DOTALL,
-    )
-    count += count2
-
-    # Only inject KaTeX CDN if we actually converted any math blocks
-    if count > 0 and _KATEX_CDN not in new_content:
-        new_content = new_content.replace("</head>", _KATEX_HEAD + "</head>", 1)
-
-    return new_content
-
-
 def translate_rst_references(html_content):
     """
     Convert RST citation references into a styled numbered list.
@@ -2282,195 +2011,6 @@ def translate_rst_references(html_content):
         html_content,
     )
     return html_content
-
-
-def extract_seealso_from_html(html_content):
-    """
-    Extract %seealso values from HTML content before stripping.
-
-    Returns a list of `(name, description)` tuples. The description is an empty string when no
-    `: description` suffix was provided.
-    """
-    # Match %seealso in <p> tags (most common after markdown rendering)
-    # This handles both standalone %seealso and when it follows other directives
-    p_pattern = re.compile(
-        r"<p>[^<]*%seealso\s+([^<%]+?)(?:%|</p>)",
-        re.IGNORECASE,
-    )
-
-    # Match standalone %seealso lines (not in HTML tags)
-    standalone_pattern = re.compile(
-        r"%seealso\s+([^\n%<]+)",
-        re.IGNORECASE,
-    )
-
-    # Try <p> pattern first
-    match = p_pattern.search(html_content)
-    if not match:
-        match = standalone_pattern.search(html_content)
-
-    if match:
-        # Parse comma-separated list, each entry may have ": description"
-        items_str = match.group(1).strip()
-        items = []
-        for entry in items_str.split(","):
-            entry = entry.strip()
-            if not entry:
-                continue
-            # Split on first " : " or ": " to separate name from description
-            parts = re.split(r"\s*:\s*", entry, maxsplit=1)
-            name = parts[0].strip()
-            desc = parts[1].strip() if len(parts) > 1 else ""
-            if name:
-                items.append((name, desc))
-        return items
-
-    return []
-
-
-def extract_seealso_from_doc_section(html_content):
-    """
-    Extract See Also items from rendered doc-section `<section>` blocks.
-
-    NumPy-style and Google-style docstrings produce sections like:
-
-        <section id="see-also" class="level1 doc-section doc-section-see-also">
-        <h1 ...>See Also</h1>
-        <p>transform : Transform data before analysis.</p>
-        </section>
-
-    Returns a list of `(name, description)` tuples.
-    """
-    # Match <section id="see-also" ...> ... </section> blocks
-    section_pat = re.compile(
-        r'<section[^>]*\bid=["\']see-also["\'][^>]*>'
-        r"(.*?)"
-        r"</section>",
-        re.DOTALL,
-    )
-    items = []
-    for m in section_pat.finditer(html_content):
-        body = m.group(1)
-        # Remove the heading tags
-        body = re.sub(r"<h[1-6][^>]*>.*?</h[1-6]>", "", body, flags=re.DOTALL)
-
-        # Q renderer: names live in href attributes like href="`~Name`"
-        # Also look for description text in <dd> or after the link
-        interlink_names = re.findall(r'href="`~([\w.]+)`"', body)
-        if interlink_names:
-            # Try to extract descriptions from definition list structure
-            # Pattern: <dt>...<a href="`~Name`">...</a>...</dt><dd>description</dd>
-            dt_dd_pairs = re.findall(
-                r'<dt[^>]*>.*?href="`~([\w.]+)`".*?</dt>\s*<dd[^>]*>(.*?)</dd>',
-                body,
-                re.DOTALL,
-            )
-            if dt_dd_pairs:
-                for name, desc_html in dt_dd_pairs:
-                    desc = re.sub(r"<[^>]+>", "", desc_html).strip()
-                    items.append((name, desc))
-            else:
-                items.extend((name, "") for name in interlink_names)
-            continue
-
-        # Classic renderer: names appear as plain text
-        plain = re.sub(r"<[^>]+>", "", body).strip()
-        if not plain:
-            continue
-        # Parse entries: each may be "name : description" or "name: description"
-        # or multiple comma-separated or newline-separated entries
-        for line in plain.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            # Handle comma-separated items on a single line
-            parts = line.split(",")
-            for part in parts:
-                part = part.strip()
-                if not part:
-                    continue
-                # Extract the name and description
-                # e.g., "transform : Transform data before analysis."
-                # e.g., "``validate``: Validate a schema before processing."
-                # Strip backticks first
-                part = part.replace("``", "").replace("`", "")
-                name_match = re.match(r"^([\w.]+)(?:\s*:\s*(.*))?$", part)
-                if name_match:
-                    name = name_match.group(1)
-                    desc = (name_match.group(2) or "").strip()
-                    items.append((name, desc))
-    return items
-
-
-def remove_seealso_doc_section(html_content):
-    """
-    Remove `<section id="see-also" ...>` blocks from the HTML.
-
-    Also removes the corresponding TOC entry.
-    """
-    # Remove the section block
-    html_content = re.sub(
-        r'<section[^>]*\bid=["\']see-also["\'][^>]*>'
-        r".*?"
-        r"</section>",
-        "",
-        html_content,
-        flags=re.DOTALL,
-    )
-    # Remove the TOC entry for See Also
-    html_content = re.sub(
-        r'\s*<li><a[^>]*href=["\']#see-also["\'][^>]*>See Also</a></li>',
-        "",
-        html_content,
-    )
-    return html_content
-
-
-def generate_seealso_html(seealso_items):
-    """
-    Generate HTML for a "See Also" section with links to other reference pages.
-
-    Each item is a `(name, description)` tuple. When description is non-empty, it is rendered after
-    the link.
-    """
-    if not seealso_items:
-        return ""
-
-    links = []
-    for item in seealso_items:
-        if isinstance(item, tuple):
-            name, desc = item
-        else:
-            name, desc = item, ""
-        # Generate link to the reference page
-        # Item could be "Graph.add_edge" or just "add_edge"
-        html_filename = f"{name}.html"
-        # Append () for callable objects (functions, methods)
-        display = name
-        sa_result = _resolve_interlink_name(name)
-        if sa_result and sa_result[2] in _CALLABLE_ROLES:
-            display += "()"
-        link = f'<a href="{html_filename}" class="gdls-link gdls-code">{display}</a>'
-        if desc:
-            link = f"{link}: {desc}"
-        links.append(link)
-
-    # Use a list layout when any item has a description, otherwise comma-separated
-    has_descriptions = any((item[1] if isinstance(item, tuple) else "") for item in seealso_items)
-    if has_descriptions:
-        items_html = "\n".join(f'<li style="margin-bottom: 0.25rem;">{link}</li>' for link in links)
-        body = f'<ul style="list-style: none; padding-left: 0; margin: 0;">{items_html}</ul>'
-    else:
-        body = f'<p style="margin: 0;">{", ".join(links)}</p>'
-
-    _see_also_label = _t("see_also", "See Also")
-
-    return f"""
-<div class="see-also" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #dee2e6;">
-<h3 style="font-size: 0.9rem; font-weight: 600; color: #6c757d; margin-bottom: 0.5rem;">{_see_also_label}</h3>
-{body}
-</div>
-"""
 
 
 def fix_dataclass_attributes(content_str):
@@ -2549,12 +2089,6 @@ for html_file in html_files:
     with open(html_file, "r", encoding="utf-8") as file:
         content = file.read()
 
-    # Extract %seealso before stripping directives
-    seealso_items = extract_seealso_from_html(content)
-
-    # Strip %directive lines from rendered HTML (safety net for docstring directives)
-    content = strip_directives_from_html(content)
-
     # Translate Sphinx field lists (:param, :type, :returns, :rtype, :raises)
     content = translate_sphinx_fields(content)
 
@@ -2563,9 +2097,6 @@ for html_file in html_files:
 
     # Translate Sphinx cross-reference roles (e.g. :py:exc:`ValueError`)
     content = translate_sphinx_roles(content)
-
-    # Translate RST directives (e.g. .. versionadded:: 2.8.1)
-    content = translate_rst_directives(content)
 
     # Translate bold section headers (e.g. **Examples**::) into doc-sections
     content = translate_bold_section_headers(content)
@@ -2579,9 +2110,6 @@ for html_file in html_files:
     # Fix plain <pre><code> blocks containing >>> doctest lines
     # (consecutive examples where only the first got a proper code fence)
     content = fix_plain_doctest_code_blocks(content)
-
-    # Translate RST .. math:: blocks into display math
-    content = translate_rst_math(content)
 
     # Translate RST citation references (.. [1] ...)
     content = translate_rst_references(content)
@@ -2797,29 +2325,13 @@ for html_file in html_files:
                     )
                 break
 
-    # Merge See Also items from %seealso directives and doc-section blocks
     content_str = "".join(content)
-    doc_section_seealso = extract_seealso_from_doc_section(content_str)
-    if doc_section_seealso:
-        content_str = remove_seealso_doc_section(content_str)
-        # Merge with %seealso items (deduplicate by name, preserving order)
-        seen = {name for name, _ in seealso_items}
-        for name, desc in doc_section_seealso:
-            if name not in seen:
-                seealso_items.append((name, desc))
-                seen.add(name)
 
     # Resolve interlinks (`~Name` references) throughout the page
     content_str = resolve_interlinks(content_str)
 
     # Auto-convert inline code matching API names into clickable links
     content_str = autolink_code_references(content_str)
-
-    # Inject unified "See Also" section at the bottom
-    if seealso_items:
-        seealso_html = generate_seealso_html(seealso_items)
-        # Insert before </main>
-        content_str = content_str.replace("</main>", f"{seealso_html}</main>")
 
     # Place a horizontal rule at the end of each reference page
     main_end_pattern = r"</main>"
@@ -2958,9 +2470,14 @@ if os.path.exists(index_file):
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
 
-    # Replace breadcrumb with a "Reference" title bar label
-    _reference_label = _t("reference", "Reference")
-    _ref_idx_title = f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">{html.escape(_reference_label)}</h1>'
+    # Replace breadcrumb with an "API / Index" title bar label
+    _ref_idx_title = (
+        '<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        '<span class="gd-ref-title-prefix">API</span>'
+        '<span class="gd-ref-title-sep">/</span>'
+        '<span class="gd-ref-title-name">Index</span>'
+        "</h1>"
+    )
     _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
     content = re.sub(_bc_pat, _ref_idx_title, content, flags=re.DOTALL)
 
@@ -2970,6 +2487,71 @@ if os.path.exists(index_file):
     print("Index file processing complete")
 else:
     print(f"Index file not found: {index_file}")
+
+
+# Modify the MCP index page to replace breadcrumbs with a styled title
+mcp_index_file = "_site/reference/mcp/index.html"
+if os.path.exists(mcp_index_file):
+    print(f"Processing MCP index file: {mcp_index_file}")
+    with open(mcp_index_file, "r", encoding="utf-8") as file:
+        content = file.read()
+
+    _mcp_idx_title = (
+        '<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        '<span class="gd-ref-title-prefix">MCP</span>'
+        '<span class="gd-ref-title-sep">/</span>'
+        '<span class="gd-ref-title-name">Index</span>'
+        "</h1>"
+    )
+    _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
+    content = re.sub(_bc_pat, _mcp_idx_title, content, flags=re.DOTALL)
+
+    with open(mcp_index_file, "w", encoding="utf-8") as file:
+        file.write(content)
+
+    print("MCP index file processing complete")
+else:
+    print(f"MCP index file not found: {mcp_index_file}")
+
+
+# Process individual MCP reference pages (tools, resources, prompts) to add
+# "MCP / object_name" title bar in the secondary nav
+mcp_html_files = [
+    f for f in glob.glob("_site/reference/mcp/*.html") if os.path.basename(f) != "index.html"
+]
+
+if mcp_html_files:
+    print(f"Processing {len(mcp_html_files)} MCP reference pages...")
+
+    for html_file in mcp_html_files:
+        with open(html_file, "r", encoding="utf-8") as file:
+            content = file.read()
+
+        # Extract the display name from the doc-object-name span
+        _obj_name_match = re.search(r'<span class="doc-object-name[^"]*">([^<]+)</span>', content)
+        _mcp_name = (
+            _obj_name_match.group(1)
+            if _obj_name_match
+            else os.path.basename(html_file).replace(".html", "")
+        )
+
+        _mcp_title_html = (
+            f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+            f'<span class="gd-ref-title-prefix">MCP</span>'
+            f'<span class="gd-ref-title-sep">/</span>'
+            f'<span class="gd-ref-title-name">{html.escape(_mcp_name)}</span>'
+            f"</h1>"
+        )
+
+        # MCP pages use bread-crumbs: false, so Quarto renders the title inside
+        # an h1.quarto-secondary-nav-title.no-breadcrumbs element
+        _h1_pat = r'<h1 class="quarto-secondary-nav-title no-breadcrumbs[^"]*">.*?</h1>'
+        content = re.sub(_h1_pat, _mcp_title_html, content, count=1, flags=re.DOTALL)
+
+        with open(html_file, "w", encoding="utf-8") as file:
+            file.write(content)
+
+    print(f"Styled {len(mcp_html_files)} MCP reference page titles")
 
 
 # Update quarto-secondary-nav-title to display "User Guide" text
@@ -3101,7 +2683,9 @@ def inject_github_widget():
 
     widget_escaped_pattern = re.compile(
         r'<span class="menu-text">&lt;div id="github-widget" '
-        r'data-owner="([^"]*)" data-repo="([^"]*)"&gt;&lt;/div&gt;</span>'
+        r'data-owner="([^"]*)" data-repo="([^"]*)"'
+        r'((?:\s+data-[a-z]+=(?:"[^"]*"|&quot;[^&]*&quot;))*)'
+        r"&gt;&lt;/div&gt;</span>"
     )
 
     widget_count = 0
@@ -3115,9 +2699,13 @@ def inject_github_widget():
         if match:
             owner = match.group(1)
             repo = match.group(2)
+            extra_attrs_raw = match.group(3)
+
+            # Unescape any &quot; in extra attributes
+            extra_attrs = extra_attrs_raw.replace("&quot;", '"') if extra_attrs_raw else ""
 
             # Replace with actual widget HTML
-            replacement = f'<div id="github-widget" data-owner="{owner}" data-repo="{repo}"></div>'
+            replacement = f'<div id="github-widget" data-owner="{owner}" data-repo="{repo}"{extra_attrs}></div>'
             content = widget_escaped_pattern.sub(replacement, content)
 
             with open(html_file, "w", encoding="utf-8") as file:
@@ -3262,12 +2850,15 @@ def process_cli_reference_pages():
         with open(html_file, "r", encoding="utf-8") as file:
             content = file.read()
 
-        # Add 'cli-title' class to h1.title elements
-        # This matches the pattern: <h1 class="title">
-        content = content.replace('<h1 class="title">', '<h1 class="title cli-title">')
+        cmd_name = os.path.basename(html_file).replace(".html", "")
+
+        # Add 'cli-title' class to h1.title elements so command-page titles match the monospaced
+        # API object-page style. The CLI index is a listing page (like the API reference index),
+        # so its plain "CLI Reference" title is left unstyled to match the API index title.
+        if cmd_name != "index":
+            content = content.replace('<h1 class="title">', '<h1 class="title cli-title">')
 
         # Replace breadcrumb with a "CLI / great-docs cmd" title bar label
-        cmd_name = os.path.basename(html_file).replace(".html", "")
         _cli_label = _t("cli", "CLI")
         _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
         if cmd_name != "index":
@@ -3282,12 +2873,12 @@ def process_cli_reference_pages():
                 f"</h1>"
             )
         else:
-            # CLI index: show "CLI / great-docs"
+            # CLI index: show "CLI / Index" to mirror the API reference index ("API / Index").
             _cli_title_html = (
                 f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
                 f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
                 f'<span class="gd-ref-title-sep">/</span>'
-                f'<span class="gd-ref-title-name">great-docs</span>'
+                f'<span class="gd-ref-title-name">Index</span>'
                 f"</h1>"
             )
         content = re.sub(_bc_pat, _cli_title_html, content, flags=re.DOTALL)
@@ -3615,6 +3206,7 @@ print("##GD:PASS:Script paths fixed", flush=True)
 for _idx_label, _idx_path in [
     ("homepage", os.path.join("_site", "index.html")),
     ("reference index", os.path.join("_site", "reference", "index.html")),
+    ("CLI reference index", os.path.join("_site", "reference", "cli", "index.html")),
 ]:
     if os.path.isfile(_idx_path):
         with open(_idx_path, "r", encoding="utf-8") as f:
@@ -3664,20 +3256,22 @@ print("##GD:PASS:Sidebar body classes injected", flush=True)
 
 def style_api_index_sidebar_item():
     """
-    Apply inline styles to the 'API Index' sidebar link so it visually separates from the monospace
-    reference entries.
+    Apply inline styles to the 'API Index' / 'CLI Index' sidebar links so they visually separate
+    from the monospace reference entries.
 
-    Targets the `<a>` whose href ends with 'reference/index.html' and its parent
-    `<div class="sidebar-item-container">`.
+    Targets the `<a>` whose href ends with 'reference/index.html' (API index) or
+    'reference/cli/index.html' (CLI index) and its parent `<div class="sidebar-item-container">`.
     """
     import re
 
-    print("Styling API Index sidebar item...")
+    print("Styling reference index sidebar items...")
     count = 0
     font = (
         "&quot;Open Sans&quot;, -apple-system, BlinkMacSystemFont, "
         "&quot;Segoe UI&quot;, Roboto, &quot;Helvetica Neue&quot;, Arial, sans-serif"
     )
+    # Match the API index link, or the CLI index link (the extra '/cli' segment is optional).
+    href_pat = r'href="[^"]*reference/(?:cli/)?index\.html"'
 
     for html_file in all_html_files:
         rel_path = os.path.relpath(html_file, "_site")
@@ -3687,11 +3281,9 @@ def style_api_index_sidebar_item():
         with open(html_file, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Find the sidebar-item-container div immediately followed by the
-        # API Index link (href ending in reference/index.html)
+        # Find the sidebar-item-container div immediately followed by the index link.
         match = re.search(
-            r'(<div class="sidebar-item-container")(>\s*'
-            r'<a )([^>]*href="[^"]*reference/index\.html"[^>]*>)',
+            r'(<div class="sidebar-item-container")(>\s*<a )([^>]*' + href_pat + r"[^>]*>)",
             content,
         )
         if not match:
@@ -3718,7 +3310,7 @@ def style_api_index_sidebar_item():
                 f.write(new_content)
             count += 1
 
-    print(f"Styled API Index sidebar item in {count} reference HTML files")
+    print(f"Styled reference index sidebar items in {count} reference HTML files")
 
 
 style_api_index_sidebar_item()
@@ -3940,7 +3532,7 @@ def inject_page_metadata():
                             ["git", "log", "-1", "--format=%aI", "--", source_file],
                             cwd=project_root,
                             capture_output=True,
-                            text=True,
+                            **_SUBPROCESS_TEXT_KWARGS,
                             timeout=5,
                         )
                         if result.returncode == 0 and result.stdout.strip():
@@ -3960,7 +3552,7 @@ def inject_page_metadata():
                             ],
                             cwd=project_root,
                             capture_output=True,
-                            text=True,
+                            **_SUBPROCESS_TEXT_KWARGS,
                             timeout=5,
                         )
                         if result.returncode == 0 and result.stdout.strip():
@@ -4249,6 +3841,304 @@ def _postprocess_markdown_content(md_content: str, rel: str) -> str:
     return md_content
 
 
+def _prepare_html_for_pandoc(html_file: str) -> tuple[str, str, str | None]:
+    """Extract and clean main content from an HTML file for pandoc conversion.
+
+    Returns (html_file, rel_path, cleaned_html_or_None).
+    """
+    rel = os.path.relpath(html_file, "_site")
+
+    if not html_file.endswith(".html"):
+        return html_file, rel, None
+
+    try:
+        with open(html_file, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return html_file, rel, None
+
+    main_match = re.search(
+        r'<main\s+class="content"[^>]*>(.*?)</main>',
+        content,
+        re.DOTALL,
+    )
+    if not main_match:
+        return html_file, rel, None
+
+    main_html = main_match.group(1)
+
+    main_html = re.sub(
+        r'<nav\s+class="page-navigation".*?</nav>',
+        "",
+        main_html,
+        flags=re.DOTALL,
+    )
+    main_html = re.sub(
+        r'<div\s+class="quarto-title-meta">.*?</div>\s*',
+        "",
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    title_match = re.search(
+        r'<header[^>]*class="quarto-title-block[^"]*"[^>]*>'
+        r'.*?<div\s+class="quarto-title">\s*'
+        r"(<h[12][^>]*>)(.*?)(</h[12]>)"
+        r".*?</header>",
+        main_html,
+        re.DOTALL,
+    )
+    if title_match:
+        heading_tag_open = title_match.group(1)
+        heading_inner = title_match.group(2)
+        heading_tag_close = title_match.group(3)
+        heading_inner = re.sub(
+            r'<span\s+style="[^"]*border-style:\s*solid[^"]*">.*?</span>',
+            "",
+            heading_inner,
+            flags=re.DOTALL,
+        )
+        clean_title = f"{heading_tag_open}{heading_inner.strip()}{heading_tag_close}"
+        main_html = (
+            main_html[: title_match.start()] + clean_title + main_html[title_match.end() :]
+        )
+
+    main_html = re.sub(
+        r'<div\s+class="code-with-filename">\s*'
+        r'<div\s+class="code-with-filename-file">\s*<pre><strong>(.*?)</strong></pre>\s*</div>\s*'
+        r'<div\s+class="code-copy-outer-scaffold">\s*',
+        r"<p><strong>\1</strong></p>\n",
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    main_html = re.sub(
+        r'<div\s+class="code-copy-outer-scaffold">\s*',
+        "",
+        main_html,
+    )
+    main_html = re.sub(
+        r'<nav\s+class="gd-code-nav">.*?</nav>',
+        "",
+        main_html,
+        flags=re.DOTALL,
+    )
+    main_html = re.sub(
+        r'<button\s+title="Copy to [Cc]lipboard"[^>]*>.*?</button>',
+        "",
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    main_html = re.sub(
+        r'<div\s+class="usage-source-row"[^>]*>.*?</div>',
+        "",
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    main_html = re.sub(
+        r'<a[^>]*class="source-link"[^>]*>.*?</a>',
+        "",
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    def _rewrite_code_block(m):
+        full = m.group(0)
+        lang_m = re.search(r'<pre\s+class="sourceCode\s+(\w+)', full)
+        lang = lang_m.group(1) if lang_m else ""
+        code_m = re.search(r"(<code[^>]*>)(.*?)(</code>)", full, re.DOTALL)
+        if not code_m:
+            return full
+        code_content = code_m.group(2)
+        if lang:
+            return f'<pre><code class="language-{lang}">{code_content}</code></pre>'
+        return f"<pre><code>{code_content}</code></pre>"
+
+    main_html = re.sub(
+        r'<div\s+[^>]*class="sourceCode[^"]*"[^>]*>\s*<pre[^>]*>.*?</pre>\s*</div>',
+        _rewrite_code_block,
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    main_html = re.sub(
+        r'<div\s+class="cell-output-display"[^>]*>.*?</div>\s*(?=</div>|<div|<section|<h[1-6]|$)',
+        "<p><em>[Rich HTML output — view on the documentation site]</em></p>\n",
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    main_html = re.sub(
+        r'<section\s+id="[^"]*"\s+class="[^"]*doc-section[^"]*">\s*',
+        "",
+        main_html,
+    )
+    main_html = re.sub(r"</section>\s*", "", main_html)
+
+    def _convert_callouts(html):
+        result = []
+        pos = 0
+        while True:
+            start = html.find('<div class="callout ', pos)
+            if start == -1:
+                result.append(html[pos:])
+                break
+            result.append(html[pos:start])
+            depth = 0
+            i = start
+            end = len(html)
+            while i < end:
+                open_m = re.match(r"<div[\s>]", html[i:])
+                close_m = re.match(r"</div>", html[i:])
+                if open_m:
+                    depth += 1
+                    i += open_m.end()
+                elif close_m:
+                    depth -= 1
+                    i += close_m.end()
+                    if depth == 0:
+                        break
+                else:
+                    i += 1
+            callout_html = html[start:i]
+            type_m = re.search(
+                r"callout-(tip|note|warning|important|caution)", callout_html
+            )
+            callout_type = type_m.group(1).capitalize() if type_m else "Note"
+            title_m = re.search(
+                r'<div\s+class="callout-title-container[^"]*">\s*'
+                r"(?:<span[^>]*>[^<]*</span>)?\s*(.*?)\s*</div>",
+                callout_html,
+                re.DOTALL,
+            )
+            title_text = title_m.group(1).strip() if title_m else ""
+            body_m = re.search(
+                r'<div\s+class="callout-body-container[^"]*">\s*(.*?)\s*</div>',
+                callout_html,
+                re.DOTALL,
+            )
+            body_html = body_m.group(1).strip() if body_m else ""
+            if title_text:
+                header = f"<p><strong>{callout_type}: {title_text}</strong></p>"
+            else:
+                header = f"<p><strong>{callout_type}</strong></p>"
+            result.append(f"<blockquote>{header}\n{body_html}</blockquote>")
+            pos = i
+        return "".join(result)
+
+    main_html = _convert_callouts(main_html)
+
+    def _param_dl_to_html(m):
+        """Convert a <dl> block of parameters to simple HTML paragraphs."""
+        dl_html = m.group(0)
+        items = []
+        dt_dd_pattern = re.compile(
+            r'<dt>.*?<span class="(?:parameter-name|doc-parameter-name)">\s*<strong>(.*?)</strong>\s*</span>'
+            r'(?:.*?<span class="(?:parameter-annotation|doc-parameter-annotation)">(.*?)</span>)?'
+            r'(?:.*?<span class="(?:parameter-default|doc-parameter-default)">(.*?)</span>)?'
+            r".*?</dt>\s*<dd>\s*(.*?)\s*</dd>",
+            re.DOTALL,
+        )
+        for dt_dd in dt_dd_pattern.finditer(dl_html):
+            name = dt_dd.group(1).strip().strip("`")
+            annotation = dt_dd.group(2) or ""
+            default = dt_dd.group(3) or ""
+            desc = dt_dd.group(4) or ""
+            desc = re.sub(r"</?p>", "", desc).strip()
+
+            sig = f"<strong>{name}</strong>"
+            if annotation:
+                sig += f" : <code>{annotation.strip()}</code>"
+            if default:
+                sig += f" = <code>{default.strip()}</code>"
+
+            line = f"<li>{sig}"
+            if desc:
+                line += f" &mdash; {desc}"
+            line += "</li>"
+            items.append(line)
+
+        if items:
+            return "<ul>\n" + "\n".join(items) + "\n</ul>"
+        return dl_html
+
+    main_html = re.sub(
+        r"<dl>.*?</dl>",
+        _param_dl_to_html,
+        main_html,
+        flags=re.DOTALL,
+    )
+
+    main_html = re.sub(
+        r'<p\s+class="doc-description"[^>]*>',
+        "<p><em>",
+        main_html,
+    )
+
+    main_html = re.sub(
+        r'<a\s+href="#cb\d+-\d+"[^>]*></a>',
+        "",
+        main_html,
+    )
+
+    main_html = re.sub(
+        r'<span\s+class="(?:sig-name|sig-class|cn-none|cn-bool)">(.*?)</span>',
+        r"\1",
+        main_html,
+    )
+
+    main_html = re.sub(
+        r'<span\s+class="(?:parameter-|doc-parameter-)[^"]*"[^>]*>(.*?)</span>',
+        r"\1",
+        main_html,
+    )
+
+    main_html = re.sub(
+        r"<code>\s*(.*?)\s*</code>",
+        r"<code>\1</code>",
+        main_html,
+    )
+
+    return html_file, rel, main_html
+
+
+def _convert_one_page(args: tuple[str, str, str]) -> tuple[str, bool, str]:
+    """Convert a single prepared HTML page to Markdown via pandoc.
+
+    Returns (rel_path, success, error_message).
+    """
+    import subprocess
+
+    html_file, rel, main_html = args
+
+    try:
+        result = subprocess.run(
+            ["quarto", "pandoc", "-f", "html", "-t", "gfm", "--wrap=none"],
+            input=main_html,
+            capture_output=True,
+            **_SUBPROCESS_TEXT_KWARGS,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            return rel, False, f"pandoc error: {result.stderr.strip()[:200]}"
+
+        md_content = _postprocess_markdown_content(result.stdout, rel)
+
+        md_file = html_file.rsplit(".", 1)[0] + ".md"
+        with open(md_file, "w", encoding="utf-8") as f:
+            f.write(md_content)
+
+        return rel, True, ""
+
+    except subprocess.TimeoutExpired:
+        return rel, False, "pandoc timeout"
+    except Exception as e:
+        return rel, False, str(e)
+
+
 def generate_markdown_pages():
     """
     Create a .md companion for every .html page in _site/.
@@ -4259,373 +4149,39 @@ def generate_markdown_pages():
       3. Replace _repr_html_ output blocks with a text placeholder.
       4. Pipe the HTML fragment through ``quarto pandoc -f html -t gfm``.
       5. Write the result as a .md file next to the original .html.
+
+    Pandoc conversion is parallelized across a thread pool to reduce the
+    per-subprocess overhead from ~300 sequential spawns to batched execution.
     """
     import shutil
-    import subprocess
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # Verify quarto pandoc is available
     pandoc_cmd = shutil.which("quarto")
     if pandoc_cmd is None:
         print("Warning: 'quarto' not found on PATH; skipping .md generation")
         return
 
     print("Generating Markdown (.md) pages...")
+
+    work_items = []
+    for html_file in all_html_files:
+        html_file_path, rel, main_html = _prepare_html_for_pandoc(html_file)
+        if main_html is not None:
+            work_items.append((html_file_path, rel, main_html))
+
     generated = 0
     errors = 0
 
-    for html_file in all_html_files:
-        rel = os.path.relpath(html_file, "_site")
-
-        # Skip search.json and other non-page files
-        if not html_file.endswith(".html"):
-            continue
-
-        # Skip skill.html as the raw skill.md is served directly as a resource
-        # and should not be overwritten by a generated .md from rendered HTML
-        if rel == "skill.html" or rel == os.path.join("skill.html"):
-            continue
-
-        try:
-            with open(html_file, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            # ── 1. Extract main content ──────────────────────────────────
-            main_match = re.search(
-                r'<main\s+class="content"[^>]*>(.*?)</main>',
-                content,
-                re.DOTALL,
-            )
-            if not main_match:
-                continue  # No main content (e.g., search page)
-
-            main_html = main_match.group(1)
-
-            # ── 2. Strip nav elements & boilerplate ──────────────────────
-            # Remove page-navigation (prev/next links)
-            main_html = re.sub(
-                r'<nav\s+class="page-navigation".*?</nav>',
-                "",
-                main_html,
-                flags=re.DOTALL,
-            )
-            # Remove quarto-title-meta block (empty metadata div)
-            main_html = re.sub(
-                r'<div\s+class="quarto-title-meta">.*?</div>\s*',
-                "",
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Unwrap the title-block-header: extract just the title heading
-            title_match = re.search(
-                r'<header[^>]*class="quarto-title-block[^"]*"[^>]*>'
-                r'.*?<div\s+class="quarto-title">\s*'
-                r"(<h[12][^>]*>)(.*?)(</h[12]>)"
-                r".*?</header>",
-                main_html,
-                re.DOTALL,
-            )
-            if title_match:
-                # Extract the heading text (strip inline HTML styling like type badges)
-                heading_tag_open = title_match.group(1)
-                heading_inner = title_match.group(2)
-                heading_tag_close = title_match.group(3)
-                # Remove inline <span> badges (class/method/function type labels)
-                heading_inner = re.sub(
-                    r'<span\s+style="[^"]*border-style:\s*solid[^"]*">.*?</span>',
-                    "",
-                    heading_inner,
-                    flags=re.DOTALL,
-                )
-                clean_title = f"{heading_tag_open}{heading_inner.strip()}{heading_tag_close}"
-                main_html = (
-                    main_html[: title_match.start()] + clean_title + main_html[title_match.end() :]
-                )
-
-            # Unwrap Quarto code-with-filename wrappers — extract the actual code block
-            main_html = re.sub(
-                r'<div\s+class="code-with-filename">\s*'
-                r'<div\s+class="code-with-filename-file">\s*<pre><strong>(.*?)</strong></pre>\s*</div>\s*'
-                r'<div\s+class="code-copy-outer-scaffold">\s*',
-                r"<p><strong>\1</strong></p>\n",
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Strip code-copy-outer-scaffold wrappers (keep inner code block)
-            main_html = re.sub(
-                r'<div\s+class="code-copy-outer-scaffold">\s*',
-                "",
-                main_html,
-            )
-            # Remove the copy nav + buttons (gd-code-nav and legacy code-copy-button)
-            main_html = re.sub(
-                r'<nav\s+class="gd-code-nav">.*?</nav>',
-                "",
-                main_html,
-                flags=re.DOTALL,
-            )
-            main_html = re.sub(
-                r'<button\s+title="Copy to [Cc]lipboard"[^>]*>.*?</button>',
-                "",
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Strip USAGE/SOURCE row div (API reference pages)
-            main_html = re.sub(
-                r'<div\s+class="usage-source-row"[^>]*>.*?</div>',
-                "",
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Remove source-link anchors
-            main_html = re.sub(
-                r'<a[^>]*class="source-link"[^>]*>.*?</a>',
-                "",
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Add language hint to sourceCode blocks for pandoc
-            # Quarto renders `class="sourceCode python"` on the pre/code and
-            # `data-filename="..."` on the wrapper div.  We extract the language
-            # and rewrite to `<pre><code class="language-python">` so pandoc
-            # emits ``` python fences.
-            def _rewrite_code_block(m):
-                full = m.group(0)
-                # Try extracting lang from <pre class="sourceCode yaml ...">
-                lang_m = re.search(r'<pre\s+class="sourceCode\s+(\w+)', full)
-                lang = lang_m.group(1) if lang_m else ""
-                # Extract the inner <code>...</code>
-                code_m = re.search(r"(<code[^>]*>)(.*?)(</code>)", full, re.DOTALL)
-                if not code_m:
-                    return full
-                code_content = code_m.group(2)
-                if lang:
-                    return f'<pre><code class="language-{lang}">{code_content}</code></pre>'
-                return f"<pre><code>{code_content}</code></pre>"
-
-            main_html = re.sub(
-                r'<div\s+[^>]*class="sourceCode[^"]*"[^>]*>\s*<pre[^>]*>.*?</pre>\s*</div>',
-                _rewrite_code_block,
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Clean up trailing </div> from code-with-filename and scaffold wrappers
-            # These are orphaned closing divs after we stripped the opening wrappers.
-            # Count and fix: each code-with-filename wrapper contributes 2 extra </div>
-            # This is tricky with regex, so we do a simpler approach: just close the
-            # remaining unmatched divs by stripping excess </div> at the end of sections.
-
-            # ── 3. Handle _repr_html_ blocks ────────────────────────────
-            # These are typically wrapped in a div with class "cell-output-display"
-            # containing complex HTML tables/widgets that don't convert to Markdown.
-            main_html = re.sub(
-                r'<div\s+class="cell-output-display"[^>]*>.*?</div>\s*(?=</div>|<div|<section|<h[1-6]|$)',
-                "<p><em>[Rich HTML output — view on the documentation site]</em></p>\n",
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Strip section wrapper divs (pandoc passes them through as raw HTML)
-            main_html = re.sub(
-                r'<section\s+id="[^"]*"\s+class="[^"]*doc-section[^"]*">\s*',
-                "",
-                main_html,
-            )
-            main_html = re.sub(r"</section>\s*", "", main_html)
-
-            # Convert Quarto callout divs to Markdown-friendly blockquotes.
-            # The callout structure nests 5 divs deep, so we use a helper that
-            # tracks div depth to find the correct closing tag.
-            def _convert_callouts(html):
-                result = []
-                pos = 0
-                while True:
-                    start = html.find('<div class="callout ', pos)
-                    if start == -1:
-                        result.append(html[pos:])
-                        break
-                    result.append(html[pos:start])
-                    # Walk forward from start, tracking div depth to find the outer close
-                    depth = 0
-                    i = start
-                    end = len(html)
-                    while i < end:
-                        open_m = re.match(r"<div[\s>]", html[i:])
-                        close_m = re.match(r"</div>", html[i:])
-                        if open_m:
-                            depth += 1
-                            i += open_m.end()
-                        elif close_m:
-                            depth -= 1
-                            i += close_m.end()
-                            if depth == 0:
-                                break
-                        else:
-                            i += 1
-                    callout_html = html[start:i]
-                    # Extract type
-                    type_m = re.search(
-                        r"callout-(tip|note|warning|important|caution)", callout_html
-                    )
-                    callout_type = type_m.group(1).capitalize() if type_m else "Note"
-                    # Extract title text
-                    title_m = re.search(
-                        r'<div\s+class="callout-title-container[^"]*">\s*'
-                        r"(?:<span[^>]*>[^<]*</span>)?\s*(.*?)\s*</div>",
-                        callout_html,
-                        re.DOTALL,
-                    )
-                    title_text = title_m.group(1).strip() if title_m else ""
-                    # Extract body HTML
-                    body_m = re.search(
-                        r'<div\s+class="callout-body-container[^"]*">\s*(.*?)\s*</div>',
-                        callout_html,
-                        re.DOTALL,
-                    )
-                    body_html = body_m.group(1).strip() if body_m else ""
-                    if title_text:
-                        header = f"<p><strong>{callout_type}: {title_text}</strong></p>"
-                    else:
-                        header = f"<p><strong>{callout_type}</strong></p>"
-                    result.append(f"<blockquote>{header}\n{body_html}</blockquote>")
-                    pos = i
-                return "".join(result)
-
-            main_html = _convert_callouts(main_html)
-
-            # Convert parameter definition lists to cleaner HTML before pandoc
-            # Replace <dl><dt>...<dd> parameter markup with simple paragraph lists
-            # that pandoc can convert to clean Markdown.
-            def _param_dl_to_html(m):
-                """Convert a <dl> block of parameters to simple HTML paragraphs."""
-                dl_html = m.group(0)
-                items = []
-                dt_dd_pattern = re.compile(
-                    r'<dt>.*?<span class="(?:parameter-name|doc-parameter-name)">\s*<strong>(.*?)</strong>\s*</span>'
-                    r'(?:.*?<span class="(?:parameter-annotation|doc-parameter-annotation)">(.*?)</span>)?'
-                    r'(?:.*?<span class="(?:parameter-default|doc-parameter-default)">(.*?)</span>)?'
-                    r".*?</dt>\s*<dd>\s*(.*?)\s*</dd>",
-                    re.DOTALL,
-                )
-                for dt_dd in dt_dd_pattern.finditer(dl_html):
-                    name = dt_dd.group(1).strip().strip("`")
-                    annotation = dt_dd.group(2) or ""
-                    default = dt_dd.group(3) or ""
-                    desc = dt_dd.group(4) or ""
-                    # Clean HTML from description
-                    desc = re.sub(r"</?p>", "", desc).strip()
-
-                    sig = f"<strong>{name}</strong>"
-                    if annotation:
-                        sig += f" : <code>{annotation.strip()}</code>"
-                    if default:
-                        sig += f" = <code>{default.strip()}</code>"
-
-                    line = f"<li>{sig}"
-                    if desc:
-                        line += f" &mdash; {desc}"
-                    line += "</li>"
-                    items.append(line)
-
-                if items:
-                    return "<ul>\n" + "\n".join(items) + "\n</ul>"
-                return dl_html
-
-            main_html = re.sub(
-                r"<dl>.*?</dl>",
-                _param_dl_to_html,
-                main_html,
-                flags=re.DOTALL,
-            )
-
-            # Remove remaining doc-description paragraphs' inline styles
-            main_html = re.sub(
-                r'<p\s+class="doc-description"[^>]*>',
-                "<p><em>",
-                main_html,
-            )
-
-            # Strip remaining anchor tags within code block spans (line links)
-            main_html = re.sub(
-                r'<a\s+href="#cb\d+-\d+"[^>]*></a>',
-                "",
-                main_html,
-            )
-
-            # Remove signature highlighting span classes (sig-name, sig-class etc.)
-            main_html = re.sub(
-                r'<span\s+class="(?:sig-name|sig-class|cn-none|cn-bool)">(.*?)</span>',
-                r"\1",
-                main_html,
-            )
-
-            # Remove parameter-* spans (parameter-name, doc-parameter-name, parameter-annotation, etc.)
-            # Note: The HTML may have either 'parameter-*' or 'doc-parameter-*' class names
-            main_html = re.sub(
-                r'<span\s+class="(?:parameter-|doc-parameter-)[^"]*"[^>]*>(.*?)</span>',
-                r"\1",
-                main_html,
-            )
-
-            # Trim leading/trailing whitespace inside <code> tags (left by span removal)
-            main_html = re.sub(
-                r"<code>\s*(.*?)\s*</code>",
-                r"<code>\1</code>",
-                main_html,
-            )
-
-            # ── 4. Convert with pandoc ───────────────────────────────────
-            result = subprocess.run(
-                ["quarto", "pandoc", "-f", "html", "-t", "gfm", "--wrap=none"],
-                input=main_html,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            if result.returncode != 0:
-                print(f"  pandoc error for {rel}: {result.stderr.strip()[:200]}")
+    max_workers = min(8, os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_convert_one_page, item): item for item in work_items}
+        for future in as_completed(futures):
+            rel, success, err_msg = future.result()
+            if success:
+                generated += 1
+            else:
+                print(f"  {err_msg} for {rel}")
                 errors += 1
-                continue
-
-            md_content = result.stdout
-            # Debug: Check if post-processing is needed
-            found_artifact = False
-            if "``:``" in md_content:
-                # Find the context around the artifact
-                lines = md_content.split("\n")
-                for i, line in enumerate(lines):
-                    if "``:``" in line:
-                        print(f"  DEBUG [{rel}:{i}]: Line with artifact = {repr(line[:150])}")
-                        found_artifact = True
-                        break
-            md_content = _postprocess_markdown_content(md_content, rel)
-            # Debug: Verify post-processing worked
-            if "``:``" in md_content and found_artifact:
-                lines = md_content.split("\n")
-                for i, line in enumerate(lines):
-                    if "``:``" in line:
-                        print(f"  WARNING [{rel}:{i}]: After post-processing = {repr(line[:150])}")
-                        break
-
-            # ── 5. Write .md file ────────────────────────────────────────
-            md_file = html_file.rsplit(".", 1)[0] + ".md"
-            with open(md_file, "w", encoding="utf-8") as f:
-                f.write(md_content)
-
-            generated += 1
-
-        except subprocess.TimeoutExpired:
-            print(f"  pandoc timeout for {rel}")
-            errors += 1
-        except Exception as e:
-            print(f"  error processing {rel}: {e}")
-            errors += 1
 
     print(f"Generated {generated} Markdown page(s) ({errors} error(s))")
 
@@ -4635,26 +4191,42 @@ if _gd_options.get("markdown_pages", True):
 print("##GD:PASS:Markdown pages generated", flush=True)
 
 
-# ── Clean up skill.html ──────────────────────────────────────────────────────
-# Quarto renders skill.md → skill.html despite the !skill.md exclusion in
-# project.render when skill.md is also in project.resources.  The raw skill.md
-# is served as-is; the rendered skills.html page is the intended viewer.
-# Delete the spurious skill.html so it doesn't confuse users or agents.
-_skill_html = os.path.join("_site", "skill.html")
-if os.path.exists(_skill_html):
-    os.remove(_skill_html)
-    print("Removed spurious _site/skill.html (raw skill.md is served directly)")
+# ══════════════════════════════════════════════════════════════════════════════
+# INJECT MARKDOWN ALTERNATE LINKS
+# ══════════════════════════════════════════════════════════════════════════════
+# Add <link rel="alternate" type="text/markdown"> to HTML pages that have a
+# corresponding .md companion, so AI agents can discover the Markdown variant.
 
-# Fix links in skills.html that Quarto rewrote from skill.md → skill.html
-_skills_page = os.path.join("_site", "skills.html")
-if os.path.exists(_skills_page):
-    with open(_skills_page, "r", encoding="utf-8") as f:
-        _skills_content = f.read()
-    _fixed = _skills_content.replace('href="./skill.html"', 'href="skill.md"')
-    if _fixed != _skills_content:
-        with open(_skills_page, "w", encoding="utf-8") as f:
-            f.write(_fixed)
-        print("Fixed skill.md link in skills.html")
+if _gd_options.get("markdown_pages", True):
+    print("\nInjecting Markdown alternate links...")
+    _md_alt_count = 0
+    for html_file in glob.glob("_site/**/*.html", recursive=True):
+        md_companion = html_file.rsplit(".", 1)[0] + ".md"
+        if not os.path.isfile(md_companion):
+            continue
+        try:
+            with open(html_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Skip if already has a markdown alternate link
+            if 'rel="alternate" type="text/markdown"' in content:
+                continue
+
+            # Build the href (just the filename — same directory)
+            md_basename = os.path.basename(md_companion)
+            alt_tag = f'<link rel="alternate" type="text/markdown" href="{md_basename}">'
+            modified = content.replace("</head>", f"  {alt_tag}\n</head>", 1)
+
+            if modified != content:
+                with open(html_file, "w", encoding="utf-8") as f:
+                    f.write(modified)
+                _md_alt_count += 1
+        except Exception as e:
+            print(f"  Error injecting md alternate for {html_file}: {e}")
+
+    if _md_alt_count > 0:
+        print(f"   Injected alternate links in {_md_alt_count} page(s)")
+print("##GD:PASS:Markdown alternate links injected", flush=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

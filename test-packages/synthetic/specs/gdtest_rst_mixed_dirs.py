@@ -21,6 +21,7 @@ SPEC = {
             "build-backend": "setuptools.build_meta",
         },
     },
+    "config": {"parser": "sphinx"},
     "files": {
         "gdtest_rst_mixed_dirs/__init__.py": '''\
             """Package testing mixed RST directives in docstrings."""
@@ -111,6 +112,6 @@ SPEC = {
         "detected_parser": "numpy",
         "export_names": ["process_v2", "safe_delete", "transform_legacy"],
         "num_exports": 3,
-        "coverage_exclude": ['nodoc', 'bigcl', 'ug', 'supp', 'sechdg', 'sbsec', 'hdg'],
-},
+        "coverage_exclude": ["nodoc", "bigcl", "ug", "supp", "sechdg", "sbsec", "hdg"],
+    },
 }

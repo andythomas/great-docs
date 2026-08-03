@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from . import __version__
+from ._subprocess import TEXT_MODE_KWARGS
 from .core import GreatDocs
 
 
@@ -396,7 +397,60 @@ def uninstall(project_path: str | None) -> None:
     default=None,
     help="Path to a pre-built site directory to serve (bypasses project detection)",
 )
-def preview(project_path: str | None, port: int, site_dir: str | None) -> None:
+@click.option("--pr", type=int, default=None, help="Preview the CI docs build for this PR number.")
+@click.option("--run", type=int, default=None, help="Preview a specific workflow run id.")
+@click.option("--branch", default=None, help="Preview the newest CI docs build for a branch.")
+@click.option(
+    "--repo",
+    default=None,
+    help="GitHub repo as 'owner/repo' (default: detect from git remote / config).",
+)
+@click.option(
+    "--artifact",
+    default="docs-html",
+    show_default=True,
+    help="Name of the CI artifact to fetch.",
+)
+@click.option(
+    "--path",
+    "open_path",
+    default="",
+    help="Open the browser at this page within the site (e.g. reference/index.html).",
+)
+@click.option("--no-open", is_flag=True, help="Serve without launching a browser.")
+@click.option("--refresh", is_flag=True, help="Ignore the local cache and re-download.")
+@click.option(
+    "--clear-cache",
+    is_flag=True,
+    help="Delete the downloaded PR-preview cache and exit.",
+)
+@click.option(
+    "--use-gh",
+    is_flag=True,
+    help="Fetch via the 'gh' CLI (uses your existing gh auth) instead of a token.",
+)
+@click.option(
+    "--env-file",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Load a .env for GITHUB_TOKEN/GH_TOKEN (default: auto-detect .env).",
+)
+def preview(
+    project_path: str | None,
+    port: int,
+    site_dir: str | None,
+    pr: int | None,
+    run: int | None,
+    branch: str | None,
+    repo: str | None,
+    artifact: str,
+    open_path: str,
+    no_open: bool,
+    refresh: bool,
+    clear_cache: bool,
+    use_gh: bool,
+    env_file: str | None,
+) -> None:
     """Preview your documentation locally.
 
     Starts a local HTTP server and opens the built documentation site in your
@@ -408,25 +462,81 @@ def preview(project_path: str | None, port: int, site_dir: str | None) -> None:
     Use '--site-dir' to preview a site from any directory (e.g. output from
     a '--from-repo' build).
 
+    Use '--pr', '--run', or '--branch' to fetch and preview a site that CI
+    already built (no hosting setup required). Downloading CI artifacts needs a
+    GitHub token with 'Actions: read' (via GITHUB_TOKEN, a .env, or 'gh auth
+    login' + '--use-gh'). For fork PRs you'll be viewing contributor-authored
+    HTML locally.
+
     \b
     Examples:
       great-docs preview                    # Preview on port 3000
       great-docs preview --port 8080        # Preview on port 8080
       great-docs preview --site-dir /tmp/weathervault-site
+      great-docs preview --pr 302           # Newest CI build for PR #302
+      great-docs preview --run 18273645521  # A specific workflow run
+      great-docs preview --pr 302 --path reference/mcp/gd_config.html
     """
+    if clear_cache:
+        from ._pr_preview import clear_cache as _clear_cache
+
+        existed, path = _clear_cache()
+        if existed:
+            click.echo(f"✓ Cleared PR-preview cache at {path}")
+        else:
+            click.echo(f"No PR-preview cache to clear ({path} does not exist).")
+        return
+
+    exclusive = [
+        ("--pr", pr is not None),
+        ("--run", run is not None),
+        ("--branch", branch is not None),
+    ]
+    given = [name for name, present in exclusive if present]
+    if len(given) > 1:
+        click.echo(f"Error: {', '.join(given)} are mutually exclusive; pass only one.", err=True)
+        sys.exit(1)
+
     try:
-        if site_dir:
+        if given:
+            if site_dir:
+                click.echo("Warning: --site-dir is ignored with --pr/--run/--branch", err=True)
+            from ._pr_preview import PreviewError, preview_pr
+
+            try:
+                preview_pr(
+                    project_path,
+                    pr=pr,
+                    run=run,
+                    branch=branch,
+                    repo=repo,
+                    artifact=artifact,
+                    path=open_path,
+                    port=port,
+                    open_browser=not no_open,
+                    refresh=refresh,
+                    use_gh=use_gh,
+                    env_file=env_file,
+                )
+            except PreviewError as e:
+                click.echo(f"Error: {e}", err=True)
+                sys.exit(1)
+        elif site_dir:
             if project_path:
                 click.echo(
                     "Warning: --project-path is ignored when --site-dir is used",
                     err=True,
                 )
-            GreatDocs.preview_site(site_dir, port=port)
+            GreatDocs.preview_site(
+                site_dir, port=port, open_path=open_path, open_browser=not no_open
+            )
         else:
             docs = GreatDocs(project_path=project_path)
             docs.preview(port=port)
     except KeyboardInterrupt:
         click.echo("\n👋 Server stopped")
+    except SystemExit:
+        raise
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -481,12 +591,71 @@ def config(project_path: str | None, force: bool) -> None:
         sys.exit(1)
 
 
+@click.group(cls=OrderedGroup)
+def ci() -> None:
+    """Helpers meant to run inside CI (GitHub Actions).
+
+    These emit the "preview this build locally" hints that let reviewers open a
+    pull request's docs without a preview host: a workflow log notice and a
+    sticky PR comment, both pointing at 'great-docs preview'.
+
+    \b
+    Examples:
+      great-docs ci notice --run "$GITHUB_RUN_ID" --pr 302
+      great-docs ci pr-comment --run "$GITHUB_RUN_ID" --pr 302
+    """
+
+
+@click.command(name="pr-comment")
+@click.option(
+    "--run", "run_id", type=int, required=True, help="Workflow run id that built the site."
+)
+@click.option("--pr", type=int, required=True, help="Pull request number to comment on.")
+@click.option(
+    "--repo",
+    default=None,
+    help="GitHub repo as 'owner/repo' (default: $GITHUB_REPOSITORY, then git remote).",
+)
+def ci_pr_comment(run_id: int, pr: int, repo: str | None) -> None:
+    """Post or refresh a sticky PR comment with the local-preview command.
+
+    Reads the token from GITHUB_TOKEN / GH_TOKEN and needs 'pull-requests: write'.
+    """
+    from ._ci import post_preview_comment
+    from ._pr_preview import PreviewError
+
+    try:
+        action, repo_slug = post_preview_comment(run_id=run_id, pr=pr, repo_override=repo)
+        click.echo(f"✓ {action.capitalize()} preview comment on {repo_slug}#{pr}")
+    except PreviewError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@click.command(name="notice")
+@click.option(
+    "--run", "run_id", type=int, required=True, help="Workflow run id that built the site."
+)
+@click.option("--pr", type=int, default=None, help="Pull request number (adds the --pr hint).")
+def ci_notice(run_id: int, pr: int | None) -> None:
+    """Print a workflow log notice with the local-preview command."""
+    from ._ci import render_notice_lines
+
+    for line in render_notice_lines(run_id, pr):
+        click.echo(line)
+
+
+ci.add_command(ci_pr_comment)
+ci.add_command(ci_notice)
+
+
 # Register commands in the desired order
 cli.add_command(init)
 cli.add_command(build)
 cli.add_command(preview)
 cli.add_command(uninstall)
 cli.add_command(config)
+cli.add_command(ci)
 
 
 @click.command()
@@ -664,17 +833,30 @@ cli.add_command(scan)
 
 
 def _freeze_info(project_root: Path, persist_dir: Path) -> None:
-    """Display freeze status for all pages with freeze frontmatter."""
+    """Display freeze status: project-level setting and all cached pages."""
     import json
     import re as _re
     from datetime import datetime
 
-    # Scan source .qmd files for freeze declarations in frontmatter only
+    from great_docs.config import Config
+
+    cfg = Config(project_root)
+    project_mode = cfg.freeze
+
+    click.echo()
+    if project_mode is not None:
+        label = "auto" if project_mode == "auto" else str(project_mode)
+        click.echo(f"  Project freeze: {label} (all executable pages)")
+    else:
+        click.echo("  Project freeze: disabled")
+    click.echo(f"  Freeze cache:   {persist_dir.relative_to(project_root)}/")
+    click.echo()
+
+    # Scan source .qmd files for per-page freeze declarations
     freeze_re = _re.compile(r"^freeze:\s+(.+)$", re.MULTILINE)
     exec_freeze_re = _re.compile(r"^execute:\s*\n\s+freeze:\s+(.+)$", re.MULTILINE)
 
     def _extract_frontmatter(text: str) -> str:
-        """Return only the YAML frontmatter (between --- delimiters)."""
         if not text.startswith("---"):
             return ""
         end = text.find("\n---", 3)
@@ -682,10 +864,8 @@ def _freeze_info(project_root: Path, persist_dir: Path) -> None:
             return ""
         return text[3:end]
 
-    # Collect all .qmd files from source directories
+    per_page_modes: dict[str, str] = {}
     source_dirs = ["recipes", "user_guide"]
-    frozen_pages: list[dict] = []
-
     for src_dir in source_dirs:
         src_path = project_root / src_dir
         if not src_path.is_dir():
@@ -693,100 +873,56 @@ def _freeze_info(project_root: Path, persist_dir: Path) -> None:
         for qmd_file in sorted(src_path.rglob("*.qmd")):
             content = qmd_file.read_text(encoding="utf-8", errors="replace")
             frontmatter = _extract_frontmatter(content)
-            # Check for freeze in frontmatter only
             match = freeze_re.search(frontmatter) or exec_freeze_re.search(frontmatter)
             if match:
-                mode = match.group(1).strip()
-                rel_path = qmd_file.relative_to(project_root)
-                frozen_pages.append(
-                    {
-                        "source": str(rel_path),
-                        "mode": mode,
-                    }
-                )
+                rel_path = str(qmd_file.relative_to(project_root))
+                per_page_modes[rel_path] = match.group(1).strip()
 
-    if not frozen_pages:
-        click.echo("No pages with freeze frontmatter found.")
+    if per_page_modes:
+        click.echo("  Per-page overrides:")
+        for source, mode in per_page_modes.items():
+            click.echo(f"    {source}  (freeze: {mode})")
+        click.echo()
+
+    # Report all cached entries from _freeze/
+    if not persist_dir.is_dir():
+        click.echo("  No freeze cache found yet (run a build to populate it).")
         return
 
-    # Check cache status for each frozen page
+    cache_entries = sorted(persist_dir.rglob("execute-results/html.json"))
+    if not cache_entries:
+        click.echo("  Freeze cache directory exists but contains no entries.")
+        return
+
+    click.echo(f"  {len(cache_entries)} cached page(s):")
     click.echo()
-    click.echo(f"  Freeze cache: {persist_dir.relative_to(project_root)}/")
+
+    for cache_json in cache_entries:
+        rel = cache_json.relative_to(persist_dir)
+        # execute-results/html.json → parent.parent is the page stem
+        page_stem = str(rel.parent.parent)
+
+        try:
+            data = json.loads(cache_json.read_text(encoding="utf-8"))
+            ts_match = _re.search(
+                r"Executed at: ([\d-]+ [\d:]+)",
+                data.get("result", {}).get("markdown", ""),
+            )
+            if ts_match:
+                timestamp = ts_match.group(1)
+            else:
+                mtime = cache_json.stat().st_mtime
+                timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+            click.echo(f"  ✓  {page_stem}")
+            click.echo(f"       frozen at {timestamp}")
+        except Exception:
+            click.echo(f"  ?  {page_stem}")
+            click.echo("       cache file exists but could not be parsed")
+
     click.echo()
-
-    has_cache = persist_dir.is_dir()
-
-    for page in frozen_pages:
-        source = page["source"]
-        mode = page["mode"]
-
-        # Determine the cache path — strip numeric prefix and map dirs
-        page_path = Path(source)
-        # Strip numeric prefix from filename
-        cache_name = _re.sub(r"^\d+[-_]", "", page_path.stem)
-        # Map directory (user_guide -> user-guide)
-        cache_dir = str(page_path.parent).replace("_", "-")
-        cache_json = persist_dir / cache_dir / cache_name / "execute-results" / "html.json"
-
-        # Status determination
-        if not has_cache or not cache_json.exists():
-            status = "⚠️  not cached"
-            timestamp = ""
-            detail = "Run: great-docs freeze " + source
-        else:
-            # Read cache to get timestamp
-            try:
-                data = json.loads(cache_json.read_text(encoding="utf-8"))
-                # Try to extract execution timestamp from markdown output
-                ts_match = _re.search(
-                    r"Executed at: ([\d-]+ [\d:]+)",
-                    data.get("result", {}).get("markdown", ""),
-                )
-                if ts_match:
-                    timestamp = ts_match.group(1)
-                else:
-                    # Fall back to file modification time
-                    mtime = cache_json.stat().st_mtime
-                    timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-
-                # Check if source has changed (hash mismatch)
-                cached_hash = data.get("hash", "")
-                # We can't easily compute what the build would produce without
-                # running prep, so just report the cache exists
-                status = "✓  cached"
-                detail = f"frozen at {timestamp}"
-            except Exception:
-                status = "?  unreadable"
-                detail = "Cache file exists but could not be parsed"
-
-        click.echo(f"  {status}  {source}")
-        click.echo(f"           mode: {mode} │ {detail}")
-        click.echo()
-
-    # Summary
-    cached = (
-        sum(
-            1
-            for p in frozen_pages
-            if (
-                persist_dir
-                / str(Path(p["source"]).parent).replace("_", "-")
-                / _re.sub(r"^\d+[-_]", "", Path(p["source"]).stem)
-                / "execute-results"
-                / "html.json"
-            ).exists()
-        )
-        if has_cache
-        else 0
-    )
-    total = len(frozen_pages)
-    click.echo(f"  {cached}/{total} page(s) cached")
-    if cached < total:
-        click.echo()
-        click.echo("  ℹ Run 'great-docs freeze <page>' to cache uncached pages.")
-    if cached > 0:
-        click.echo()
-        click.echo("  ℹ To re-freeze a stale page: great-docs freeze <page>")
+    click.echo(f"  {len(cache_entries)} page(s) cached")
+    click.echo()
+    click.echo("  ℹ To re-freeze a stale page: great-docs freeze <page>")
 
 
 @click.command()
@@ -947,7 +1083,7 @@ def freeze(
             ["quarto", "render", str(rel_target)],
             cwd=build_dir,
             capture_output=True,
-            text=True,
+            **TEXT_MODE_KWARGS,
             env=freeze_env,
         )
 
@@ -1391,7 +1527,7 @@ def setup_github_pages(
         click.echo("💡 The workflow will:")
         click.echo(f"   • Build docs on every push to '{main_branch}' and pull requests")
         click.echo("   • Automatically deploy to GitHub Pages on main branch")
-        click.echo("   • Create preview deployments for pull requests")
+        click.echo("   • Comment on pull requests with a 'great-docs preview' command")
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -2352,7 +2488,6 @@ def lint(project_path: str | None, checks: tuple[str, ...], json_output: bool) -
       • broken-xref          '%seealso' references to unknown symbols
       • style-mismatch       Docstrings not matching configured style (numpy/google/sphinx)
       • unknown-directive    Unrecognized '%directive' names
-      • empty-seealso        '%seealso' entries with empty references
       • stale-badge          Version badges far behind latest release
       • stale-callout        Version callouts that are very old
       • stale-upcoming       'upcoming:' frontmatter for already-released versions
@@ -2656,11 +2791,23 @@ def api_diff_cmd(
 
         # --- Graph mode ---
         if graph:
+            from great_docs.core import GreatDocs
+
+            documented = (
+                GreatDocs(project_path=str(project_root)).documented_symbol_names(
+                    result.package_name
+                )
+                or None
+            )
             # Build graph for the new version
             if new_version.upper() == "HEAD":
-                snap = snapshot_from_griffe(result.package_name, version="HEAD")
+                snap = snapshot_from_griffe(
+                    result.package_name, version="HEAD", documented_names=documented
+                )
             else:
-                snap = snapshot_at_tag(project_root, new_version, result.package_name)
+                snap = snapshot_at_tag(
+                    project_root, new_version, result.package_name, documented_names=documented
+                )
             if snap is None:
                 click.echo("Could not build snapshot for graph.", err=True)
                 sys.exit(1)
@@ -2915,6 +3062,10 @@ def api_snapshot_cmd(
         )
         sys.exit(1)
 
+    from great_docs.core import GreatDocs
+
+    documented = GreatDocs(project_path=str(project_root)).documented_symbol_names(pkg_name) or None
+
     # Default snapshot directory
     snap_dir = project_root / ".great-docs" / "snapshots"
 
@@ -2947,9 +3098,9 @@ def api_snapshot_cmd(
 
         try:
             if tag == "HEAD":
-                snap = snapshot_from_griffe(pkg_name, version="dev")
+                snap = snapshot_from_griffe(pkg_name, version="dev", documented_names=documented)
             else:
-                snap = snapshot_at_tag(project_root, tag, pkg_name)
+                snap = snapshot_at_tag(project_root, tag, pkg_name, documented_names=documented)
 
             if snap is None:
                 click.echo(f"  ✗  {tag}: could not build snapshot", err=True)

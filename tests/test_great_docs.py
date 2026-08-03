@@ -15,201 +15,133 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 from types import MethodType
-from unittest.mock import call, MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import click
-import griffe as gf
 import griffe
+import griffe as gf
 import pytest
 import requests
 from click.testing import CliRunner
+from griffe import AliasResolutionError, DocstringSectionKind, ExprName
 from PIL import Image as PILImage
-from griffe import DocstringSectionKind, ExprName
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
-from yaml12 import format_yaml as _format_yaml, parse_yaml as _parse_yaml
+from yaml12 import format_yaml as _format_yaml
+from yaml12 import parse_yaml as _parse_yaml
 
-from great_docs import Config, create_default_config, GreatDocs, load_config
-from great_docs._directives import DocDirectives, extract_directives
-from great_docs._renderer import layout, _globals
-from great_docs._renderer._ast import (
+from great_docs import Config, GreatDocs, create_default_config, load_config
+from great_docs._apiref import _globals, content, spec, write
+from great_docs._apiref._docstring_sections import (
+    DCDocstringSection,
     DocstringSectionKindPatched,
     DocstringSectionNotes,
     DocstringSectionSeeAlso,
     DocstringSectionWarnings,
     ExampleCode,
     ExampleText,
-    Formatter,
+    _DocstringSectionPatched,
     transform,
     tuple_to_data,
-    _DocstringSectionPatched,
 )
-from great_docs._renderer._format import (
+from great_docs._apiref._format import (
+    HAS_RUFF,
     format_name,
     format_see_also,
     format_str,
     format_value,
     formatted_signature,
-    HAS_RUFF,
     repr_obj,
 )
-from great_docs._renderer._globals import (
-    EXCLUDE_ATTRIBUTES,
-    EXCLUDE_CLASSES,
-    EXCLUDE_FUNCTIONS,
-    EXCLUDE_PARAMETERS,
-)
-from great_docs._renderer._griffe import (
-    AliasResolutionError,
-    dataclasses as dc,
-    dataclasses as gdc,
-    docstrings as ds,
-    docstrings as gds,
-    expressions as expr,
-)
-from great_docs._renderer._griffe.docstrings import DCDocstringSection
-from great_docs._renderer._render import (
-    get_render_type,
+from great_docs._apiref._globals import EXCLUSIONS
+from great_docs._apiref._preview import Formatter
+from great_docs._apiref._render import (
     RenderDocAttribute,
     RenderDocClass,
     RenderDocFunction,
     RenderDocModule,
+    get_render_type,
 )
-from great_docs._renderer._render._label import (
-    get_label,
+from great_docs._apiref._render._label import (
     _attribute_label,
     _class_label,
     _function_label,
+    get_label,
 )
-from great_docs._renderer._render.api_page import RenderAPIPage
-from great_docs._renderer._render.base import RenderBase
-from great_docs._renderer._render.extending import (
+from great_docs._apiref._render.api_page import RenderAPIPage
+from great_docs._apiref._render.base import RenderBase
+from great_docs._apiref._render.extending import (
     exclude_attributes,
     exclude_classes,
     exclude_functions,
     exclude_parameters,
+    exclude_type_aliases,
     extend_base_class,
     set_class_attr,
 )
-from great_docs._renderer._render.mixin_members import (
+from great_docs._apiref._render.mixin_members import (
     RenderedMemberPagesGroup,
     RenderedMembersGroup,
 )
-from great_docs._renderer._render.mixin_page import RenderPageMixin
-from great_docs._renderer._render.reference_page import RenderReferencePage
-from great_docs._renderer._render.reference_section import RenderReferenceSection
-from great_docs._renderer._rst_converters import (
-    escape,
-    sanitize,
-    _convert_bold_section_headers,
-    _convert_google_sections,
-    _convert_rst_citations,
-    _convert_rst_directives,
-    _convert_rst_grid_tables,
-    _convert_rst_simple_tables,
-    _convert_rst_text,
-    _convert_sphinx_fields,
-    _convert_sphinx_roles,
-    _fence_doctest_blocks,
-    _parse_google_entries,
-    _parse_google_raises,
-    _replace_rst_code_block,
-    _RST_CODE_BLOCK_RE,
-    _rst_directive_to_callout,
-    _rst_grid_table_to_md,
-    _rst_simple_table_to_md,
-    _smart_dedent,
-)
-from great_docs._renderer._tools import render_code_variable, render_type_object
-from great_docs._renderer._transformers import ctx_node, Node, WorkaroundKeyError
-from great_docs._renderer._type_checks import (
+from great_docs._apiref._render.mixin_page import RenderPageMixin
+from great_docs._apiref._render.reference_page import RenderReferencePage
+from great_docs._apiref._render.reference_section import RenderReferenceSection
+from great_docs._apiref._tools import render_code_variable, render_type_object
+from great_docs._apiref._type_checks import (
     griffe_to_doc,
+    is_doc_attribute,
+    is_doc_class,
+    is_doc_function,
     is_field_init_false,
     is_initvar,
     is_protocol,
     is_typealias,
     is_typevar,
-    isDoc,
-    no_init,
 )
-from great_docs._renderer.blueprint import (
-    blueprint as _blueprint,
-    blueprint as blueprint_func,
-    BlueprintTransformer,
-    collect,
-    CollectTransformer,
-    strip_package_name,
-    _auto_package,
-    _is_external_alias,
-    _non_default_entries,
-    _PagePackageStripper,
-    _resolve_alias,
-    _to_simple_dict,
+from great_docs._apiref._visitor import Node, ctx_node
+from great_docs._apiref.api_reference import APIReference, Settings
+from great_docs._apiref.collect import (
+    _ManifestBuilder,
+    _PackagePrefixRemover,
+    build_manifest,
+    remove_package_prefix,
 )
-from great_docs._renderer.introspection import (
-    Builder,
-    dynamic_alias,
-    get_object,
-    get_parser_defaults,
-    replace_docstring,
-    _insert_contents,
-    _is_valueless,
-    _merge_frontmatter,
-    _resolve_target,
-)
-from great_docs._renderer.inventory import (
-    convert_inventory,
-    create_inventory,
-    _create_inventory_item,
-    _maybe_call,
-)
-from great_docs._renderer.layout import (
-    Auto,
-    AutoOptions,
-    ChoicesChildren,
+from great_docs._apiref.content import (
     Doc,
     DocAttribute,
     DocClass,
     DocFunction,
     DocModule,
-    Item,
-    Layout,
+    DocTypeAlias,
     Link,
     MemberPage,
-    MISSING,
     Page,
     Section,
-    SummaryDetails,
-    _Base,
+    SummaryItem,
 )
-from great_docs._renderer.pandoc.blocks import (
-    Block,
-    blockcontent_to_str,
-    blockcontent_to_str_items,
-    Blocks,
-    BulletList,
-    CodeBlock,
-    DefinitionList,
-    Div,
-    Header,
-    Meta,
-    OrderedList,
-    Para,
-    Plain,
-    RawHTMLBlockTag,
-    RenderedDocObject,
+from great_docs._apiref.introspect import (
+    _has_no_value,
+    dynamic_alias,
+    get_object,
+    get_parser_defaults,
+    replace_docstring,
+    resolve_alias,
 )
-from great_docs._renderer.pandoc.components import Attr
-from great_docs._renderer.pandoc.inlines import (
-    Code,
-    Emph,
-    inlinecontent_to_str,
-    Inlines0,
-    InterLink,
-    shortcode,
-    Str,
-    Strong,
+from great_docs._apiref.inventory import (
+    InventoryItem,
+    create_inventory,
+    write_inventory,
 )
-from great_docs._renderer.typing_information import TypeInformation, TypeSections
+from great_docs._apiref.resolve import (
+    ObjectNotFoundError,
+    _is_external_alias,
+    _Resolver,
+    _sections_from_package,
+    _to_simple_dict,
+)
+from great_docs._apiref.spec import ChildrenStyle, SpecObject, SpecOptions, SpecSection
+from great_docs._apiref.typing_information import TypeInformation, TypeSections
+from great_docs._apiref.write import _insert_contents
+from great_docs._apiref.write import merge_frontmatter as _merge_frontmatter
 from great_docs.cli import (
     _detect_optional_dependencies,
     _detect_package_manager,
@@ -224,6 +156,34 @@ from great_docs.cli import (
     scan,
     setup_github_pages,
     uninstall,
+)
+from great_docs.pandoc.blocks import (
+    Block,
+    Blocks,
+    BulletList,
+    CodeBlock,
+    DefinitionList,
+    Div,
+    Header,
+    Meta,
+    OrderedList,
+    Para,
+    Plain,
+    RawHTMLBlockTag,
+    RenderedDocObject,
+    blockcontent_to_str,
+    blockcontent_to_str_items,
+)
+from great_docs.pandoc.components import Attr
+from great_docs.pandoc.inlines import (
+    Code,
+    Emph,
+    Inlines0,
+    InterLink,
+    Str,
+    Strong,
+    inlinecontent_to_str,
+    shortcode,
 )
 
 
@@ -1755,9 +1715,10 @@ source:
 
         config = Config(Path(tmp_dir))
 
-        assert config.get("source.enabled") is False
-        assert config.get("source.branch") == "develop"
-        assert config.get("source.nonexistent", "default") == "default"
+        assert config["source.enabled"] is False
+        assert config["source.branch"] == "develop"
+        with pytest.raises(KeyError):
+            config["source.nonexistent"]
 
 
 def test_config_funding_property():
@@ -1821,10 +1782,10 @@ def test_create_default_config():
 
     assert isinstance(content, str)
     assert "Great Docs Configuration" in content
-    assert "sidebar_filter" in content
-    assert "cli:" in content
-    assert "authors:" in content
-    assert "parser:" in content
+    assert "# sidebar_filter:" in content
+    assert "# cli:" in content
+    assert "# authors:" in content
+    assert "# parser:" in content
 
 
 def test_detect_docstring_style_numpy_from_files():
@@ -2213,6 +2174,23 @@ def test_get_quarto_env_preserves_existing_env():
         assert env["PATH"] == os.environ.get("PATH")
 
 
+def test_get_quarto_env_sets_pythonutf8():
+    """Issue #200: Quarto subprocess env enables UTF-8 mode on Windows."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        env = docs._get_quarto_env()
+        assert env.get("PYTHONUTF8") == "1"
+
+
+def test_get_quarto_env_preserves_existing_pythonutf8(monkeypatch):
+    """Issue #200: do not override an explicit PYTHONUTF8 value."""
+    monkeypatch.setenv("PYTHONUTF8", "0")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        env = docs._get_quarto_env()
+        assert env["PYTHONUTF8"] == "0"
+
+
 def test_detect_dynamic_mode_returns_true_for_simple_package():
     """Test that _detect_dynamic_mode returns True for packages without cyclic aliases."""
 
@@ -2550,7 +2528,7 @@ def test_format_authors_yaml_basic_single_with_comments():
         authors = [{"name": "Test Author", "role": "Maintainer", "email": "test@example.com"}]
         yaml_output = docs._format_authors_yaml(authors)
 
-        assert "# Author Information" in yaml_output
+        assert yaml_output.startswith("authors:")
         assert "authors:" in yaml_output
         assert "- name: Test Author" in yaml_output
         assert "role: Maintainer" in yaml_output
@@ -2905,6 +2883,399 @@ def test_user_guide_discovers_mixed_extensions_and_nested_files():
         assert (docs_ug / "section1" / "topic1" / "deep-notes.md").exists()
 
 
+def test_expand_code_includes_basic():
+    """Test that code-include shortcodes are expanded into fenced code blocks."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        # Create a code file to include
+        examples = project_path / "examples"
+        examples.mkdir()
+        (examples / "demo.py").write_text('print("hello")\nx = 42\n')
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "Some text\n\n{{< include examples/demo.py >}}\n\nMore text"
+        result = docs._expand_code_includes(content, project_path)
+
+        assert '```python\nprint("hello")\nx = 42\n```' in result
+        assert "Some text" in result
+        assert "More text" in result
+
+
+def test_expand_code_includes_lang_override():
+    """Test that the lang keyword overrides auto-detected language."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "script.py").write_text("x = 1\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = '{{< include script.py lang="text" >}}'
+        result = docs._expand_code_includes(content, project_path)
+        assert result.startswith("```text\n")
+
+
+def test_expand_code_includes_lines():
+    """Test that the lines keyword selects a range of lines."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "code.py").write_text("line1\nline2\nline3\nline4\nline5\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = '{{< include code.py lines="2-4" >}}'
+        result = docs._expand_code_includes(content, project_path)
+        assert "line2\nline3\nline4" in result
+        assert "line1" not in result
+        assert "line5" not in result
+
+
+def test_expand_code_includes_single_line():
+    """Test selecting a single line."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "code.py").write_text("line1\nline2\nline3\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = '{{< include code.py lines="2" >}}'
+        result = docs._expand_code_includes(content, project_path)
+        assert "line2" in result
+        assert "line1" not in result
+        assert "line3" not in result
+
+
+def test_expand_code_includes_relative_to_source_dir():
+    """Test that paths resolve relative to the source file's directory first."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        user_guide = project_path / "user_guide"
+        user_guide.mkdir()
+        snippets = user_guide / "snippets"
+        snippets.mkdir()
+        (snippets / "example.py").write_text("local_code = True\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "{{< include snippets/example.py >}}"
+        result = docs._expand_code_includes(content, user_guide)
+        assert "local_code = True" in result
+
+
+def test_expand_code_includes_fallback_to_project_root():
+    """Test that paths fall back to project root if not found in source dir."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        # File at project root level
+        src = project_path / "src"
+        src.mkdir()
+        (src / "app.js").write_text('console.log("hello");\n')
+
+        # Source dir is user_guide (doesn't contain src/app.js)
+        user_guide = project_path / "user_guide"
+        user_guide.mkdir()
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "{{< include src/app.js >}}"
+        result = docs._expand_code_includes(content, user_guide)
+        assert "```javascript" in result
+        assert 'console.log("hello")' in result
+
+
+def test_expand_code_includes_missing_file():
+    """Test that a missing file produces an HTML comment error."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "{{< include does/not/exist.py >}}"
+        result = docs._expand_code_includes(content, project_path)
+        assert "<!-- include error:" in result
+        assert "file not found" in result
+
+
+def test_expand_code_includes_no_shortcodes():
+    """Test that content without code-include shortcodes passes through unchanged."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "# Hello\n\nSome regular content.\n\n{{< icon heart >}}\n"
+        result = docs._expand_code_includes(content, project_path)
+        assert result == content
+
+
+def test_expand_code_includes_passes_through_qmd():
+    """Test that {{< include file.qmd >}} without lang/lines is left for Quarto."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "_shared.qmd").write_text("# Shared content\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "Before\n\n{{< include _shared.qmd >}}\n\nAfter"
+        result = docs._expand_code_includes(content, project_path)
+        assert result == content
+
+
+def test_expand_code_includes_qmd_with_lang_is_expanded():
+    """Test that {{< include file.qmd lang="markdown" >}} is expanded as code."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "snippet.qmd").write_text("---\ntitle: Example\n---\n\nHello\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = '{{< include snippet.qmd lang="markdown" >}}'
+        result = docs._expand_code_includes(content, project_path)
+        assert "```markdown" in result
+        assert "title: Example" in result
+
+
+def test_expand_code_includes_qmd_with_lines_is_expanded():
+    """Test that {{< include file.qmd lines="1-3" >}} is expanded as code."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "snippet.qmd").write_text("line1\nline2\nline3\nline4\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = '{{< include snippet.qmd lines="2-3" >}}'
+        result = docs._expand_code_includes(content, project_path)
+        assert "line2" in result
+        assert "line1" not in result
+        assert "{{< include" not in result
+
+
+def test_expand_code_includes_multiple():
+    """Test multiple include shortcodes in one file."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "a.py").write_text("alpha\n")
+        (project_path / "b.yaml").write_text("key: value\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "First:\n\n{{< include a.py >}}\n\nSecond:\n\n{{< include b.yaml >}}\n"
+        result = docs._expand_code_includes(content, project_path)
+        assert "```python\nalpha\n```" in result
+        assert "```yaml\nkey: value\n```" in result
+
+
+def test_expand_code_includes_unknown_extension():
+    """Test that unknown file extensions produce an unfenced code block."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "data.xyz").write_text("some data\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "{{< include data.xyz >}}"
+        result = docs._expand_code_includes(content, project_path)
+        assert result == "```\nsome data\n```"
+
+
+def test_expand_code_includes_backticks_in_content():
+    """Test that included files containing triple backticks use a longer fence."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "example.txt").write_text("Some text\n```python\nx = 1\n```\nMore text\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = "{{< include example.txt >}}"
+        result = docs._expand_code_includes(content, project_path)
+        # Should use a 4-backtick fence since the content has 3-backtick runs
+        assert result.startswith("````")
+        assert result.endswith("````")
+        assert "```python" in result
+
+
+def test_expand_code_includes_lang_and_lines_combined():
+    """Test combining lang and lines keyword arguments."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        (project_path / "code.py").write_text("# header\nimport os\nprint(os.getcwd())\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        content = '{{< include code.py lines="2-3" lang="text" >}}'
+        result = docs._expand_code_includes(content, project_path)
+        assert result.startswith("```text\n")
+        assert "import os" in result
+        assert "# header" not in result
+
+
+def test_expand_code_includes_in_user_guide_copy():
+    """Test that code-include shortcodes are expanded during user guide copy."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        # Create a code file at project root
+        examples = project_path / "examples"
+        examples.mkdir()
+        (examples / "sample.py").write_text("x = 1\n")
+
+        # Create user guide with code-include
+        user_guide = project_path / "user_guide"
+        user_guide.mkdir()
+        (user_guide / "01-tutorial.qmd").write_text(
+            "---\ntitle: Tutorial\n---\n\n{{< include examples/sample.py >}}\n"
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        user_guide_info = docs._discover_user_guide()
+        assert user_guide_info is not None
+
+        docs._copy_user_guide_to_docs(user_guide_info)
+
+        # Verify the expanded content in the build directory
+        built_file = docs.project_path / "user-guide" / "tutorial.qmd"
+        assert built_file.exists()
+        built_content = built_file.read_text(encoding="utf-8")
+        assert "```python" in built_content
+        assert "x = 1" in built_content
+        assert "{{< include" not in built_content
+
+
+def test_parse_code_include_args():
+    """Test argument parsing for code-include shortcodes."""
+    parse = GreatDocs._parse_code_include_args
+
+    # Basic path
+    path, lang, lines = parse("examples/demo.py")
+    assert path == "examples/demo.py"
+    assert lang == ""
+    assert lines == ""
+
+    # Path with lang
+    path, lang, lines = parse('examples/demo.py lang="python"')
+    assert path == "examples/demo.py"
+    assert lang == "python"
+    assert lines == ""
+
+    # Path with lines
+    path, lang, lines = parse('examples/demo.py lines="5-10"')
+    assert path == "examples/demo.py"
+    assert lines == "5-10"
+
+    # Path with both
+    path, lang, lines = parse('examples/demo.py lines="1-3" lang="text"')
+    assert path == "examples/demo.py"
+    assert lang == "text"
+    assert lines == "1-3"
+
+
+def test_is_asset_dir_no_qmd():
+    """Test that directories without .qmd files are asset directories."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        d = Path(tmp_dir) / "images"
+        d.mkdir()
+        (d / "logo.png").write_bytes(b"PNG")
+        assert GreatDocs._is_asset_dir(d) is True
+
+
+def test_is_asset_dir_with_qmd():
+    """Test that directories with .qmd files are NOT asset directories."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        d = Path(tmp_dir) / "chapter"
+        d.mkdir()
+        (d / "page.qmd").write_text("---\ntitle: Test\n---\n")
+        assert GreatDocs._is_asset_dir(d) is False
+
+
+def test_is_asset_dir_underscore_prefix_with_qmd():
+    """Test that _-prefixed dirs are asset dirs even when they contain .qmd files."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        d = Path(tmp_dir) / "_includes"
+        d.mkdir()
+        (d / "snippet.qmd").write_text("```python\nx = 1\n```\n")
+        assert GreatDocs._is_asset_dir(d) is True
+
+
+def test_underscore_dir_copied_as_assets_with_qmd():
+    """Test that _-prefixed dirs with .qmd files are copied during user guide build."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        user_guide = project_path / "user_guide"
+        user_guide.mkdir()
+        (user_guide / "01-tutorial.qmd").write_text(
+            '---\ntitle: Tutorial\n---\n\n{{< include _includes/example.qmd lang="markdown" >}}\n'
+        )
+
+        includes = user_guide / "_includes"
+        includes.mkdir()
+        (includes / "example.qmd").write_text("```python\nprint('hello')\n```\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        ug_info = docs._discover_user_guide()
+        assert ug_info is not None
+
+        docs._copy_user_guide_to_docs(ug_info)
+
+        # The _includes dir should be copied as an asset directory
+        copied_includes = docs.project_path / "user-guide" / "_includes"
+        assert copied_includes.exists(), "_includes dir was not copied"
+        assert (copied_includes / "example.qmd").exists()
+
+        # The include with lang= should have been expanded in the built file
+        built = docs.project_path / "user-guide" / "tutorial.qmd"
+        built_content = built.read_text(encoding="utf-8")
+        assert "```markdown" in built_content
+        assert "print('hello')" in built_content
+
+
 def test_user_guide_sidebar_uses_clean_urls():
     """Test that the generated sidebar uses clean URLs without numeric prefixes."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3134,6 +3505,39 @@ def test_assets_added_to_quarto_config():
         assert "assets/**" in config["project"]["resources"]
 
 
+def test_dark_only_logo_does_not_crash_quarto_config():
+    """Regression: a dark-only logo config must not crash navbar logo injection.
+
+    roborev #801 finding 2: `logo: {dark: ...}` used to raise `TypeError` at
+    `package_root / logo_config["light"]` because `light` was `None`.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        assets = project_path / "assets"
+        assets.mkdir()
+        (assets / "logo-dark.svg").write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>'
+        )
+
+        gd_yml = project_path / "great-docs.yml"
+        gd_yml.write_text("logo:\n  dark: assets/logo-dark.svg\n", encoding="utf-8")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        docs._update_quarto_config()
+
+        quarto_yml = docs.project_path / "_quarto.yml"
+        with open(quarto_yml, "r") as f:
+            config = read_yaml(f)
+
+        assert config["website"]["navbar"]["logo"] == "logo-dark.svg"
+
+
 def test_assets_not_added_to_quarto_config_when_missing():
     """Test that assets/** is not added to Quarto config when assets don't exist."""
 
@@ -3237,6 +3641,34 @@ def test_assets_config_update_only_when_copied():
             config = read_yaml(f)
 
         assert "assets/**" not in config["project"]["resources"]
+
+
+def test_skill_render_exclusion_uses_enumerated_globs():
+    """_update_quarto_config() excludes skill.md without a recursive ** glob.
+
+    A recursive "**" in the render list overpowers any "!" negation, so Quarto
+    would render skill.md → skill.html anyway (see issue #228). The render list
+    must enumerate Quarto's default input globs instead.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+
+        pyproject = project_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._update_quarto_config()
+
+        quarto_yml = docs.project_path / "_quarto.yml"
+        with open(quarto_yml, "r") as f:
+            config = read_yaml(f)
+
+        render = config["project"]["render"]
+        assert "!skill.md" in render
+        assert "**" not in render
+        assert "*.qmd" in render
+        assert "*.md" in render
 
 
 def test_user_guide_config_option_overrides_default_dir():
@@ -3606,15 +4038,21 @@ def test_user_guide_explicit_config_sidebar_generation():
             "href": "user-guide/index.qmd",
         }
 
-        # Other items are plain hrefs
-        assert section1["contents"][1] == "user-guide/quickstart.qmd"
-        assert section1["contents"][2] == "user-guide/installation.qmd"
+        # Other items now also have explicit text/href
+        assert section1["contents"][1] == {
+            "text": "Quick Start",
+            "href": "user-guide/quickstart.qmd",
+        }
+        assert section1["contents"][2] == {
+            "text": "Installation",
+            "href": "user-guide/installation.qmd",
+        }
 
         # Check second section
         section2 = sidebar["contents"][1]
 
         assert section2["section"] == "Advanced"
-        assert section2["contents"] == ["user-guide/advanced.qmd"]
+        assert section2["contents"] == [{"text": "Advanced", "href": "user-guide/advanced.qmd"}]
 
 
 def test_user_guide_explicit_config_no_prefix_stripping():
@@ -3660,8 +4098,8 @@ def test_user_guide_explicit_config_no_prefix_stripping():
         sidebar = docs._generate_user_guide_sidebar(user_guide_info)
         section_contents = sidebar["contents"][0]["contents"]
 
-        assert section_contents[0] == "user-guide/01-intro.qmd"
-        assert section_contents[1] == "user-guide/02-setup.qmd"
+        assert section_contents[0] == {"text": "Intro", "href": "user-guide/01-intro.qmd"}
+        assert section_contents[1] == {"text": "Setup", "href": "user-guide/02-setup.qmd"}
 
 
 def test_user_guide_explicit_config_missing_file(capsys):
@@ -4125,6 +4563,90 @@ def test_readme_rst_not_used_when_readme_md_exists():
 
         assert "Markdown README" in content
         assert "RST readme" not in content
+
+
+def _homepage_frontmatter(content: str) -> dict:
+    """Parse the leading YAML frontmatter block from generated homepage content."""
+    assert content.startswith("---")
+    _, fm_text, _ = content.split("---", 2)
+    return parse_yaml(fm_text) or {}
+
+
+def test_index_qmd_frontmatter_title_preserved():
+    """Authored frontmatter title on the index source survives into index.qmd."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "1.0"\n')
+        (project_path / "great-docs.yml").write_text("")
+
+        (project_path / "index.qmd").write_text(
+            '---\ntitle: "My Package"\n---\n\n## Getting Started\n\nHello.\n'
+        )
+
+        pkg_dir = project_path / "test"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._create_index_from_readme(force_rebuild=True)
+
+        content = (docs.project_path / "index.qmd").read_text()
+        fm = _homepage_frontmatter(content)
+
+        assert fm["title"] == "My Package"
+        assert fm["toc"] is False
+        assert fm["body-classes"] == "gd-homepage"
+
+
+def test_index_qmd_frontmatter_title_empty_without_source_title():
+    """A source file with no title yields an empty homepage title."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "1.0"\n')
+        (project_path / "great-docs.yml").write_text("")
+
+        (project_path / "README.md").write_text("## Getting Started\n\nHello.\n")
+
+        pkg_dir = project_path / "test"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._create_index_from_readme(force_rebuild=True)
+
+        content = (docs.project_path / "index.qmd").read_text()
+        fm = _homepage_frontmatter(content)
+
+        assert fm["title"] == ""
+
+
+def test_index_qmd_frontmatter_title_yaml_safe():
+    """A title with YAML-special characters round-trips through the frontmatter."""
+    tricky_title = 'A: B "quoted"'
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "1.0"\n')
+        (project_path / "great-docs.yml").write_text("")
+
+        source_fm = format_yaml({"title": tricky_title}).rstrip()
+        (project_path / "index.qmd").write_text(
+            f"---\n{source_fm}\n---\n\n## Getting Started\n\nHello.\n"
+        )
+
+        pkg_dir = project_path / "test"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._create_index_from_readme(force_rebuild=True)
+
+        content = (docs.project_path / "index.qmd").read_text()
+        fm = _homepage_frontmatter(content)
+
+        assert fm["title"] == tricky_title
 
 
 def test_convert_rst_to_markdown_real_pandoc():
@@ -4832,6 +5354,50 @@ def test_process_sections_discovers_and_copies():
         sidebar_ids = [s.get("id") for s in config["website"]["sidebar"] if isinstance(s, dict)]
 
         assert "examples" in sidebar_ids
+
+
+def test_copy_section_files_strips_numeric_directory_prefixes():
+    """Section files in numerically-prefixed subdirs are copied to unprefixed paths."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        source_dir = project_path / "examples"
+        topic_a = source_dir / "01-topic-a"
+        topic_b = source_dir / "02-topic-b"
+        topic_a.mkdir(parents=True)
+        topic_b.mkdir(parents=True)
+
+        intro = topic_a / "intro.qmd"
+        intro.write_text(
+            "---\ntitle: Intro\n---\n\nSee [demo](../02-topic-b/widget_demo.qmd) for details.\n"
+        )
+        widget = topic_b / "widget_demo.qmd"
+        widget.write_text("---\ntitle: Widget Demo\n---\n\nDemo content\n")
+
+        dest_dir = project_path / "great-docs" / "examples"
+        dest_dir.mkdir(parents=True)
+
+        docs = GreatDocs(project_path=tmp_dir)
+        copied = docs._copy_section_files([intro, widget], source_dir, dest_dir)
+
+        # Files land at unprefixed directory paths
+        assert (dest_dir / "topic-a" / "intro.qmd").exists()
+        assert (dest_dir / "topic-b" / "widget_demo.qmd").exists()
+
+        # The prefixed directory paths must NOT exist
+        assert not (dest_dir / "01-topic-a").exists()
+        assert not (dest_dir / "02-topic-b").exists()
+
+        # Reported filenames use the cleaned directory parts
+        filenames = {entry["filename"] for entry in copied}
+
+        assert "topic-a/intro.qmd" in filenames
+        assert "topic-b/widget_demo.qmd" in filenames
+
+        # The cross-reference was rewritten to the unprefixed (and now-correct) path
+        intro_content = (dest_dir / "topic-a" / "intro.qmd").read_text()
+
+        assert "../topic-b/widget_demo.qmd" in intro_content
+        assert "02-topic-b" not in intro_content
 
 
 def test_process_sections_no_index_by_default():
@@ -6231,18 +6797,6 @@ class TestGdgSite144DocstringTables:
         assert "42.5" in html
 
 
-def _bp_make_trans(objects=None):
-    """Helper: create a BlueprintTransformer backed by a dict of objects."""
-    objects = objects or {}
-
-    def get_object(path, **kwargs):
-        if path in objects:
-            return objects[path]
-        raise KeyError(path)
-
-    return BlueprintTransformer(get_object=get_object)
-
-
 def test_to_simple_dict_base_dataclass():
     page = Page(path="foo")
     result = _to_simple_dict(page)
@@ -6251,7 +6805,7 @@ def test_to_simple_dict_base_dataclass():
 
 
 def test_to_simple_dict_nested_dataclass():
-    doc = DocFunction(name="func1", obj=None)
+    doc = DocFunction(name="func1", obj=gf.Function("func1"))
     page = Page(path="p", contents=[doc])
     result = _to_simple_dict(page)
     assert isinstance(result, dict)
@@ -6274,7 +6828,7 @@ def test_to_simple_dict_tuple():
 
 
 def test_to_simple_dict_enum():
-    result = _to_simple_dict(ChoicesChildren.embedded)
+    result = _to_simple_dict(ChildrenStyle.embedded)
     assert result == "embedded"
 
 
@@ -6285,51 +6839,54 @@ def test_to_simple_dict_primitive():
 
 
 def test_to_simple_dict_summary_details():
-    sd = SummaryDetails(name="n", desc="d")
+    sd = SummaryItem(name="n", desc="d")
     result = _to_simple_dict(sd)
     assert result == {"name": "n", "desc": "d"}
 
 
-def test_non_default_entries_auto_no_fields():
-    auto = Auto()
-    result = _non_default_entries(auto)
-    assert result == {}
+def test_spec_options_with_defaults_none_base():
+    opts = SpecOptions(include_private=True)
+    assert opts.with_defaults(None) is opts
 
 
-def test_non_default_entries_auto_options_specified():
-    opts = AutoOptions(signature_name="full", include_private=True)
-    result = _non_default_entries(opts)
-    assert result == {"signature_name": "full", "include_private": True}
+def test_spec_options_with_defaults_inherits_unspecified():
+    el = SpecObject(name="x", include_private=True)
+    base = SpecOptions(include_private=False, include_empty=True)
+    merged = el.with_defaults(base)
+    assert merged.include_private is True  # el's explicit value wins
+    assert merged.include_empty is True  # inherited from base
+    assert merged.name == "x"
 
 
-def test_non_default_entries_auto_options_empty():
-    opts = AutoOptions()
-    result = _non_default_entries(opts)
-    assert result == {}
+def test_spec_options_with_defaults_specified_default_beats_base():
+    # Explicitly setting a field to its default value still beats the base.
+    el = SpecObject(name="x", include_private=False)
+    base = SpecOptions(include_private=True)
+    assert el.with_defaults(base).include_private is False
 
 
 def test_resolve_alias_non_alias_passthrough():
-    func = gdc.Function("myfunc")
-    result = _resolve_alias(func, lambda p: None)
+    func = gf.Function("myfunc")
+    result = resolve_alias(func, lambda p: None)
     assert result is func
 
 
 def test_resolve_alias_resolves_target():
-    mod = gdc.Module("pkg")
-    func = gdc.Function("f")
+    mod = gf.Module("pkg")
+    func = gf.Function("f")
     mod.set_member("f", func)
-    alias = gdc.Alias("f_alias", target=func, parent=mod)
-    result = _resolve_alias(alias, lambda p: None)
+    alias = gf.Alias("f_alias", target=func, parent=mod)
+    result = resolve_alias(alias, lambda p: None)
     assert result is func
 
 
 def test_resolve_alias_error_fallback():
-    sentinel = gdc.Function("resolved_func")
+    sentinel = gf.Function("resolved_func")
 
     def get_object(path):
         return sentinel
 
-    mock_alias = MagicMock(spec=gdc.Alias)
+    mock_alias = MagicMock(spec=gf.Alias)
     mock_alias.is_alias = True
 
     inner_alias = MagicMock()
@@ -6337,13 +6894,13 @@ def test_resolve_alias_error_fallback():
 
     type(mock_alias).target = PropertyMock(side_effect=AliasResolutionError(inner_alias))
 
-    result = _resolve_alias(mock_alias, get_object)
+    result = resolve_alias(mock_alias, get_object)
     assert result is sentinel
 
 
 def test_is_external_alias_non_alias_returns_false():
-    func = gdc.Function("myfunc")
-    mod = gdc.Module("pkg")
+    func = gf.Function("myfunc")
+    mod = gf.Module("pkg")
     assert _is_external_alias(func, mod) is False
 
 
@@ -6355,9 +6912,9 @@ def test_is_external_alias_internal():
     mock_alias.is_alias = True
     mock_alias.target_path = "mypkg.internal_func"
     mock_alias.modules_collection = {"mypkg.internal_func": target}
-    mock_alias.__class__ = gdc.Alias
+    mock_alias.__class__ = gf.Alias
 
-    mod = gdc.Module("mypkg")
+    mod = gf.Module("mypkg")
     assert _is_external_alias(mock_alias, mod) is False
 
 
@@ -6365,9 +6922,9 @@ def test_is_external_alias_external_target():
     mock_alias = MagicMock(spec=[])
     mock_alias.is_alias = True
     mock_alias.target_path = "other_pkg.func"
-    mock_alias.__class__ = gdc.Alias
+    mock_alias.__class__ = gf.Alias
 
-    mod = gdc.Module("mypkg")
+    mod = gf.Module("mypkg")
     assert _is_external_alias(mock_alias, mod) is True
 
 
@@ -6375,12 +6932,12 @@ def test_is_external_alias_key_error_returns_true():
     mock_alias = MagicMock(spec=[])
     mock_alias.is_alias = True
     mock_alias.target_path = "mypkg.submod.missing"
-    mock_alias.__class__ = gdc.Alias
+    mock_alias.__class__ = gf.Alias
     mock_mc = MagicMock()
     mock_mc.__getitem__ = MagicMock(side_effect=KeyError("missing"))
     mock_alias.modules_collection = mock_mc
 
-    mod = gdc.Module("mypkg")
+    mod = gf.Module("mypkg")
     assert _is_external_alias(mock_alias, mod) is True
 
 
@@ -6388,35 +6945,35 @@ def test_is_external_alias_cyclic_raises():
     mock_alias = MagicMock(spec=[])
     mock_alias.is_alias = True
     mock_alias.target_path = "mypkg.something"
-    mock_alias.__class__ = gdc.Alias
+    mock_alias.__class__ = gf.Alias
     mock_alias.modules_collection = {"mypkg.something": mock_alias}
 
-    mod = gdc.Module("mypkg")
+    mod = gf.Module("mypkg")
     with pytest.raises(Exception, match="Cyclic Alias"):
         _is_external_alias(mock_alias, mod)
 
 
-def test_auto_package_module_with_all():
-    mod = gdc.Module("mypkg")
-    func = gdc.Function("public_func")
+def test_sections_from_package_module_with_all():
+    mod = gf.Module("mypkg")
+    func = gf.Function("public_func")
     mod.set_member("public_func", func)
-    all_attr = gdc.Attribute("__all__")
+    all_attr = gf.Attribute("__all__")
     mod.set_member("__all__", all_attr)
     mod.exports = {"public_func"}
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     assert len(sections) == 1
     assert sections[0].title == "mypkg"
     names = [c.name for c in sections[0].contents]
     assert "public_func" in names
 
 
-def test_auto_package_without_all_warns(capsys):
-    mod = gdc.Module("mypkg")
-    func = gdc.Function("public_func")
+def test_sections_from_package_without_all_warns(capsys):
+    mod = gf.Module("mypkg")
+    func = gf.Function("public_func")
     mod.set_member("public_func", func)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     captured = capsys.readouterr()
     assert "WARNING" in captured.out
     assert "does not define an __all__" in captured.out
@@ -6425,111 +6982,112 @@ def test_auto_package_without_all_warns(capsys):
     assert "public_func" in names
 
 
-def test_auto_package_filters_dunder_members():
-    mod = gdc.Module("mypkg")
-    func = gdc.Function("__init__")
+def test_sections_from_package_filters_dunder_members():
+    mod = gf.Module("mypkg")
+    func = gf.Function("__init__")
     mod.set_member("__init__", func)
-    pub = gdc.Function("pub")
+    pub = gf.Function("pub")
     mod.set_member("pub", pub)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     names = [c.name for c in sections[0].contents]
     assert "__init__" not in names
     assert "pub" in names
 
 
-def test_auto_package_filters_submodules():
-    mod = gdc.Module("mypkg")
-    submod = gdc.Module("sub")
+def test_sections_from_package_filters_submodules():
+    mod = gf.Module("mypkg")
+    submod = gf.Module("sub")
     mod.set_member("sub", submod)
-    func = gdc.Function("pub")
+    func = gf.Function("pub")
     mod.set_member("pub", func)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     names = [c.name for c in sections[0].contents]
     assert "sub" not in names
     assert "pub" in names
 
 
-def test_auto_package_with_docstring():
-    mod = gdc.Module("mypkg")
-    mod.docstring = gdc.Docstring("Summary text here.", parent=mod)
-    func = gdc.Function("pub")
+def test_sections_from_package_with_docstring():
+    mod = gf.Module("mypkg")
+    mod.docstring = gf.Docstring("Summary text here.", parent=mod)
+    func = gf.Function("pub")
     mod.set_member("pub", func)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     assert sections[0].desc == "Summary text here."
 
 
-def test_auto_package_without_docstring():
-    mod = gdc.Module("mypkg")
-    func = gdc.Function("pub")
+def test_sections_from_package_without_docstring():
+    mod = gf.Module("mypkg")
+    func = gf.Function("pub")
     mod.set_member("pub", func)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     assert sections[0].desc == ""
 
 
-def test_auto_package_docstring_non_text_first():
-    mod = gdc.Module("mypkg")
-    mod.docstring = gdc.Docstring("Parameters\n----------\nx : int\n    A param.", parent=mod)
+def test_sections_from_package_docstring_non_text_first():
+    mod = gf.Module("mypkg")
+    mod.docstring = gf.Docstring("Parameters\n----------\nx : int\n    A param.", parent=mod)
     parsed = mod.docstring.parsed
-    if parsed and isinstance(parsed[0], gds.DocstringSectionText):
+    if parsed and isinstance(parsed[0], gf.DocstringSectionText):
         mock_docstring = MagicMock()
-        mock_docstring.parsed = [gds.DocstringSectionParameters(value=[])]
+        mock_docstring.parsed = [gf.DocstringSectionParameters(value=[])]
         mod.docstring = mock_docstring
 
-    func = gdc.Function("pub")
+    func = gf.Function("pub")
     mod.set_member("pub", func)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     assert sections[0].desc == ""
 
 
-def test_auto_package_filters_external_aliases():
-    mod = gdc.Module("mypkg")
+def test_sections_from_package_filters_external_aliases():
+    mod = gf.Module("mypkg")
 
     mock_alias = MagicMock(spec=[])
     mock_alias.is_alias = True
     mock_alias.target_path = "other_pkg.ext_f"
-    mock_alias.__class__ = gdc.Alias
+    mock_alias.__class__ = gf.Alias
     mock_alias.is_module = False
     mock_alias.is_exported = True
     mod.set_member("ext_f", mock_alias)
 
-    pub = gdc.Function("pub")
+    pub = gf.Function("pub")
     mod.set_member("pub", pub)
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     names = [c.name for c in sections[0].contents]
     assert "ext_f" not in names
     assert "pub" in names
 
 
-def test_auto_package_unexported_filtered():
-    mod = gdc.Module("mypkg")
-    f1 = gdc.Function("exported_func")
+def test_sections_from_package_unexported_filtered():
+    mod = gf.Module("mypkg")
+    f1 = gf.Function("exported_func")
     mod.set_member("exported_func", f1)
-    f2 = gdc.Function("not_exported")
+    f2 = gf.Function("not_exported")
     mod.set_member("not_exported", f2)
-    all_attr = gdc.Attribute("__all__")
+    all_attr = gf.Attribute("__all__")
     mod.set_member("__all__", all_attr)
     mod.exports = {"exported_func"}
 
-    sections = _auto_package(mod)
+    sections = _sections_from_package(mod)
     names = [c.name for c in sections[0].contents]
     assert "exported_func" in names
     assert "not_exported" not in names
 
 
 def test_collect_single_doc():
-    mod = gdc.Module("pkg")
-    func_obj = gdc.Function("myfunc")
+    mod = gf.Module("pkg")
+    func_obj = gf.Function("myfunc")
     mod.set_member("myfunc", func_obj)
     doc = DocFunction(name="myfunc", obj=func_obj, anchor="pkg.myfunc")
     page = Page(path="reference", contents=[doc])
 
-    pages, items = collect(page, base_dir="api")
+    manifest = build_manifest([page], dir="api")
+    pages, items = manifest.pages, manifest.items
     assert len(pages) == 1
     assert pages[0].path == "reference"
     assert len(items) >= 1
@@ -6545,7 +7103,8 @@ def test_collect_with_canonical_path_diff():
     doc = DocFunction(name="func", obj=func_obj, anchor="pkg.func")
     page = Page(path="reference", contents=[doc])
 
-    pages, items = collect(page, base_dir="api")
+    manifest = build_manifest([page], dir="api")
+    pages, items = manifest.pages, manifest.items
     assert len(items) == 2
     assert items[0].name == "pkg.submod.func"
     assert items[1].name == "pkg.func"
@@ -6553,623 +7112,128 @@ def test_collect_with_canonical_path_diff():
 
 
 def test_collect_nested_section():
-    mod = gdc.Module("pkg")
-    func_obj = gdc.Function("myfunc")
+    mod = gf.Module("pkg")
+    func_obj = gf.Function("myfunc")
     mod.set_member("myfunc", func_obj)
     doc = DocFunction(name="myfunc", obj=func_obj, anchor="pkg.myfunc")
     page = Page(path="ref", contents=[doc])
     section = Section(title="API", contents=[page])
 
-    pages, items = collect(section, base_dir="api")
+    manifest = build_manifest([section], dir="api")
+    pages, items = manifest.pages, manifest.items
     assert len(pages) == 1
     assert len(items) >= 1
 
 
-def test_find_page_node_no_page():
-    trans = CollectTransformer(base_dir="api")
-    with pytest.raises(ValueError, match="No page detected"):
+def test_enclosing_page_no_page():
+    builder = _ManifestBuilder(base_dir="api")
+    with pytest.raises(ValueError, match="No `Page` ancestor"):
         root_node = Node(level=0, value=None, parent=None)
         token = ctx_node.set(root_node)
         try:
-            trans.find_page_node()
+            builder.enclosing_page()
         finally:
             ctx_node.reset(token)
 
 
-def test_bp_append_member_path_no_colon():
-    result = BlueprintTransformer._append_member_path("pkg.mod", "MyClass")
-    assert result == "pkg.mod:MyClass"
-
-
-def test_bp_append_member_path_with_colon():
-    result = BlueprintTransformer._append_member_path("pkg.mod:MyClass", "method")
-    assert result == "pkg.mod:MyClass.method"
-
-
-def test_bp_clean_member_path_with_colon():
-    result = BlueprintTransformer._clean_member_path("pkg.mod", "pkg.mod:MyClass.method")
+def test_resolver_clean_member_path_with_colon():
+    result = _Resolver._clean_member_path("pkg.mod:MyClass.method")
     assert result == "pkg.mod.MyClass.method"
 
 
-def test_bp_clean_member_path_no_colon():
-    result = BlueprintTransformer._clean_member_path("pkg.mod", "simple")
+def test_resolver_clean_member_path_no_colon():
+    result = _Resolver._clean_member_path("simple")
     assert result == "simple"
 
 
-def test_bp_get_object_fixed_success():
-    obj = gdc.Function("myfunc")
+def test_resolver_get_object_or_raise_missing(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "gdmiss").mkdir()
+    (tmp_path / "gdmiss" / "__init__.py").write_text("__all__ = []\n")
+    from great_docs._apiref.api_reference import Settings
+    from great_docs._apiref.resolve import ObjectNotFoundError, _Resolver
 
-    def get_object(path, **kwargs):
-        return obj
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "gdmiss"
+    with pytest.raises(ObjectNotFoundError, match="Cannot find an object named"):
+        resolver.get_object_or_raise("gdmiss:does_not_exist")
 
-    trans = BlueprintTransformer(get_object=get_object)
-    result = trans.get_object_fixed("pkg.myfunc")
-    assert result is obj
 
+def test_spec_object_records_specified_fields():
+    spec_obj = SpecObject(name="f", include_private=True)
+    assert spec_obj._fields_specified == ("name", "include_private")
 
-def test_bp_get_object_fixed_key_error():
-    def get_object(path, **kwargs):
-        raise KeyError("pkg.missing")
 
-    trans = BlueprintTransformer(get_object=get_object)
-    with pytest.raises(WorkaroundKeyError, match="Cannot find an object named"):
-        trans.get_object_fixed("pkg.missing")
+def test_spec_object_rejects_unknown_fields():
+    with pytest.raises(TypeError, match="bogus"):
+        SpecObject(name="f", bogus=True)
 
 
-def test_bp_visit_sets_package():
-    trans = _bp_make_trans()
-    assert trans.crnt_package is None
+def test_spec_options_replace_preserves_specified_fields():
+    opts = SpecOptions(include_private=True)
+    new = opts.replace(members=["a"])
 
-    func = gdc.Function("myfunc")
-    trans2 = _bp_make_trans({"myfunc": func})
-    result = trans2.visit(Auto(name="myfunc"))
-    assert isinstance(result, DocFunction)
+    assert new.include_private is True
+    assert new.members == ["a"]
+    assert new._fields_specified == ("include_private", "members")
 
 
-def test_bp_visit_restores_package():
-    func = gdc.Function("f")
-    trans = _bp_make_trans({"pkg:f": func})
-    trans.crnt_package = "pkg"
+def test_node_transformer_preserves_specified_fields():
+    from great_docs._apiref._visitor import NodeTransformer
 
-    trans.visit(Auto(name="f"))
-    assert trans.crnt_package == "pkg"
+    class Renamer(NodeTransformer):
+        def exit(self, el):
+            if el == "f":
+                return "g"
+            return el
 
+    section = spec.SpecSection(title="T", contents=["f"])
+    result = Renamer().visit(section)
 
-def test_bp_visit_sets_options():
-    func = gdc.Function("f")
-    trans = _bp_make_trans({"f": func})
+    obj = result.contents[0]
+    assert obj.name == "g"
+    assert "name" in obj._fields_specified
+    assert "include_private" not in obj._fields_specified
 
-    opts = AutoOptions(include_private=True)
-    Section(title="Test", options=opts, contents=[Auto(name="f")])
-    assert trans.options is None
 
-
-def test_bp_enter_auto_basic_function():
-    func = gdc.Function("myfunc")
-    trans = _bp_make_trans({"myfunc": func})
-    result = trans.visit(Auto(name="myfunc"))
-    assert isinstance(result, DocFunction)
-    assert result.obj is func
-
-
-def test_bp_enter_auto_basic_class():
-    cls = gdc.Class("MyClass")
-    trans = _bp_make_trans({"MyClass": cls})
-    result = trans.visit(Auto(name="MyClass"))
-    assert isinstance(result, DocClass)
-    assert result.obj is cls
-
-
-def test_bp_enter_auto_basic_attribute():
-    attr = gdc.Attribute("myattr")
-    trans = _bp_make_trans({"myattr": attr})
-    result = trans.visit(Auto(name="myattr"))
-    assert isinstance(result, DocAttribute)
-    assert result.obj is attr
-
-
-def test_bp_enter_auto_with_package():
-    func = gdc.Function("f")
-    trans = _bp_make_trans({"pkg:f": func})
-    trans.crnt_package = "pkg"
-    result = trans.visit(Auto(name="f"))
-    assert isinstance(result, DocFunction)
-    assert result.obj is func
-
-
-def test_bp_enter_auto_colon_in_pkg():
-    func = gdc.Function("method")
-    trans = _bp_make_trans({"pkg.mod:Class.method": func})
-    trans.crnt_package = "pkg.mod:Class"
-    result = trans.visit(Auto(name="method"))
-    assert isinstance(result, DocFunction)
-
-
-def test_bp_enter_auto_colon_in_name():
-    func = gdc.Function("method")
-    trans = _bp_make_trans({"pkg.mod:method": func})
-    trans.crnt_package = "pkg"
-    result = trans.visit(Auto(name="mod:method"))
-    assert isinstance(result, DocFunction)
-
-
-def test_bp_enter_auto_children_separate():
-    cls = gdc.Class("MyClass")
-    method = gdc.Function("my_method")
-    method.docstring = gdc.Docstring("A method.", parent=method)
-    cls.set_member("my_method", method)
-
-    trans = _bp_make_trans({"MyClass": cls, "MyClass:my_method": method})
-    result = trans.visit(Auto(name="MyClass", children=ChoicesChildren.separate))
-    assert isinstance(result, DocClass)
-    assert len(result.members) == 1
-    assert isinstance(result.members[0], MemberPage)
-
-
-def test_bp_enter_auto_children_embedded():
-    cls = gdc.Class("MyClass")
-    method = gdc.Function("my_method")
-    method.docstring = gdc.Docstring("A method.", parent=method)
-    cls.set_member("my_method", method)
-
-    trans = _bp_make_trans({"MyClass": cls, "MyClass:my_method": method})
-    result = trans.visit(Auto(name="MyClass", children=ChoicesChildren.embedded))
-    assert isinstance(result, DocClass)
-    assert len(result.members) == 1
-    assert isinstance(result.members[0], DocFunction)
-
-
-def test_bp_enter_auto_children_flat():
-    cls = gdc.Class("MyClass")
-    method = gdc.Function("my_method")
-    method.docstring = gdc.Docstring("A method.", parent=method)
-    cls.set_member("my_method", method)
-
-    trans = _bp_make_trans({"MyClass": cls, "MyClass:my_method": method})
-    result = trans.visit(Auto(name="MyClass", children=ChoicesChildren.flat))
-    assert isinstance(result, DocClass)
-    assert result.flat is True
-    assert len(result.members) == 1
-
-
-def test_bp_enter_auto_children_linked():
-    cls = gdc.Class("MyClass")
-    method = gdc.Function("my_method")
-    method.docstring = gdc.Docstring("A method.", parent=method)
-    cls.set_member("my_method", method)
-
-    trans = _bp_make_trans({"MyClass": cls, "MyClass:my_method": method})
-    result = trans.visit(Auto(name="MyClass", children=ChoicesChildren.linked))
-    assert isinstance(result, DocClass)
-    assert len(result.members) == 1
-    assert isinstance(result.members[0], Link)
-
-
-def test_bp_enter_auto_unsupported_children():
-    cls = gdc.Class("MyClass")
-    method = gdc.Function("my_method")
-    method.docstring = gdc.Docstring("A method.", parent=method)
-    cls.set_member("my_method", method)
-
-    trans = _bp_make_trans({"MyClass": cls, "MyClass:my_method": method})
-    auto = Auto(name="MyClass")
-    auto.children = "bad_value"
-    with pytest.raises(ValueError, match="Unsupported value of children"):
-        trans.visit(auto)
-
-
-def test_bp_enter_auto_dynamic_from_auto():
-    func = gdc.Function("f")
-    captured = {}
-
-    def get_object(path, **kwargs):
-        captured.update(kwargs)
-        return func
-
-    trans = BlueprintTransformer(get_object=get_object)
-    trans.visit(Auto(name="f", dynamic=True))
-    assert captured.get("dynamic") is True
-
-
-def test_bp_enter_auto_dynamic_from_transformer():
-    func = gdc.Function("f")
-    captured = {}
-
-    def get_object(path, **kwargs):
-        captured.update(kwargs)
-        return func
-
-    trans = BlueprintTransformer(get_object=get_object)
-    trans.dynamic = True
-    trans.visit(Auto(name="f"))
-    assert captured.get("dynamic") is True
-
-
-def test_bp_enter_auto_options_merge():
-    func = gdc.Function("f")
-    trans = _bp_make_trans({"f": func})
-    trans.options = AutoOptions(signature_name="full")
-
-    result = trans.visit(Auto(name="f"))
-    assert isinstance(result, DocFunction)
-    assert result.signature_name == "full"
-
-
-def test_bp_enter_auto_member_options():
-    cls = gdc.Class("MyClass")
-    method = gdc.Function("m")
-    method.docstring = gdc.Docstring("A method.", parent=method)
-    cls.set_member("m", method)
-
-    member_opts = AutoOptions(signature_name="short")
-    trans = _bp_make_trans({"MyClass": cls, "MyClass:m": method})
-    result = trans.visit(
-        Auto(name="MyClass", member_options=member_opts, children=ChoicesChildren.embedded)
-    )
-    assert isinstance(result, DocClass)
-    assert len(result.members) == 1
-
-
-def test_bp_enter_auto_module_members_skipped():
-    mod = gdc.Module("pkg")
-    submod = gdc.Module("sub")
-    submod.docstring = gdc.Docstring("Submodule.", parent=submod)
-    mod.set_member("sub", submod)
-    func = gdc.Function("f")
-    func.docstring = gdc.Docstring("A func.", parent=func)
-    mod.set_member("f", func)
-
-    trans = _bp_make_trans({"pkg": mod, "pkg:f": func, "pkg:sub": submod})
-    result = trans.visit(Auto(name="pkg"))
-    assert isinstance(result, DocModule)
-    member_names = [m.name if hasattr(m, "name") else str(m) for m in result.members]
-    assert not any("sub" in n for n in member_names)
-
-
-def test_fetch_members_explicit():
-    trans = _bp_make_trans()
-    auto = Auto(name="X", members=["a", "b"])
-    obj = gdc.Class("X")
-    assert trans._fetch_members(auto, obj) == ["a", "b"]
-
-
-def test_fetch_members_filter_private():
-    cls = gdc.Class("X")
-    pub = gdc.Function("pub")
-    pub.docstring = gdc.Docstring("doc", parent=pub)
-    cls.set_member("pub", pub)
-    priv = gdc.Function("_priv")
-    priv.docstring = gdc.Docstring("doc", parent=priv)
-    cls.set_member("_priv", priv)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_private=False), cls)
-    assert "pub" in result
-    assert "_priv" not in result
-
-
-def test_fetch_members_include_private():
-    cls = gdc.Class("X")
-    priv = gdc.Function("_priv")
-    priv.docstring = gdc.Docstring("doc", parent=priv)
-    cls.set_member("_priv", priv)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_private=True), cls)
-    assert "_priv" in result
-
-
-def test_fetch_members_dunder_with_docstring_kept():
-    cls = gdc.Class("X")
-    enter = gdc.Function("__enter__")
-    enter.docstring = gdc.Docstring("Enter.", parent=enter)
-    cls.set_member("__enter__", enter)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_private=False), cls)
-    assert "__enter__" in result
-
-
-def test_fetch_members_dunder_without_docstring_filtered():
-    cls = gdc.Class("X")
-    init = gdc.Function("__init__")
-    cls.set_member("__init__", init)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_private=False), cls)
-    assert "__init__" not in result
-
-
-def test_fetch_members_filter_empty():
-    cls = gdc.Class("X")
-    nodoc = gdc.Function("nodoc")
-    cls.set_member("nodoc", nodoc)
-    withdoc = gdc.Function("withdoc")
-    withdoc.docstring = gdc.Docstring("Has doc.", parent=withdoc)
-    cls.set_member("withdoc", withdoc)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_empty=False), cls)
-    assert "withdoc" in result
-    assert "nodoc" not in result
-
-
-def test_fetch_members_include_empty():
-    cls = gdc.Class("X")
-    nodoc = gdc.Function("nodoc")
-    cls.set_member("nodoc", nodoc)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_empty=True), cls)
-    assert "nodoc" in result
-
-
-def test_fetch_members_filter_attributes():
-    cls = gdc.Class("X")
-    attr = gdc.Attribute("myattr")
-    attr.docstring = gdc.Docstring("doc", parent=attr)
-    cls.set_member("myattr", attr)
-    func = gdc.Function("myfunc")
-    func.docstring = gdc.Docstring("doc", parent=func)
-    cls.set_member("myfunc", func)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", include_attributes=False), cls)
-    assert "myfunc" in result
-    assert "myattr" not in result
-
-
-def test_fetch_members_filter_classes():
-    mod = gdc.Module("pkg")
-    inner_cls = gdc.Class("Inner")
-    inner_cls.docstring = gdc.Docstring("doc", parent=inner_cls)
-    mod.set_member("Inner", inner_cls)
-    func = gdc.Function("f")
-    func.docstring = gdc.Docstring("doc", parent=func)
-    mod.set_member("f", func)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="pkg", include_classes=False), mod)
-    assert "f" in result
-    assert "Inner" not in result
-
-
-def test_fetch_members_filter_functions():
-    mod = gdc.Module("pkg")
-    func = gdc.Function("f")
-    func.docstring = gdc.Docstring("doc", parent=func)
-    mod.set_member("f", func)
-    cls = gdc.Class("C")
-    cls.docstring = gdc.Docstring("doc", parent=cls)
-    mod.set_member("C", cls)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="pkg", include_functions=False), mod)
-    assert "C" in result
-    assert "f" not in result
-
-
-def test_fetch_members_exclude():
-    cls = gdc.Class("X")
-    f1 = gdc.Function("f1")
-    f1.docstring = gdc.Docstring("doc", parent=f1)
-    cls.set_member("f1", f1)
-    f2 = gdc.Function("f2")
-    f2.docstring = gdc.Docstring("doc", parent=f2)
-    cls.set_member("f2", f2)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", exclude=["f1"]), cls)
-    assert "f2" in result
-    assert "f1" not in result
-
-
-def test_fetch_members_include_raises():
-    trans = _bp_make_trans()
-    with pytest.raises(NotImplementedError, match="include argument"):
-        trans._fetch_members(Auto(name="X", include="pattern"), gdc.Class("X"))
-
-
-def test_fetch_members_order_alphabetical():
-    cls = gdc.Class("X")
-    for name in ["zebra", "apple", "mango"]:
-        f = gdc.Function(name)
-        f.docstring = gdc.Docstring("doc", parent=f)
-        cls.set_member(name, f)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", member_order="alphabetical"), cls)
-    assert result == sorted(result)
-
-
-def test_fetch_members_order_source():
-    cls = gdc.Class("X")
-    for name in ["zebra", "apple", "mango"]:
-        f = gdc.Function(name)
-        f.docstring = gdc.Docstring("doc", parent=f)
-        cls.set_member(name, f)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="X", member_order="source"), cls)
-    assert result == ["zebra", "apple", "mango"]
-
-
-def test_fetch_members_order_invalid():
-    trans = _bp_make_trans()
-    with pytest.raises(ValueError, match="Unsupported value of member_order"):
-        trans._fetch_members(Auto(name="X", member_order="random"), gdc.Class("X"))
-
-
-def test_fetch_members_module_exports_filter():
-    mod = gdc.Module("pkg")
-    f1 = gdc.Function("exported_f")
-    f1.docstring = gdc.Docstring("doc", parent=f1)
-    f1.labels.add("exported")
-    mod.set_member("exported_f", f1)
-    f2 = gdc.Function("internal_f")
-    f2.docstring = gdc.Docstring("doc", parent=f2)
-    mod.set_member("internal_f", f2)
-    mod.exports = {"exported_f"}
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="pkg"), mod)
-    assert "exported_f" in result
-    assert "internal_f" not in result
-
-
-def test_fetch_members_filter_imports():
-    mod = gdc.Module("pkg")
-    func = gdc.Function("local_f")
-    func.docstring = gdc.Docstring("doc", parent=func)
-    mod.set_member("local_f", func)
-
-    other_mod = gdc.Module("other")
-    ext_f = gdc.Function("ext_f")
-    ext_f.docstring = gdc.Docstring("doc", parent=ext_f)
-    other_mod.set_member("ext_f", ext_f)
-    alias = gdc.Alias("ext_f", target=ext_f, parent=mod)
-    mod.set_member("ext_f", alias)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="pkg", include_imports=False), mod)
-    assert "local_f" in result
-    assert "ext_f" not in result
-
-
-def test_fetch_members_include_imports():
-    mod = gdc.Module("pkg")
-    func = gdc.Function("local_f")
-    func.docstring = gdc.Docstring("doc", parent=func)
-    mod.set_member("local_f", func)
-
-    other_mod = gdc.Module("other")
-    ext_f = gdc.Function("ext_f")
-    ext_f.docstring = gdc.Docstring("doc", parent=ext_f)
-    other_mod.set_member("ext_f", ext_f)
-    alias = gdc.Alias("ext_f", target=ext_f, parent=mod)
-    mod.set_member("ext_f", alias)
-
-    trans = _bp_make_trans()
-    result = trans._fetch_members(Auto(name="pkg", include_imports=True), mod)
-    assert "local_f" in result
-    assert "ext_f" in result
-
-
-def test_bp_layout_with_sections():
-    func = gdc.Function("f")
-    trans = _bp_make_trans({"pkg:f": func})
-
-    layout_el = Layout(package="pkg", sections=[Section(title="API", contents=[Auto(name="f")])])
-    result = trans.visit(layout_el)
-    assert isinstance(result, Layout)
-    assert len(result.sections) == 1
-
-
-def test_bp_layout_auto_generate(capsys):
-    mod = gdc.Module("pkg")
-    func = gdc.Function("f")
-    func.docstring = gdc.Docstring("A func.", parent=func)
-    mod.set_member("f", func)
-    mod.exports = {"f"}
-    func.labels.add("exported")
-
-    trans = _bp_make_trans({"pkg": mod, "pkg:f": func})
-    layout_el = Layout(package="pkg", sections=[])
-    result = trans.visit(layout_el)
-
-    captured = capsys.readouterr()
-    assert "Autogenerating contents" in captured.out
-    assert isinstance(result, Layout)
-
-
-def test_bp_exit_section_wraps_non_page():
-    func = gdc.Function("f")
-    trans = _bp_make_trans({"pkg:f": func})
-
-    layout_el = Layout(package="pkg", sections=[Section(title="API", contents=[Auto(name="f")])])
-    result = trans.visit(layout_el)
-    section = result.sections[0]
-    for content in section.contents:
-        assert isinstance(content, Page)
-
-
-def test_page_stripper_strips_prefix():
+def test_package_prefix_remover_strips_prefix():
     page = Page(path="mypkg.submod.func")
-    result = _PagePackageStripper("mypkg").visit(page)
+    result = _PackagePrefixRemover("mypkg").visit(page)
     assert result.path == "submod.func"
 
 
-def test_page_stripper_no_strip_different():
+def test_package_prefix_remover_no_strip_different():
     page = Page(path="other.submod.func")
-    result = _PagePackageStripper("mypkg").visit(page)
+    result = _PackagePrefixRemover("mypkg").visit(page)
     assert result.path == "other.submod.func"
 
 
-def test_page_stripper_no_strip_single_part():
+def test_package_prefix_remover_no_strip_single_part():
     page = Page(path="mypkg")
-    result = _PagePackageStripper("mypkg").visit(page)
+    result = _PackagePrefixRemover("mypkg").visit(page)
     assert result.path == "mypkg"
 
 
-def test_page_stripper_nested_pages():
-    doc = DocFunction(name="f", obj=gdc.Function("f"))
+def test_package_prefix_remover_nested_pages():
+    doc = DocFunction(name="f", obj=gf.Function("f"))
     page = Page(path="mypkg.mod.func", contents=[doc])
     section = Section(title="T", contents=[page])
-    result = _PagePackageStripper("mypkg").visit(section)
+    result = _PackagePrefixRemover("mypkg").visit(section)
     assert result.contents[0].path == "mod.func"
 
 
 def test_strip_package_name_basic():
-    doc = DocFunction(name="f", obj=gdc.Function("f"))
+    doc = DocFunction(name="f", obj=gf.Function("f"))
     page = Page(path="pkg.mod.func", contents=[doc])
-    result = strip_package_name(page, "pkg")
+    result = remove_package_prefix(page, "pkg")
     assert result.path == "mod.func"
 
 
 def test_strip_package_name_no_match():
-    doc = DocFunction(name="f", obj=gdc.Function("f"))
+    doc = DocFunction(name="f", obj=gf.Function("f"))
     page = Page(path="other.func", contents=[doc])
-    result = strip_package_name(page, "pkg")
+    result = remove_package_prefix(page, "pkg")
     assert result.path == "other.func"
-
-
-def test_blueprint_entry_basic():
-    func = gdc.Function("myfunc")
-
-    def get_object(path, **kwargs):
-        return func
-
-    trans = BlueprintTransformer(get_object=get_object)
-    result = trans.visit(Auto(name="myfunc"))
-    assert isinstance(result, DocFunction)
-
-
-def test_blueprint_entry_with_package():
-    func = gdc.Function("f")
-
-    def get_object(path, **kwargs):
-        if path == "mypkg:f":
-            return func
-        raise KeyError(path)
-
-    trans = BlueprintTransformer(get_object=get_object)
-    trans.crnt_package = "mypkg"
-    result = trans.visit(Auto(name="f"))
-    assert isinstance(result, DocFunction)
-
-
-def test_blueprint_entry_with_dynamic():
-    func = gdc.Function("f")
-    captured = {}
-
-    def get_object(path, **kwargs):
-        captured.update(kwargs)
-        return func
-
-    trans = BlueprintTransformer(get_object=get_object)
-    trans.dynamic = True
-    trans.visit(Auto(name="f"))
-    assert captured.get("dynamic") is True
 
 
 # ============================================================================
@@ -8244,6 +8308,149 @@ def test_detect_module_name_returns_none():
         assert docs._detect_module_name() is None
 
 
+@patch("great_docs.core._ensure_quarto_installed")
+@patch.object(GreatDocs, "_generate_skill_md")
+@patch.object(GreatDocs, "_generate_llms_full_txt")
+@patch.object(GreatDocs, "_generate_llms_txt")
+@patch.object(GreatDocs, "_prepare_build_directory")
+@patch.object(GreatDocs, "_generate_source_links_json")
+def test_build_source_links_use_module_name(
+    mock_src, mock_prep, mock_llms, mock_llms_full, mock_skill, mock_quarto
+):
+    """Regression: build() generates source links for the importable module name,
+    not the PyPI project name, when the two diverge."""
+
+    class _StopBuild(Exception):
+        pass
+
+    mock_src.side_effect = _StopBuild
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "my-dist"\n')
+        (root / "great-docs.yml").write_text("module: actual_module\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        with pytest.raises(_StopBuild):
+            docs.build(refresh=False)
+
+        mock_src.assert_called_once_with("actual_module")
+
+
+@patch("great_docs._api_diff.snapshot_from_griffe")
+def test_auto_save_snapshot_uses_module_name(mock_snapshot):
+    """Regression: _auto_save_snapshot loads griffe by the importable module name,
+    not the PyPI project name, when the two diverge."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "my-dist"\n')
+        (root / "great-docs.yml").write_text("module: actual_module\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._auto_save_snapshot()
+
+        assert mock_snapshot.call_args[0][0] == "actual_module"
+
+
+@patch.object(GreatDocs, "_discover_click_cli")
+def test_cli_help_for_llms_uses_module_name(mock_discover):
+    """Regression: llms-full CLI help discovers the Click CLI by importable module
+    name, not the PyPI project name, when the two diverge."""
+    mock_discover.return_value = {"help_text": "usage", "commands": []}
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "my-dist"\n')
+        (root / "great-docs.yml").write_text("module: actual_module\ncli:\n  enabled: true\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._get_cli_help_text_for_llms()
+
+        mock_discover.assert_called_once_with("actual_module", display_name="my-dist")
+
+
+@patch("great_docs._harper.run_harper")
+def test_proofread_docstrings_use_module_name(mock_run_harper):
+    """Regression: proofread(include_docstrings=True) scans the importable module
+    directory, not a directory named after the PyPI project."""
+    mock_run_harper.return_value = []
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "my-dist"\n')
+        (root / "great-docs.yml").write_text("module: actual_module\n")
+        pkg_dir = root / "actual_module"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text('"""Module docstring."""\n')
+
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs.proofread(include_docs=False, include_docstrings=True)
+
+        assert result["files_checked"] == 1
+        mock_run_harper.assert_called_once()
+        scanned = mock_run_harper.call_args[0][0]
+        assert any(p.name == "__init__.py" for p in scanned)
+
+
+@patch("great_docs._harper.run_harper")
+def test_proofread_docstrings_dotted_module_name(mock_run_harper):
+    """Regression: proofread(include_docstrings=True) scans the nested directory
+    of a dotted module name (namespace package)."""
+    mock_run_harper.return_value = []
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "my-dist"\n')
+        (root / "great-docs.yml").write_text("module: firebird.base\n")
+        pkg_dir = root / "firebird" / "base"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "__init__.py").write_text('"""Module docstring."""\n')
+
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs.proofread(include_docs=False, include_docstrings=True)
+
+        assert result["files_checked"] == 1
+        mock_run_harper.assert_called_once()
+        scanned = mock_run_harper.call_args[0][0]
+        assert any(p.name == "__init__.py" for p in scanned)
+
+
+def test_proofread_docstrings_no_package_no_crash():
+    """Regression: proofread(include_docstrings=True) skips the docstring scan
+    instead of crashing when no package is detectable."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs.proofread(include_docs=False, include_docstrings=True)
+
+        assert result["files_checked"] == 0
+
+
+def test_cli_help_for_llms_display_name_is_project_name():
+    """Regression: with no [project.scripts], the llms-full CLI heading uses the
+    project (distribution) name even though the CLI is imported from a module
+    with a different name."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "my-dist"\n')
+        (root / "great-docs.yml").write_text("module: actual_module\ncli:\n  enabled: true\n")
+        pkg_dir = root / "actual_module"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text('"""actual_module."""\n')
+        (pkg_dir / "cli.py").write_text(
+            'import click\n\n\n@click.group()\ndef main():\n    """Main CLI."""\n'
+        )
+
+        sys.path.insert(0, tmp_dir)
+        try:
+            docs = GreatDocs(project_path=tmp_dir)
+            text = docs._get_cli_help_text_for_llms()
+        finally:
+            sys.path.remove(tmp_dir)
+            sys.modules.pop("actual_module", None)
+            sys.modules.pop("actual_module.cli", None)
+
+        assert "## CLI: my-dist" in text
+
+
 def test_is_compiled_extension_cargo():
     """_is_compiled_extension returns True when Cargo.toml exists."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -8474,68 +8681,6 @@ def test_find_index_source_file_none_empty_dir():
         source, warnings = docs._find_index_source_file()
 
         assert source is None
-
-
-def test_format_preserved_extras_yaml_with_values_simple_funding():
-    """_format_preserved_extras_yaml generates active YAML when values set."""
-    dn, site, funding = GreatDocs._format_preserved_extras_yaml(
-        display_name="My Package",
-        site={"theme": "flatly", "toc": True},
-        funding={"name": "ACME Corp", "roles": ["funder"], "homepage": "https://acme.com"},
-    )
-
-    assert 'display_name: "My Package"' in dn
-    assert "site:" in site
-    assert "theme: flatly" in site
-    assert "toc: true" in site
-    assert 'name: "ACME Corp"' in funding
-    assert "- funder" in funding
-    assert "homepage: https://acme.com" in funding
-
-
-def test_format_preserved_extras_yaml_defaults_commented():
-    """_format_preserved_extras_yaml generates commented templates when no values."""
-    dn, site, funding = GreatDocs._format_preserved_extras_yaml()
-
-    assert dn == ""
-    assert "# site:" in site
-    assert "# funding:" in funding
-
-
-def test_format_preserved_extras_yaml_funding_ror_output():
-    """_format_preserved_extras_yaml includes ROR when provided."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "Posit", "ror": "https://ror.org/123"}
-    )
-
-    assert "ror: https://ror.org/123" in funding
-
-
-def test_format_cli_yaml_enabled_all_keys():
-    """_format_cli_yaml generates active YAML when CLI is enabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": True, "module": "pkg.cli", "name": "mycli"})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module: pkg.cli" in result
-    assert "name: mycli" in result
-
-
-def test_format_cli_yaml_disabled_commented():
-    """_format_cli_yaml generates commented template when disabled."""
-    result = GreatDocs._format_cli_yaml(None)
-
-    assert "# cli:" in result
-    assert "#   enabled: true" in result
-
-
-def test_format_cli_yaml_enabled_minimal_only_flag():
-    """_format_cli_yaml with only enabled flag set."""
-    result = GreatDocs._format_cli_yaml({"enabled": True})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module:" not in result
 
 
 def test_get_package_metadata_from_setup_cfg():
@@ -9355,6 +9500,10 @@ def test_process_custom_pages_passthrough_and_raw():
         assert "custom/app.js" in resources
         assert "custom/widget.html" in resources
         assert "!custom/widget.html" in render
+        # The render list must enumerate Quarto's default input globs rather
+        # than a recursive "**", which would overpower the "!" exclusions.
+        assert "**" not in render
+        assert "*.qmd" in render
 
 
 def test_process_custom_pages_missing_dir():
@@ -9859,6 +10008,36 @@ def test_add_section_sidebar_strips_numeric_prefix_from_subdirs():
         # Raw prefixed names should NOT appear
         assert "01 Getting Started" not in section_titles
         assert "02 Advanced" not in section_titles
+
+
+def test_add_section_sidebar_preserves_subdir_order():
+    """_add_section_sidebar orders subsections by source order, not stripped name."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        quarto_yml = docs.project_path / "_quarto.yml"
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        config = {"website": {"sidebar": [], "navbar": {"left": []}}}
+        with open(quarto_yml, "w") as f:
+            write_yaml(config, f)
+
+        # Numeric prefixes are stripped before this point, so the pages arrive
+        # in source order with clean names that do not sort alphabetically.
+        pages = [
+            {"filename": "foundations/page.qmd", "title": "Foundations Page"},
+            {"filename": "effect-estimation/page.qmd", "title": "Effect Page"},
+            {"filename": "applied-models/page.qmd", "title": "Applied Page"},
+        ]
+        docs._add_section_sidebar("Examples", "examples", pages, has_user_index=True)
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        sidebar = result["website"]["sidebar"]
+        sections = [c for c in sidebar[0]["contents"] if isinstance(c, dict) and "section" in c]
+        section_titles = [s["section"] for s in sections]
+
+        assert section_titles == ["Foundations", "Effect Estimation", "Applied Models"]
 
 
 def test_add_section_sidebar_dir_titles_override():
@@ -10695,109 +10874,6 @@ def test_update_sidebar_with_cli_adds_api_link():
         assert ref["contents"][0]["text"] == "API Index"
 
 
-def test_format_preserved_extras_yaml_display_name():
-    """_format_preserved_extras_yaml returns active display_name YAML when given."""
-    dn, _, _ = GreatDocs._format_preserved_extras_yaml(display_name="My Package")
-
-    assert 'display_name: "My Package"' in dn
-
-
-def test_format_preserved_extras_yaml_no_display_name():
-    """_format_preserved_extras_yaml returns empty string for no display_name."""
-    dn, _, _ = GreatDocs._format_preserved_extras_yaml(display_name=None)
-
-    assert dn == ""
-
-
-def test_format_preserved_extras_yaml_site_active():
-    """_format_preserved_extras_yaml returns active site YAML with key-value pairs."""
-    _, site, _ = GreatDocs._format_preserved_extras_yaml(
-        site={"theme": "flatly", "toc": True, "toc-depth": 3}
-    )
-
-    assert "site:" in site
-    assert "theme: flatly" in site
-    assert "toc: true" in site
-    assert "toc-depth: 3" in site
-
-
-def test_format_preserved_extras_yaml_site_commented():
-    """_format_preserved_extras_yaml returns commented template when no site."""
-    _, site, _ = GreatDocs._format_preserved_extras_yaml(site=None)
-
-    assert "# site:" in site
-    assert "#   theme:" in site
-
-
-def test_format_preserved_extras_yaml_funding_active():
-    """_format_preserved_extras_yaml returns active funding YAML."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "Acme Corp", "roles": ["funder", "sponsor"], "homepage": "https://acme.co"}
-    )
-
-    assert "funding:" in funding
-    assert 'name: "Acme Corp"' in funding
-    assert "- funder" in funding
-    assert "homepage: https://acme.co" in funding
-
-
-def test_format_preserved_extras_yaml_funding_with_ror():
-    """_format_preserved_extras_yaml includes ror when provided."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "Lab", "ror": "https://ror.org/abc123"}
-    )
-
-    assert "ror: https://ror.org/abc123" in funding
-
-
-def test_format_preserved_extras_yaml_funding_commented():
-    """_format_preserved_extras_yaml returns commented template for no funding."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(funding=None)
-
-    assert "# funding:" in funding
-
-
-def test_format_preserved_extras_yaml_funding_no_name():
-    """_format_preserved_extras_yaml returns template when funding has no name."""
-    _, _, funding = GreatDocs._format_preserved_extras_yaml(funding={"homepage": "https://x.co"})
-
-    assert "# funding:" in funding
-
-
-def test_format_cli_yaml_enabled_v2():
-    """_format_cli_yaml returns active config when enabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": True, "module": "pkg.cli", "name": "main"})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module: pkg.cli" in result
-    assert "name: main" in result
-
-
-def test_format_cli_yaml_enabled_minimal_v2():
-    """_format_cli_yaml with only enabled=True omits optional keys."""
-    result = GreatDocs._format_cli_yaml({"enabled": True})
-
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module:" not in result
-    assert "name:" not in result
-
-
-def test_format_cli_yaml_disabled_v2():
-    """_format_cli_yaml returns commented template when disabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": False})
-
-    assert "# cli:" in result
-
-
-def test_format_cli_yaml_none():
-    """_format_cli_yaml returns commented template for None."""
-    result = GreatDocs._format_cli_yaml(None)
-
-    assert "# cli:" in result
-
-
 def test_find_index_source_file_readme_v2():
     """_find_index_source_file finds README.md."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -11563,9 +11639,112 @@ def test_generate_cli_reference_pages_basic():
         }
         result = docs._generate_cli_reference_pages(cli_info)
 
-        assert "reference/cli/index.qmd" in result
+        # The index is now a labeled listing entry (not the root command page).
+        assert {"text": "CLI Index", "href": "reference/cli/index.qmd"} in result
         assert (docs.project_path / "reference" / "cli" / "index.qmd").exists()
+        # The root command page now lives on its own page (entry name -> safe name).
+        assert "reference/cli/tool.qmd" in result
+        assert (docs.project_path / "reference" / "cli" / "tool.qmd").exists()
         assert (docs.project_path / "reference" / "cli" / "build.qmd").exists()
+
+
+def test_generate_cli_index_page_auto_layout():
+    """_generate_cli_index_page auto-groups leaf commands then command groups."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+
+        cli_info = {
+            "name": "tool",
+            "entry_point_name": "tool",
+            "short_help": "A tool.",
+            "is_group": True,
+            "commands": [
+                {"name": "build", "short_help": "Build it.", "is_group": False, "commands": []},
+                {"name": "init", "short_help": "Init it.", "is_group": False, "commands": []},
+                {
+                    "name": "skill",
+                    "short_help": "Manage skills.",
+                    "is_group": True,
+                    "commands": [
+                        {"name": "install", "short_help": "Install.", "commands": []},
+                    ],
+                },
+            ],
+        }
+
+        page = docs._generate_cli_index_page(cli_info, "tool")
+
+        # Front matter mirrors the API reference index, plus the CLI scoping class.
+        assert "body-classes: doc-reference doc-cli-reference" in page
+        assert "sidebar: cli-reference" in page
+        # Root command link is present with the group pill.
+        assert "[tool](tool.qmd){.doc-function .doc-label .doc-label-cli-group}" in page
+        # Leaf commands are listed (code order) under the auto "Commands" section.
+        assert "## Commands {.doc-group}" in page
+        assert "[build](build.qmd){.doc-function .doc-label .doc-label-cli}" in page
+        assert page.index("[build]") < page.index("[init]")
+        # The group gets its own section, with its overview and subcommand links.
+        assert "## skill {.doc-group}" in page
+        assert "[skill](skill.qmd){.doc-function .doc-label .doc-label-cli-group}" in page
+        assert "[install](skill/install.qmd){.doc-function .doc-label .doc-label-cli}" in page
+
+
+def test_generate_cli_index_page_configured_sections():
+    """cli.sections drives index section titles, ordering, and intro."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._config._config["cli"] = {
+            "title": "Command Line",
+            "desc": "Drive everything from the terminal.",
+            "sections": [
+                {"title": "Building", "desc": "Make the site.", "contents": ["build"]},
+                {"title": "Setup", "contents": ["init"]},
+            ],
+        }
+
+        cli_info = {
+            "name": "tool",
+            "entry_point_name": "tool",
+            "short_help": "A tool.",
+            "is_group": True,
+            "commands": [
+                {"name": "init", "short_help": "Init it.", "is_group": False, "commands": []},
+                {"name": "build", "short_help": "Build it.", "is_group": False, "commands": []},
+            ],
+        }
+
+        page = docs._generate_cli_index_page(cli_info, "tool")
+
+        assert 'title: "Command Line"' in page
+        assert "Drive everything from the terminal." in page
+        assert "## Building {.doc-group}" in page
+        assert "Make the site." in page
+        assert "## Setup {.doc-group}" in page
+        # Configured order wins: Building (build) appears before Setup (init).
+        assert page.index("## Building") < page.index("## Setup")
+
+
+def test_order_cli_sidebar_items_honors_sections():
+    """_order_cli_sidebar_items reorders flat entries to match cli.sections."""
+    items = [
+        "reference/cli/init.qmd",
+        "reference/cli/build.qmd",
+        "reference/cli/scan.qmd",
+        {"section": "skill", "contents": ["reference/cli/skill.qmd"]},
+    ]
+    sections = [
+        {"title": "Building", "contents": ["build"]},
+        {"title": "Setup", "contents": ["init"]},
+    ]
+    ordered = GreatDocs._order_cli_sidebar_items(items, sections)
+
+    # build, then init (configured order); scan keeps code order after; group last.
+    assert ordered == [
+        "reference/cli/build.qmd",
+        "reference/cli/init.qmd",
+        "reference/cli/scan.qmd",
+        {"section": "skill", "contents": ["reference/cli/skill.qmd"]},
+    ]
 
 
 def test_generate_subcommand_pages_nested():
@@ -11740,7 +11919,7 @@ def test_organize_files_into_sidebar_flat():
 
         assert result["id"] == "user-guide"
         assert len(result["contents"]) == 2
-        assert "user-guide/intro.qmd" in result["contents"]
+        assert {"text": "Intro", "href": "user-guide/intro.qmd"} in result["contents"]
 
 
 def test_organize_files_into_sidebar_with_sections():
@@ -11980,105 +12159,6 @@ def test_process_user_guide_with_sections():
         ]
 
         assert len(section_items) >= 1
-
-
-def test_apply_nodoc_filter_removes_items():
-    """_apply_nodoc_filter removes items with %nodoc directive."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp = Path(tmp_dir)
-        (tmp / "pyproject.toml").write_text('[project]\nname = "great_docs"\n')
-
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [
-            {"title": "Functions", "contents": ["func_a", "func_b"]},
-        ]
-
-        # Patch _extract_all_directives to return nodoc for func_b
-
-        mock_directives = MagicMock()
-        mock_directives.nodoc = True
-
-        with patch.object(
-            docs, "_extract_all_directives", return_value={"func_b": mock_directives}
-        ):
-            result = docs._apply_nodoc_filter("great_docs", sections)
-
-        assert result is not None
-        assert len(result) == 1
-        assert result[0]["contents"] == ["func_a"]
-
-
-def test_apply_nodoc_filter_no_directives_empty():
-    """_apply_nodoc_filter returns sections unchanged when no directives."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [{"title": "Funcs", "contents": ["f1", "f2"]}]
-
-        with patch.object(docs, "_extract_all_directives", return_value={}):
-            result = docs._apply_nodoc_filter("pkg", sections)
-
-        assert result == sections
-
-
-def test_apply_nodoc_filter_removes_companion_section():
-    """_apply_nodoc_filter removes companion 'ClassName Methods' section."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [
-            {"title": "Classes", "contents": ["MyClass"]},
-            {"title": "MyClass Methods", "contents": ["MyClass.foo", "MyClass.bar"]},
-        ]
-
-        mock_dir = MagicMock()
-        mock_dir.nodoc = True
-        with patch.object(docs, "_extract_all_directives", return_value={"MyClass": mock_dir}):
-            result = docs._apply_nodoc_filter("pkg", sections)
-
-        # Both the class entry and the companion method section should be gone
-        assert result is None
-
-
-def test_apply_nodoc_filter_all_excluded_no_remaining():
-    """_apply_nodoc_filter returns None when all items excluded."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [{"title": "Funcs", "contents": ["only_func"]}]
-
-        mock_dir = MagicMock()
-        mock_dir.nodoc = True
-        with patch.object(docs, "_extract_all_directives", return_value={"only_func": mock_dir}):
-            result = docs._apply_nodoc_filter("pkg", sections)
-
-        assert result is None
-
-
-def test_apply_nodoc_filter_dict_items():
-    """_apply_nodoc_filter handles dict items (name/members format)."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [
-            {
-                "title": "Classes",
-                "contents": [
-                    {"name": "Good", "members": []},
-                    {"name": "Bad", "members": []},
-                ],
-            }
-        ]
-
-        mock_dir = MagicMock()
-        mock_dir.nodoc = True
-        with patch.object(docs, "_extract_all_directives", return_value={"Bad": mock_dir}):
-            result = docs._apply_nodoc_filter("pkg", sections)
-
-        assert len(result) == 1
-        assert len(result[0]["contents"]) == 1
-        assert result[0]["contents"][0]["name"] == "Good"
 
 
 def test_generate_user_guide_sidebar_explicit():
@@ -12866,6 +12946,48 @@ def test_build_metadata_margin_pypi_custom_url():
         assert "pypi.org" not in result
 
 
+def test_build_metadata_margin_pypi_disabled_with_citation():
+    """`pypi: false` must not break the citation section."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "testpkg"\n', encoding="utf-8")
+        config_file = Path(tmp_dir) / "great-docs.yml"
+        config_file.write_text("pypi: false\n", encoding="utf-8")
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+
+        # The citation page must live in project_path (the great-docs/ dir)
+        # for the citation section to render.
+        (gd_dir / "citation.qmd").write_text("# Citation\n", encoding="utf-8")
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._build_metadata_margin()
+
+        assert "pypi.org" not in result
+        assert "citation.qmd" in result
+        assert "testpkg" in result
+
+
+def test_build_metadata_margin_pypi_custom_url_with_citation():
+    """A custom PyPI URL string must not break citation."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "testpkg"\n', encoding="utf-8")
+        config_file = Path(tmp_dir) / "great-docs.yml"
+        config_file.write_text(
+            'pypi: "https://packages.example.com/simple/testpkg"\n',
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        (gd_dir / "citation.qmd").write_text("# Citation\n", encoding="utf-8")
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._build_metadata_margin()
+
+        assert "packages.example.com/simple/testpkg" in result
+        assert "citation.qmd" in result
+        assert "testpkg" in result
+
+
 def test_build_metadata_margin_with_license():
     """_build_metadata_margin omits license when no LICENSE file exists."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -12891,6 +13013,7 @@ def test_build_metadata_margin_with_license_qmd():
         pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
         gd_dir = Path(tmp_dir) / "great-docs"
         gd_dir.mkdir()
+
         # Create license.qmd in the build directory
         (gd_dir / "license.qmd").write_text("---\ntitle: License\n---\n", encoding="utf-8")
         docs = GreatDocs(project_path=tmp_dir)
@@ -13169,172 +13292,6 @@ def test_build_metadata_margin_citation_link():
         # (but it may not appear in margin sections if no explicit block uses it;
         # check the result doesn't error out at minimum)
         assert isinstance(result, str)
-
-
-def test_generate_config_with_reference_basic_categories():
-    """_generate_config_with_reference generates YAML with class and function sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "classes": ["MyClass"],
-            "functions": ["my_func"],
-            "class_methods": {"MyClass": 2},
-            "class_method_names": {"MyClass": ["method_a", "method_b"]},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "reference:" in result
-        assert "MyClass" in result
-        assert "my_func" in result
-        assert "title: Classes" in result
-        assert "title: Functions" in result
-
-
-def test_generate_config_with_reference_large_class_splitting():
-    """_generate_config_with_reference splits large classes into separate method sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        methods = [f"method_{i}" for i in range(10)]
-        categories = {
-            "classes": ["BigClass"],
-            "class_methods": {"BigClass": 10},
-            "class_method_names": {"BigClass": methods},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "members: false" in result
-        assert "BigClass Methods" in result
-
-        for m in methods:
-            assert f"BigClass.{m}" in result
-
-
-def test_generate_config_with_reference_enums_and_exceptions():
-    """_generate_config_with_reference includes enum and exception sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "enums": ["Color", "Size"],
-            "exceptions": ["MyError"],
-            "class_methods": {},
-            "class_method_names": {},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="google", dynamic=False
-        )
-
-        assert "title: Enumerations" in result
-        assert "Color" in result
-        assert "title: Exceptions" in result
-        assert "MyError" in result
-        assert "dynamic: false" in result
-        assert "parser: google" in result
-
-
-def test_generate_config_with_reference_empty_categories():
-    """_generate_config_with_reference handles empty categories."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {"class_methods": {}, "class_method_names": {}}
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "reference:" in result
-
-        # Should still have the reference: key but no section titles
-        assert "title: Classes" not in result
-        assert "title: Functions" not in result
-
-
-def test_generate_config_with_reference_dataclasses_and_protocols():
-    """_generate_config_with_reference handles dataclasses and protocols."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "dataclasses": ["MyData"],
-            "protocols": ["MyProto"],
-            "class_methods": {"MyData": 1, "MyProto": 0},
-            "class_method_names": {"MyData": ["__init__"], "MyProto": []},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "title: Dataclasses" in result
-        assert "title: Protocols" in result
-        assert "MyData  # 1 method(s)" in result
-        assert "MyProto" in result
-
-
-def test_generate_config_with_reference_has_authors():
-    """_generate_config_with_reference includes authors section from pyproject.toml."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "pkg"\n[[project.authors]]\nname = "Alice"\n',
-            encoding="utf-8",
-        )
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {"functions": ["f"], "class_methods": {}, "class_method_names": {}}
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "authors:" in result or "Alice" in result
-
-
-def test_generate_config_with_reference_async_functions():
-    """_generate_config_with_reference handles async functions."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "async_functions": ["async_fetch"],
-            "class_methods": {},
-            "class_method_names": {},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "title: Async Functions" in result
-        assert "async_fetch" in result
-
-
-def test_generate_config_with_reference_type_aliases():
-    """_generate_config_with_reference handles type aliases and constants."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = {
-            "type_aliases": ["MyType"],
-            "constants": ["VERSION"],
-            "class_methods": {},
-            "class_method_names": {},
-        }
-        result = docs._generate_config_with_reference(
-            categories, package_name="pkg", parser="numpy", dynamic=True
-        )
-
-        assert "title: Type Aliases" in result
-        assert "title: Constants" in result
 
 
 def test_generate_llms_full_txt_creates_file():
@@ -13785,45 +13742,6 @@ def test_write_quarto_yml_v2():
         assert "great-docs.yml" in content
         assert "website:" in content
         assert "title: Test" in content
-
-
-def test_generate_minimal_config_defaults():
-    """_generate_minimal_config generates config with numpy parser and dynamic true."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config()
-
-        assert "parser: numpy" in result
-        assert "dynamic: true" in result
-        assert "jupyter: python3" in result
-
-
-def test_generate_minimal_config_google_parser():
-    """_generate_minimal_config respects parser argument."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config(parser="google", dynamic=False)
-
-        assert "parser: google" in result
-        assert "dynamic: false" in result
-
-
-def test_generate_minimal_config_with_authors():
-    """_generate_minimal_config includes authors from pyproject.toml."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pyproject = Path(tmp_dir) / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "pkg"\n[[project.authors]]\nname = "Alice"\n',
-            encoding="utf-8",
-        )
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config()
-
-        assert "Alice" in result
 
 
 def test_build_sections_from_reference_config_basic_functions():
@@ -14413,6 +14331,40 @@ def test_build_hero_section_with_light_dark_logo():
         assert "logo-dark.svg" in result
 
 
+def test_build_hero_section_dark_only_logo_still_renders():
+    """Regression: a dark-only `hero.logo` must still render an `<img>`.
+
+    Final-review finding on the roborev #801 batch: without the config-side
+    `light` fallback, `logo_html` stayed empty and the hero silently rendered
+    with no logo image at all (sibling bug to
+    `test_dark_only_logo_does_not_crash_quarto_config` for the top-level
+    `logo` key).
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "testpkg"\n', encoding="utf-8")
+        gd_yml = Path(tmp_dir) / "great-docs.yml"
+        gd_yml.write_text(
+            format_yaml(
+                {
+                    "hero": {
+                        "enabled": True,
+                        "logo": {"dark": "assets/hero-dark.svg"},
+                        "name": "TestPkg",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        docs = GreatDocs(project_path=tmp_dir)
+        result, cleaned = docs._build_hero_section()
+
+        assert "<img" in result
+        assert "hero-dark.svg" in result
+
+
 def test_build_hero_section_auto_enable_no_hero():
     """_build_hero_section returns empty when not enabled and no hero detected."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -14716,6 +14668,99 @@ def test_build_github_source_url_absolute_path():
         assert "/blob/dev/" in result
 
 
+def _render_doc_source_relative_path(obj):
+    """Invoke the renderer's `_source_relative_path` with a stand-in griffe object."""
+    import great_docs._apiref._render.doc as docmod
+    from great_docs._apiref import _globals
+
+    _globals.package_info.cache_clear()
+    cls = vars(docmod)["__RenderDoc"]
+    fake_self = types.SimpleNamespace(obj=obj)
+    return cls.__dict__["_source_relative_path"](fake_self)
+
+
+def test_render_source_relative_path_preserves_src_layout(monkeypatch):
+    """Renderer source links must keep the `src/` prefix for src-layout packages.
+
+    Regression test: griffe's `relative_package_filepath` is relative to the
+    package's parent (a search path such as `src/`), so it drops the leading
+    `src/` and yields a GitHub blob URL that 404s. The renderer should instead
+    compute the path relative to the repository root.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        src_file = root / "src" / "raghilda" / "embedding.py"
+        src_file.parent.mkdir(parents=True)
+        src_file.write_text("x = 1", encoding="utf-8")
+
+        monkeypatch.delenv("SOURCE_PATH", raising=False)
+        monkeypatch.setenv("PACKAGE_ROOT", str(root))
+
+        # griffe would report the path relative to the `src/` search path.
+        obj = types.SimpleNamespace(
+            filepath=src_file,
+            relative_package_filepath=Path("raghilda/embedding.py"),
+        )
+
+        assert _render_doc_source_relative_path(obj) == "src/raghilda/embedding.py"
+
+
+def test_render_source_relative_path_source_path_override(monkeypatch):
+    """An explicit `source.path` override is used verbatim for monorepos."""
+    obj = types.SimpleNamespace(
+        filepath=Path("/anywhere/embedding.py"),
+        relative_package_filepath=Path("raghilda/embedding.py"),
+    )
+    monkeypatch.setenv("SOURCE_PATH", "packages/raghilda/src")
+    monkeypatch.setenv("PACKAGE_ROOT", "/some/root")
+
+    assert _render_doc_source_relative_path(obj) == "packages/raghilda/src/embedding.py"
+
+
+def test_render_source_relative_path_falls_back_to_griffe(monkeypatch):
+    """Without repo root or override, fall back to griffe's package-relative path."""
+    obj = types.SimpleNamespace(
+        filepath=Path("/anywhere/raghilda/embedding.py"),
+        relative_package_filepath=Path("raghilda/embedding.py"),
+    )
+    monkeypatch.delenv("SOURCE_PATH", raising=False)
+    monkeypatch.delenv("PACKAGE_ROOT", raising=False)
+
+    assert _render_doc_source_relative_path(obj) == "raghilda/embedding.py"
+
+
+def test_init_exports_package_root_env(monkeypatch):
+    """GreatDocs.__init__ exports PACKAGE_ROOT so the renderer can resolve paths."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        # Register the vars so monkeypatch restores them even though __init__
+        # writes os.environ directly.
+        monkeypatch.setenv("PACKAGE_ROOT", "sentinel")
+        monkeypatch.delenv("SOURCE_PATH", raising=False)
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        assert os.environ.get("PACKAGE_ROOT") == str(docs._find_package_root())
+        # No source.path configured -> SOURCE_PATH stays unset.
+        assert "SOURCE_PATH" not in os.environ
+
+
+def test_init_exports_source_path_env(monkeypatch):
+    """A configured source.path is exported as SOURCE_PATH for the renderer."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        gd_yml = Path(tmp_dir) / "great-docs.yml"
+        gd_yml.write_text("source:\n  path: packages/mypkg/src\n", encoding="utf-8")
+        # Register so monkeypatch restores it after __init__ writes os.environ.
+        monkeypatch.setenv("SOURCE_PATH", "sentinel")
+
+        GreatDocs(project_path=tmp_dir)
+
+        assert os.environ.get("SOURCE_PATH") == "packages/mypkg/src"
+
+
 def test_detect_git_ref_configured_branch():
     """Test _detect_git_ref uses configured branch from metadata."""
 
@@ -14786,40 +14831,6 @@ def test_get_source_location_no_griffe():
             result = docs._get_source_location("nonexistent_package", "SomeClass")
 
             assert result is None
-
-
-def test_generate_minimal_config_default():
-    """Test _generate_minimal_config with default parameters."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        result = docs._generate_minimal_config()
-
-        assert "parser: numpy" in result
-        assert "dynamic: true" in result
-        assert "Great Docs Configuration" in result
-
-
-def test_generate_minimal_config_google_no_dynamic():
-    """Test _generate_minimal_config with google parser and dynamic=False."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        result = docs._generate_minimal_config(parser="google", dynamic=False)
-
-        assert "parser: google" in result
-        assert "dynamic: false" in result
-
-
-def test_generate_minimal_config_sphinx():
-    """Test _generate_minimal_config with sphinx parser."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        result = docs._generate_minimal_config(parser="sphinx", dynamic=True)
-
-        assert "parser: sphinx" in result
-        assert "dynamic: true" in result
 
 
 def test_strip_frontmatter_with_yaml():
@@ -14949,10 +14960,10 @@ def test_update_sidebar_from_sections_basic():
 
         # Then section entries
         assert contents[1]["section"] == "Classes"
-        assert "reference/MyClass.qmd" in contents[1]["contents"]
-        assert "reference/OtherClass.qmd" in contents[1]["contents"]
+        assert {"text": "MyClass", "href": "reference/MyClass.qmd"} in contents[1]["contents"]
+        assert {"text": "OtherClass", "href": "reference/OtherClass.qmd"} in contents[1]["contents"]
         assert contents[2]["section"] == "Functions"
-        assert "reference/my_func.qmd" in contents[2]["contents"]
+        assert {"text": "my_func", "href": "reference/my_func.qmd"} in contents[2]["contents"]
 
 
 def test_update_sidebar_from_sections_dict_items():
@@ -14993,8 +15004,8 @@ def test_update_sidebar_from_sections_dict_items():
         sidebar = result["website"]["sidebar"]
         section = sidebar[0]["contents"][1]  # First section after API link
 
-        assert "reference/BigClass.qmd" in section["contents"]
-        assert "reference/simple_func.qmd" in section["contents"]
+        assert {"text": "BigClass", "href": "reference/BigClass.qmd"} in section["contents"]
+        assert {"text": "simple_func", "href": "reference/simple_func.qmd"} in section["contents"]
 
 
 def test_update_sidebar_no_api_reference():
@@ -15062,7 +15073,7 @@ def test_update_reference_index_frontmatter_no_frontmatter():
 
 
 def test_update_reference_index_frontmatter_already_has_page_nav():
-    """Test _update_reference_index_frontmatter skips when page-navigation already present."""
+    """Test _update_reference_index_frontmatter skips page-navigation when already present."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
 
@@ -15070,7 +15081,7 @@ def test_update_reference_index_frontmatter_already_has_page_nav():
         ref_dir.mkdir(parents=True, exist_ok=True)
 
         index_qmd = ref_dir / "index.qmd"
-        original = "---\ntitle: API Reference\npage-navigation: false\n---\n\n# API\n"
+        original = "---\ntitle: API Reference\npage-navigation: false\nhtml-table-processing: none\n---\n\n# API\n"
         index_qmd.write_text(original, encoding="utf-8")
 
         docs._update_reference_index_frontmatter()
@@ -15308,6 +15319,58 @@ def test_update_quarto_config_navbar_color_light_only():
 
         # Should contain quarto-light selector
         assert "quarto-light" in css_items[0]
+
+
+def test_update_quarto_config_navbar_color_does_not_leak_onto_root():
+    """`navbar_color` CSS must scope every rule to `.navbar`, never the bare root."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+
+        (Path(tmp_dir) / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\n', encoding="utf-8"
+        )
+        (Path(tmp_dir) / "great-docs.yml").write_text(
+            "navbar_color:\n  light: '#c76e00'\n  dark: '#0a2540'\n", encoding="utf-8"
+        )
+        docs._config = Config(Path(tmp_dir))
+
+        quarto_yml = docs.project_path / "_quarto.yml"
+        quarto_yml.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(quarto_yml, "w") as f:
+            write_yaml(
+                {
+                    "project": {"type": "website"},
+                    "website": {"navbar": {"left": []}, "sidebar": []},
+                    "format": {"html": {}},
+                },
+                f,
+            )
+
+        docs._update_quarto_config()
+
+        with open(quarto_yml, "r") as f:
+            result = read_yaml(f)
+
+        after_body = result["format"]["html"].get("include-after-body", [])
+        css = "".join(
+            item["text"] if isinstance(item, dict) else str(item)
+            for item in after_body
+            if "navbar_color overrides" in str(item)
+        )
+
+        # The buggy form leaves a bare root prefix joined by a comma directly
+        # before a descendant — these substrings must never appear.
+        assert "html.quarto-dark, :root[data-bs-theme='dark'] .navbar" not in css
+        assert "html.quarto-light, :root[data-bs-theme='light'] .navbar" not in css
+
+        # Every prefix must be scoped to .navbar (descendant combinator present).
+        assert "html.quarto-dark .navbar" in css
+        assert ":root[data-bs-theme='dark'] .navbar" in css
+
+        # The CSS-variable block on the bare root is intentional and kept.
+        assert "--gd-navbar-bg:" in css
 
 
 def test_update_quarto_config_announcement_banner():
@@ -16343,6 +16406,36 @@ def test_add_api_reference_config_disabled():
         assert docs._has_api_reference is False
 
 
+def test_add_api_reference_config_non_python_project():
+    """Test _add_api_reference_config skips for non-Python projects.
+
+    A Go project has no importable Python package, so the step should skip
+    (setting _has_api_reference = False) rather than prompting for a package name.
+    """
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+
+        # Go project marker; no pyproject.toml / __init__.py anywhere.
+        (Path(tmp_dir) / "go.mod").write_text("module example.com/tool\n", encoding="utf-8")
+
+        gd_yml = Path(tmp_dir) / "great-docs.yml"
+        gd_yml.write_text("project_type: go\n", encoding="utf-8")
+        docs._config = Config(Path(tmp_dir))
+
+        quarto_yml = docs.project_path / "_quarto.yml"
+        quarto_yml.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(quarto_yml, "w") as f:
+            write_yaml({"project": {"type": "website"}}, f)
+
+        # Must not call input() — patch it to fail loudly if the skip is missed.
+        with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            docs._add_api_reference_config()
+
+        assert docs._has_api_reference is False
+
+
 def test_add_api_reference_config_no_exports():
     """Test _add_api_reference_config skips when no exports found."""
 
@@ -16443,8 +16536,7 @@ def test_create_api_sections_with_config_uses_explicit():
         with patch.object(
             docs, "_create_api_sections_from_config", return_value=fake_config_sections
         ):
-            with patch.object(docs, "_apply_nodoc_filter", side_effect=lambda pkg, s: s):
-                result = docs._create_api_sections_with_config("mypkg")
+            result = docs._create_api_sections_with_config("mypkg")
 
         assert result == fake_config_sections
 
@@ -16458,8 +16550,7 @@ def test_create_api_sections_with_config_falls_back():
         fake_auto_sections = [{"title": "Auto", "contents": ["B"]}]
         with patch.object(docs, "_create_api_sections_from_config", return_value=None):
             with patch.object(docs, "_create_api_sections", return_value=fake_auto_sections):
-                with patch.object(docs, "_apply_nodoc_filter", side_effect=lambda pkg, s: s):
-                    result = docs._create_api_sections_with_config("mypkg")
+                result = docs._create_api_sections_with_config("mypkg")
 
         assert result == fake_auto_sections
 
@@ -16538,6 +16629,170 @@ def test_prepare_build_directory_copies_js_files():
         assert (docs.project_path / "copy-code.js").exists()
         assert (docs.project_path / "tooltips.js").exists()
         assert (docs.project_path / "responsive-tables.js").exists()
+
+
+def test_config_bibliography_normalization():
+    """Config.bibliography normalizes string, list, and missing values."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+
+        # Single string -> one-element list
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\nbibliography: docs/references.bib\n", encoding="utf-8"
+        )
+        assert Config(root).bibliography == ["docs/references.bib"]
+
+        # List -> filtered list
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\nbibliography:\n  - docs/a.bib\n  - docs/b.bib\n",
+            encoding="utf-8",
+        )
+        assert Config(root).bibliography == ["docs/a.bib", "docs/b.bib"]
+
+        # Missing -> empty list
+        (root / "great-docs.yml").write_text("package: mypkg\n", encoding="utf-8")
+        cfg = Config(root)
+        assert cfg.bibliography == []
+        assert cfg.csl is None
+
+        # CSL string
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\ncsl: docs/nature.csl\n", encoding="utf-8"
+        )
+        assert Config(root).csl == "docs/nature.csl"
+
+
+def test_prepare_build_directory_copies_bibliography():
+    """_prepare_build_directory copies the .bib file and wires _quarto.yml."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+
+        (root / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        (root / "README.md").write_text("# My Pkg\n", encoding="utf-8")
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\nbibliography: docs/references.bib\n", encoding="utf-8"
+        )
+        docs_dir = root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "references.bib").write_text("@book{key, title={T}}\n", encoding="utf-8")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        with patch.object(docs, "_add_api_reference_config"):
+            with patch.object(docs, "_update_sidebar_from_sections"):
+                with patch.object(docs, "_update_reference_index_frontmatter"):
+                    docs._prepare_build_directory()
+
+        # .bib copied into build dir by basename
+        assert (docs.project_path / "references.bib").exists()
+
+        # _quarto.yml references it by basename
+        with open(docs.project_path / "_quarto.yml", "r") as f:
+            config = read_yaml(f)
+        assert config["bibliography"] == "references.bib"
+
+
+def test_prepare_build_directory_copies_multiple_bib_and_csl():
+    """_prepare_build_directory handles multiple .bib files plus a CSL file."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+
+        (root / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        (root / "README.md").write_text("# My Pkg\n", encoding="utf-8")
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\n"
+            "bibliography:\n  - docs/refs.bib\n  - docs/software.bib\n"
+            "csl: docs/nature.csl\n",
+            encoding="utf-8",
+        )
+        docs_dir = root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "refs.bib").write_text("@book{a, title={A}}\n", encoding="utf-8")
+        (docs_dir / "software.bib").write_text("@misc{b, title={B}}\n", encoding="utf-8")
+        (docs_dir / "nature.csl").write_text("<style/>\n", encoding="utf-8")
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        with patch.object(docs, "_add_api_reference_config"):
+            with patch.object(docs, "_update_sidebar_from_sections"):
+                with patch.object(docs, "_update_reference_index_frontmatter"):
+                    docs._prepare_build_directory()
+
+        assert (docs.project_path / "refs.bib").exists()
+        assert (docs.project_path / "software.bib").exists()
+        assert (docs.project_path / "nature.csl").exists()
+
+        with open(docs.project_path / "_quarto.yml", "r") as f:
+            config = read_yaml(f)
+        assert config["bibliography"] == ["refs.bib", "software.bib"]
+        assert config["csl"] == "nature.csl"
+
+
+def test_prepare_build_directory_bibliography_missing_warns(capsys):
+    """A configured but missing .bib/.csl file warns instead of failing the build."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+
+        (root / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        (root / "README.md").write_text("# My Pkg\n", encoding="utf-8")
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\nbibliography: docs/missing.bib\ncsl: docs/missing.csl\n",
+            encoding="utf-8",
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+
+        with patch.object(docs, "_add_api_reference_config"):
+            with patch.object(docs, "_update_sidebar_from_sections"):
+                with patch.object(docs, "_update_reference_index_frontmatter"):
+                    docs._prepare_build_directory()
+
+        out = capsys.readouterr().out
+        assert "Bibliography file not found" in out
+        assert "CSL file not found" in out
+        assert not (docs.project_path / "missing.bib").exists()
+
+
+def test_bibliography_does_not_set_reference_section_title():
+    """Great Docs leaves the references heading to Quarto's native localization.
+
+    Under `shift-heading-level-by: -1` an explicit `reference-section-title`
+    is demoted to a stray `<p>` and duplicated next to Quarto's appendix
+    heading, so Great Docs must not set it. Quarto localizes the heading from
+    `lang` (e.g. "Les références" for French).
+    """
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        (root / "README.md").write_text("# My Pkg\n", encoding="utf-8")
+        docs_dir = root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "references.bib").write_text("@book{k, title={T}}\n", encoding="utf-8")
+        (root / "great-docs.yml").write_text(
+            "package: mypkg\nbibliography: docs/references.bib\nsite:\n  language: fr\n",
+            encoding="utf-8",
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        with patch.object(docs, "_add_api_reference_config"):
+            with patch.object(docs, "_update_sidebar_from_sections"):
+                with patch.object(docs, "_update_reference_index_frontmatter"):
+                    docs._prepare_build_directory()
+
+        with open(docs.project_path / "_quarto.yml", encoding="utf-8") as f:
+            config = read_yaml(f)
+
+        # The bibliography is still wired up...
+        assert config.get("bibliography") == "references.bib"
+        assert config.get("lang") == "fr"
+
+        # ...but the references heading is left to Quarto (no explicit override).
+        assert "reference-section-title" not in config
 
 
 def test_prepare_build_directory_optional_js_copy_page():
@@ -17059,86 +17314,6 @@ def test_build_sections_from_reference_config_dict_no_name():
         assert result[0]["contents"][0] == "Valid"
 
 
-def test_apply_nodoc_filter_no_directives():
-    """Test _apply_nodoc_filter passes through when no directives found."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [{"title": "API", "contents": ["A", "B"]}]
-        with patch.object(docs, "_extract_all_directives", return_value={}):
-            result = docs._apply_nodoc_filter("mypkg", sections)
-        assert result == sections
-
-
-def test_apply_nodoc_filter_removes_nodoc_items():
-    """Test _apply_nodoc_filter removes items marked with %nodoc."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [
-            {"title": "Core", "contents": ["Widget", "Internal", "helper"]},
-        ]
-        # Mock directive map with Internal marked as %nodoc
-        mock_directives = MagicMock()
-        mock_directives.nodoc = True
-        normal_directives = MagicMock()
-        normal_directives.nodoc = False
-        directive_map = {"Internal": mock_directives, "Widget": normal_directives}
-
-        with patch.object(docs, "_extract_all_directives", return_value=directive_map):
-            result = docs._apply_nodoc_filter("mypkg", sections)
-
-        assert result is not None
-        assert len(result) == 1
-        assert "Widget" in result[0]["contents"]
-        assert "Internal" not in result[0]["contents"]
-        assert "helper" in result[0]["contents"]
-
-
-def test_apply_nodoc_filter_removes_companion_method_section():
-    """Test _apply_nodoc_filter removes companion method sections for %nodoc classes."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [
-            {"title": "Classes", "contents": ["MyClass", "OtherClass"]},
-            {"title": "MyClass Methods", "contents": ["MyClass.foo", "MyClass.bar"]},
-        ]
-        mock_nodoc = MagicMock()
-        mock_nodoc.nodoc = True
-        directive_map = {"MyClass": mock_nodoc}
-
-        with patch.object(docs, "_extract_all_directives", return_value=directive_map):
-            result = docs._apply_nodoc_filter("mypkg", sections)
-
-        assert result is not None
-        # MyClass Methods section should be removed
-        titles = [s["title"] for s in result]
-        assert "MyClass Methods" not in titles
-        # OtherClass should remain
-        assert "OtherClass" in result[0]["contents"]
-
-
-def test_apply_nodoc_filter_all_excluded():
-    """Test _apply_nodoc_filter returns None when all items are excluded."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-
-        sections = [{"title": "API", "contents": ["A"]}]
-        mock_nodoc = MagicMock()
-        mock_nodoc.nodoc = True
-        directive_map = {"A": mock_nodoc}
-
-        with patch.object(docs, "_extract_all_directives", return_value=directive_map):
-            result = docs._apply_nodoc_filter("mypkg", sections)
-
-        assert result is None
-
-
 def test_extract_authors_from_pyproject_basic():
     """Test _extract_authors_from_pyproject with authors and maintainers."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -17213,66 +17388,6 @@ def test_format_authors_yaml_empty():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         assert docs._format_authors_yaml([]) == ""
-
-
-def test_format_preserved_extras_yaml_defaults():
-    """Test _format_preserved_extras_yaml returns commented templates by default."""
-    dn_yaml, site_yaml, funding_yaml = GreatDocs._format_preserved_extras_yaml()
-    assert dn_yaml == ""
-    assert "# site:" in site_yaml
-    assert "# funding:" in funding_yaml
-
-
-def test_format_preserved_extras_yaml_with_values():
-    """Test _format_preserved_extras_yaml with actual values."""
-    dn_yaml, site_yaml, funding_yaml = GreatDocs._format_preserved_extras_yaml(
-        display_name="My Library",
-        site={"theme": "cosmo", "toc": True},
-        funding={"name": "ACME Corp", "homepage": "https://acme.org", "ror": "https://ror.org/123"},
-    )
-    assert 'display_name: "My Library"' in dn_yaml
-    assert "site:" in site_yaml
-    assert "theme: cosmo" in site_yaml
-    assert "toc: true" in site_yaml
-    assert 'name: "ACME Corp"' in funding_yaml
-    assert "homepage: https://acme.org" in funding_yaml
-    assert "ror: https://ror.org/123" in funding_yaml
-
-
-def test_format_preserved_extras_yaml_funding_with_roles():
-    """Test _format_preserved_extras_yaml with funding roles."""
-    _, _, funding_yaml = GreatDocs._format_preserved_extras_yaml(
-        funding={"name": "NSF", "roles": ["funder", "sponsor"]},
-    )
-    assert 'name: "NSF"' in funding_yaml
-    assert "roles:" in funding_yaml
-    assert "- funder" in funding_yaml
-    assert "- sponsor" in funding_yaml
-
-
-def test_format_cli_yaml_disabled():
-    """Test _format_cli_yaml returns commented template when disabled."""
-    result = GreatDocs._format_cli_yaml()
-    assert "# cli:" in result
-    assert "#   enabled: true" in result
-
-
-def test_format_cli_yaml_enabled():
-    """Test _format_cli_yaml returns active config when enabled."""
-    result = GreatDocs._format_cli_yaml({"enabled": True, "module": "pkg.cli", "name": "main"})
-    assert "cli:" in result
-    assert "enabled: true" in result
-    assert "module: pkg.cli" in result
-    assert "name: main" in result
-
-
-def test_format_cli_yaml_enabled_minimal():
-    """Test _format_cli_yaml with only enabled flag."""
-    result = GreatDocs._format_cli_yaml({"enabled": True})
-    assert "cli:" in result
-    assert "enabled: true" in result
-    # module and name are optional
-    assert "module:" not in result
 
 
 def test_write_object_types_json_basic():
@@ -17366,6 +17481,82 @@ def test_categorize_api_objects_fallback_import_failure():
         result = docs._categorize_api_objects_fallback("nonexistent_module_xyz_abc", ["Widget"])
         # Should fall back to other
         assert "Widget" in result["other"]
+
+
+def test_categorize_referenced_objects_missing_item_raises():
+    """Test that _categorize_referenced_objects raises SystemExit for missing config items."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a minimal package with one export
+        pkg_dir = Path(tmp_dir) / "mypkg"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text(
+            '"""Test package."""\ndef real_func():\n    """A real function."""\n    pass\n'
+        )
+
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+
+        sys.path.insert(0, tmp_dir)
+        try:
+            docs = GreatDocs(project_path=tmp_dir)
+
+            # Reference config that includes a name that doesn't exist
+            reference_config = [
+                {
+                    "title": "Functions",
+                    "contents": ["real_func", "nonexistent_item"],
+                }
+            ]
+
+            # Mock importlib.metadata.version to simulate an installed package
+            with patch("importlib.metadata.version", return_value="1.0.0"):
+                with pytest.raises(SystemExit) as exc_info:
+                    docs._categorize_referenced_objects("mypkg", reference_config)
+
+            error_msg = str(exc_info.value)
+            assert "nonexistent_item" in error_msg
+            assert "mypkg" in error_msg
+            assert "not found" in error_msg
+        finally:
+            sys.path.remove(tmp_dir)
+
+
+def test_categorize_referenced_objects_all_found_no_error():
+    """Test that _categorize_referenced_objects succeeds when all items exist."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pkg_dir = Path(tmp_dir) / "mypkg2"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text(
+            '"""Test package."""\n'
+            "def greet():\n"
+            '    """Say hello."""\n'
+            "    pass\n"
+            "\n"
+            "class Widget:\n"
+            '    """A widget."""\n'
+            "    pass\n"
+        )
+
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "mypkg2"\n', encoding="utf-8")
+
+        sys.path.insert(0, tmp_dir)
+        try:
+            docs = GreatDocs(project_path=tmp_dir)
+
+            reference_config = [
+                {
+                    "title": "API",
+                    "contents": ["greet", "Widget"],
+                }
+            ]
+
+            # Should not raise
+            categories = docs._categorize_referenced_objects("mypkg2", reference_config)
+            assert "greet" in categories["functions"]
+            assert "Widget" in categories["classes"]
+        finally:
+            sys.path.remove(tmp_dir)
 
 
 def test_create_api_sections_basic():
@@ -17702,6 +17893,71 @@ def test_generate_initial_config_with_package():
         assert config_path.exists()
         content = config_path.read_text()
         assert "parser: numpy" in content
+
+
+def test_generate_initial_config_is_template_with_detected_values(monkeypatch):
+    import io
+
+    from yaml12 import read_yaml
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        )
+        docs = GreatDocs(project_path=tmp_dir)
+
+        monkeypatch.setattr(docs, "_detect_package_name", lambda: "demo")
+        monkeypatch.setattr(docs, "_detect_module_name", lambda: None)
+        monkeypatch.setattr(docs, "_detect_docstring_style", lambda name: "google")
+        monkeypatch.setattr(docs, "_detect_dynamic_mode", lambda name: False)
+        monkeypatch.setattr(docs, "_get_package_exports", lambda name: ["Thing"])
+        monkeypatch.setattr(
+            docs,
+            "_categorize_api_objects",
+            lambda name, exports: {
+                "classes": ["Thing"],
+                "class_methods": {"Thing": 0},
+                "class_method_names": {},
+                "cyclic_alias_count": 0,
+            },
+        )
+
+        assert docs._generate_initial_config(force=True) is True
+
+        text = (project_path / "great-docs.yml").read_text()
+        # Detected values are live:
+        assert "\nparser: google\n" in text
+        assert "\ndynamic: false\n" in text
+        assert "  - title: Classes" in text
+        assert "      - Thing" in text
+        # Full template is present (a key init never used to emit) but commented:
+        assert "# seo:" in text
+        # Parses and round-trips through the config loader:
+        cfg = read_yaml(io.StringIO(text))
+        assert cfg["parser"] == "google"
+        assert cfg["dynamic"] is False
+        assert cfg["reference"][0]["title"] == "Classes"
+
+
+def test_generate_initial_config_no_package_is_non_empty(monkeypatch):
+    """Test the no-package-name branch still emits a non-empty config."""
+    import io
+
+    from yaml12 import read_yaml
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        docs = GreatDocs(project_path=tmp_dir)
+        monkeypatch.setattr(docs, "_detect_package_name", lambda: None)
+
+        assert docs._generate_initial_config(force=True) is True
+
+        text = (project_path / "great-docs.yml").read_text()
+        cfg = read_yaml(io.StringIO(text))
+        assert cfg is not None, "no-package init config must not be empty"
+        assert cfg["parser"] == "numpy"
+        assert cfg["dynamic"] is True
 
 
 def test_generate_initial_config_existing_no_force():
@@ -20623,18 +20879,20 @@ def test_generate_source_links_json_with_class_methods():
                 "end_line": 10,
             }
 
-        def fake_categorize(pkg_name, exports):
-            if "MyClass" in exports:
-                return {
-                    "all_classes": ["MyClass"],
-                    "class_method_names": {"MyClass": ["do_stuff", "run"]},
-                }
-            return {"all_classes": [], "class_method_names": {}}
+        mock_method_do = MagicMock()
+        mock_method_do.kind.value = "function"
+        mock_method_run = MagicMock()
+        mock_method_run.kind.value = "function"
+        mock_class = MagicMock()
+        mock_class.kind.value = "class"
+        mock_class.members = {"do_stuff": mock_method_do, "run": mock_method_run}
+        mock_pkg = MagicMock()
+        mock_pkg.members = {"MyClass": mock_class}
 
         with (
             patch.object(docs, "_get_package_exports", return_value=["MyClass"]),
             patch.object(docs, "_get_source_location", side_effect=fake_source_location),
-            patch.object(docs, "_categorize_api_objects", side_effect=fake_categorize),
+            patch.object(docs, "_get_griffe_package", return_value=mock_pkg),
             patch.object(docs, "_detect_git_ref", return_value="main"),
         ):
             docs._generate_source_links_json("mypkg")
@@ -20714,43 +20972,6 @@ def test_detect_docstring_style_no_docstrings():
         assert result == "numpy"
 
 
-def test_patch_griffe_adds_missing_exceptions():
-    """Test _patch_griffe patches CyclicAliasError and AliasResolutionError onto griffe."""
-    import griffe
-
-    from great_docs.core import _patch_griffe
-
-    # Save originals (they may already exist)
-    had_cyclic = hasattr(griffe, "CyclicAliasError")
-    had_alias = hasattr(griffe, "AliasResolutionError")
-    orig_cyclic = getattr(griffe, "CyclicAliasError", None)
-    orig_alias = getattr(griffe, "AliasResolutionError", None)
-
-    try:
-        # Remove to simulate older griffe
-        if hasattr(griffe, "CyclicAliasError"):
-            delattr(griffe, "CyclicAliasError")
-        if hasattr(griffe, "AliasResolutionError"):
-            delattr(griffe, "AliasResolutionError")
-
-        _patch_griffe()
-
-        assert hasattr(griffe, "CyclicAliasError")
-        assert hasattr(griffe, "AliasResolutionError")
-        assert issubclass(griffe.CyclicAliasError, Exception)
-        assert issubclass(griffe.AliasResolutionError, Exception)
-    finally:
-        # Restore originals
-        if had_cyclic:
-            griffe.CyclicAliasError = orig_cyclic
-        elif hasattr(griffe, "CyclicAliasError"):
-            delattr(griffe, "CyclicAliasError")
-        if had_alias:
-            griffe.AliasResolutionError = orig_alias
-        elif hasattr(griffe, "AliasResolutionError"):
-            delattr(griffe, "AliasResolutionError")
-
-
 def test_detect_docstring_style_griffe_unavailable():
     """Test _detect_docstring_style defaults to numpy when griffe import fails."""
 
@@ -20792,7 +21013,7 @@ def test_detect_dynamic_mode_with_cyclic_error():
 
         with (
             patch("griffe.load", return_value=mock_pkg),
-            patch("great_docs._renderer.introspection.get_object", side_effect=fake_get_object),
+            patch("great_docs._apiref.introspect.get_object", side_effect=fake_get_object),
         ):
             result = docs._detect_dynamic_mode("mypkg")
 
@@ -23041,55 +23262,6 @@ def test_extract_click_command_group():
         assert len(result.get("commands", [])) >= 1
 
 
-def test_generate_minimal_config():
-    """Test _generate_minimal_config produces valid YAML config."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._generate_minimal_config(parser="google", dynamic=False)
-
-        assert "parser: google" in result
-        assert "dynamic: false" in result
-
-
-def test_generate_config_with_reference():
-    """Test _generate_config_with_reference generates YAML with reference sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        (Path(tmp_dir) / "pyproject.toml").write_text(
-            '[project]\nname = "mypkg"\nauthors = [{name = "Author"}]\n',
-            encoding="utf-8",
-        )
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = docs._empty_categories()
-        categories["functions"] = ["func_a", "func_b"]
-        categories["classes"] = ["MyClass"]
-        categories["class_methods"] = {"MyClass": 3}
-        categories["class_method_names"] = {"MyClass": ["method1", "method2", "method3"]}
-        result = docs._generate_config_with_reference(
-            categories, "mypkg", parser="numpy", dynamic=True
-        )
-
-        assert "parser: numpy" in result
-        assert "func_a" in result
-        assert "func_b" in result
-        assert "MyClass" in result
-
-
-def test_generate_config_with_reference_large_class():
-    """Test _generate_config_with_reference splits large classes into method sections."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        categories = docs._empty_categories()
-        categories["classes"] = ["BigClass"]
-        categories["class_methods"] = {"BigClass": 10}
-        categories["class_method_names"] = {"BigClass": [f"method_{i}" for i in range(10)]}
-        result = docs._generate_config_with_reference(
-            categories, "pkg", parser="google", dynamic=False
-        )
-
-        assert "BigClass Methods" in result
-        assert "dynamic: false" in result
-
-
 def test_extract_authors_from_pyproject():
     """Test _extract_authors_from_pyproject reads authors and maintainers."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -23148,30 +23320,6 @@ def test_format_authors_yaml_empty():
         result = docs._format_authors_yaml([])
 
         assert result == ""
-
-
-def test_format_preserved_extras_yaml_with_values():
-    """Test _format_preserved_extras_yaml with display_name and site."""
-    result = GreatDocs._format_preserved_extras_yaml(
-        display_name="My Package",
-        site={"url": "https://example.com"},
-        funding={"name": "NSF"},
-    )
-    dn_yaml, site_yaml, funding_yaml = result
-
-    assert "My Package" in dn_yaml
-    assert "url" in site_yaml
-    assert "NSF" in funding_yaml
-
-
-def test_format_preserved_extras_yaml_defaults():
-    """Test _format_preserved_extras_yaml with no values."""
-    dn_yaml, site_yaml, funding_yaml = GreatDocs._format_preserved_extras_yaml()
-
-    assert dn_yaml == ""
-
-    # site_yaml should have commented template
-    assert isinstance(site_yaml, str)
 
 
 def test_generate_changelog_page_no_repo():
@@ -23349,18 +23497,6 @@ def test_discover_user_guide_with_subdirs():
         assert len(result["files"]) >= 1
 
 
-def test_format_cli_yaml():
-    """Test _format_cli_yaml produces commented CLI template."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._format_cli_yaml()
-
-        assert isinstance(result, str)
-
-        # Should contain CLI-related content
-        assert "cli" in result.lower() or "CLI" in result
-
-
 def test_inject_section_body_class_with_existing_classes():
     """Test _inject_section_body_class merges with existing body-classes."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -23410,7 +23546,7 @@ def test_build_prepare_and_render_flow():
 
         mock_builder = MagicMock()
         mock_builder_class = MagicMock()
-        mock_builder_class.from_quarto_config.return_value = mock_builder
+        mock_builder_class.return_value = mock_builder
 
         with (
             patch("great_docs.core._ensure_quarto_installed"),
@@ -23425,7 +23561,7 @@ def test_build_prepare_and_render_flow():
             patch.object(docs, "_copy_assets", return_value=False),
             patch.object(docs, "_get_quarto_env", return_value={}),
             patch(
-                "great_docs._renderer.introspection.Builder",
+                "great_docs._apiref.api_reference.APIReference",
                 mock_builder_class,
             ),
             patch("subprocess.Popen") as mock_popen,
@@ -23453,7 +23589,7 @@ def test_build_prepare_and_render_flow():
 
             docs.build(watch=False, refresh=True)
 
-            mock_builder_class.from_quarto_config.assert_called_once()
+            mock_builder_class.assert_called_once()
             mock_builder.build.assert_called_once()
 
 
@@ -23514,7 +23650,7 @@ def test_build_dynamic_fallback_to_static():
         mock_builder = MagicMock()
         mock_builder.build.side_effect = build_side_effect
         mock_builder_class = MagicMock()
-        mock_builder_class.from_quarto_config.return_value = mock_builder
+        mock_builder_class.return_value = mock_builder
 
         with (
             patch("great_docs.core._ensure_quarto_installed"),
@@ -23529,7 +23665,7 @@ def test_build_dynamic_fallback_to_static():
             patch.object(docs, "_copy_assets", return_value=False),
             patch.object(docs, "_get_quarto_env", return_value={}),
             patch(
-                "great_docs._renderer.introspection.Builder",
+                "great_docs._apiref.api_reference.APIReference",
                 mock_builder_class,
             ),
             patch("subprocess.Popen") as mock_popen,
@@ -23569,7 +23705,7 @@ def test_build_static_mode_failure_exits():
         mock_builder = MagicMock()
         mock_builder.build.side_effect = RuntimeError("Build always fails")
         mock_builder_class = MagicMock()
-        mock_builder_class.from_quarto_config.return_value = mock_builder
+        mock_builder_class.return_value = mock_builder
 
         with (
             patch("great_docs.core._ensure_quarto_installed"),
@@ -23584,7 +23720,7 @@ def test_build_static_mode_failure_exits():
             patch.object(docs, "_copy_assets", return_value=False),
             patch.object(docs, "_get_quarto_env", return_value={}),
             patch(
-                "great_docs._renderer.introspection.Builder",
+                "great_docs._apiref.api_reference.APIReference",
                 mock_builder_class,
             ),
         ):
@@ -23614,7 +23750,7 @@ def test_build_non_dynamic_failure_exits():
         mock_builder = MagicMock()
         mock_builder.build.side_effect = RuntimeError("Build failed")
         mock_builder_class = MagicMock()
-        mock_builder_class.from_quarto_config.return_value = mock_builder
+        mock_builder_class.return_value = mock_builder
 
         with (
             patch("great_docs.core._ensure_quarto_installed"),
@@ -23629,7 +23765,7 @@ def test_build_non_dynamic_failure_exits():
             patch.object(docs, "_copy_assets", return_value=False),
             patch.object(docs, "_get_quarto_env", return_value={}),
             patch(
-                "great_docs._renderer.introspection.Builder",
+                "great_docs._apiref.api_reference.APIReference",
                 mock_builder_class,
             ),
         ):
@@ -23902,6 +24038,10 @@ def test_build_watch_mode():
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
             docs._config.sections = None
+            # Disable the attribution footer so its git remote lookup (a second
+            # subprocess.run) doesn't run; this test only cares about the
+            # quarto preview invocation.
+            docs._config.attribution = False
 
             docs.project_path.mkdir(parents=True, exist_ok=True)
 
@@ -24661,66 +24801,6 @@ def test_discover_package_exports_auto_include_no_overlap():
             sys.path.remove(tmp_dir)
 
 
-def test_extract_all_directives_basic():
-    """Test _extract_all_directives finds directives in docstrings."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pkg_dir = Path(tmp_dir) / "dirpkg"
-        pkg_dir.mkdir()
-        (pkg_dir / "__init__.py").write_text(
-            "class MyClass:\n"
-            '    """A class.\n\n'
-            "    @seealso OtherClass\n"
-            '    """\n'
-            "    def method(self):\n"
-            '        """A method.\n\n'
-            "        @seealso another_func\n"
-            '        """\n'
-            "        pass\n",
-            encoding="utf-8",
-        )
-
-        sys.path.insert(0, tmp_dir)
-        try:
-            docs = GreatDocs(project_path=tmp_dir)
-            result = docs._extract_all_directives("dirpkg")
-
-            # Should find directives in MyClass and MyClass.method
-            assert isinstance(result, dict)
-        finally:
-            sys.path.remove(tmp_dir)
-
-
-def test_extract_all_directives_empty_package():
-    """Test _extract_all_directives returns empty dict for package without directives."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pkg_dir = Path(tmp_dir) / "nodirpkg"
-        pkg_dir.mkdir()
-        (pkg_dir / "__init__.py").write_text(
-            'def func():\n    """A simple function."""\n    pass\n',
-            encoding="utf-8",
-        )
-
-        sys.path.insert(0, tmp_dir)
-        try:
-            docs = GreatDocs(project_path=tmp_dir)
-            result = docs._extract_all_directives("nodirpkg")
-
-            assert isinstance(result, dict)
-        finally:
-            sys.path.remove(tmp_dir)
-
-
-def test_extract_all_directives_package_not_found():
-    """Test _extract_all_directives returns empty dict when package can't load."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        docs = GreatDocs(project_path=tmp_dir)
-        result = docs._extract_all_directives("nonexistent_xyz999")
-        assert result == {}
-
-
 def test_find_package_init_with_pyproject_setuptools():
     """Test _find_package_init finds init via pyproject.toml setuptools packages."""
 
@@ -25472,7 +25552,10 @@ def test_preview_port_in_use():
         (site_dir / "index.html").write_text("<html></html>", encoding="utf-8")
 
         with (
-            patch("socketserver.TCPServer", side_effect=OSError("Address in use")),
+            patch(
+                "http.server.ThreadingHTTPServer",
+                side_effect=OSError("Address in use"),
+            ),
             pytest.raises(SystemExit),
         ):
             docs.preview(port=9999)
@@ -25480,7 +25563,7 @@ def test_preview_port_in_use():
 
 def test_preview_serves_and_stops():
     """Test preview() starts server and handles KeyboardInterrupt."""
-    import http.server  # noqa: F401  # ensure module is loaded before patching socketserver
+    import http.server  # noqa: F401  # ensure module is loaded before patching the server
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
@@ -25494,7 +25577,7 @@ def test_preview_serves_and_stops():
         mock_timer = MagicMock()
 
         with (
-            patch("socketserver.TCPServer", return_value=mock_server),
+            patch("http.server.ThreadingHTTPServer", return_value=mock_server),
             patch("threading.Timer", return_value=mock_timer),
             patch("webbrowser.open"),
         ):
@@ -26566,40 +26649,6 @@ def test_detect_dynamic_mode_with_simple_package():
             sys.modules.pop("simpledynpkg", None)
 
 
-def test_extract_all_directives_with_class_methods():
-    """Test _extract_all_directives processes class methods."""
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pkg_dir = Path(tmp_dir) / "dirmethpkg"
-        pkg_dir.mkdir()
-        (pkg_dir / "__init__.py").write_text(
-            "class MyClass:\n"
-            '    """A class.\n\n'
-            "    @seealso Related\n"
-            '    """\n'
-            "    def method(self):\n"
-            '        """A method.\n\n'
-            "        @seealso other_func\n"
-            '        """\n'
-            "        pass\n"
-            "    def _private(self):\n"
-            '        """Private, should be skipped."""\n'
-            "        pass\n",
-            encoding="utf-8",
-        )
-
-        sys.path.insert(0, tmp_dir)
-        try:
-            docs = GreatDocs(project_path=tmp_dir)
-            result = docs._extract_all_directives("dirmethpkg")
-
-            # Should find directives but skip private methods
-            assert isinstance(result, dict)
-        finally:
-            sys.path.remove(tmp_dir)
-            sys.modules.pop("dirmethpkg", None)
-
-
 def test_create_blended_index_creates_index():
     """Test _create_blended_index creates index.qmd from first UG page."""
 
@@ -27068,6 +27117,31 @@ def _make_uqc_docs(tmp_dir, gd_yml_content="", pyproject_content=None, quarto_co
         write_yaml(quarto_content, f)
 
     return docs, quarto_yml
+
+
+def test_update_quarto_config_math_method_defaults_to_katex():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(tmp_dir)
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            config = read_yaml(f)
+
+        assert config["format"]["html"]["html-math-method"] == "katex"
+
+
+def test_update_quarto_config_forwards_math_method_override():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(
+            tmp_dir,
+            gd_yml_content="site:\n  html-math-method: mathjax\n",
+        )
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            config = read_yaml(f)
+
+        assert config["format"]["html"]["html-math-method"] == "mathjax"
 
 
 def test_update_quarto_config_resources_string():
@@ -27738,33 +27812,16 @@ def test_get_object_module_only():
     assert obj.name == "json"
 
 
-def test_get_object_deprecated_object_name():
-    """get_object with the deprecated object_name parameter still works."""
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        obj = get_object("json", object_name="dumps")
-    assert obj.name == "dumps"
-
-
-def test_get_object_deprecated_object_name_warns():
-    """get_object with object_name emits a DeprecationWarning."""
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        get_object("json", object_name="dumps")
-    assert any(issubclass(x.category, DeprecationWarning) for x in w)
-
-
 def test_get_object_with_shared_loader():
     """get_object reuses a loader if provided."""
-    from great_docs._renderer.introspection import (
+    from griffe import (
         GriffeLoader,
         LinesCollection,
         ModulesCollection,
         Parser,
-        get_object,
     )
+
+    from great_docs._apiref.introspect import get_object
 
     loader = GriffeLoader(
         docstring_parser=Parser("numpy"),
@@ -27787,11 +27844,34 @@ def test_get_object_dynamic_mode():
     assert obj.name == "dumps"
 
 
+def test_get_object_rejects_a_path_for_dynamic():
+    with pytest.raises(ValueError, match="accepts true or false"):
+        get_object("json:dumps", dynamic="json:dumps")
+
+
+def test_get_object_warns_when_parser_is_ignored():
+    """A parser cannot apply to a loader that already carries one."""
+    from great_docs._apiref.introspect import make_loader
+
+    with pytest.warns(UserWarning, match="Ignoring parser"):
+        get_object("json:dumps", parser="numpy", loader=make_loader("numpy"))
+
+
+def test_get_object_does_not_warn_for_parser_or_loader_alone():
+    """Either argument on its own is unambiguous."""
+    from great_docs._apiref.introspect import make_loader
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        get_object("json:dumps", loader=make_loader("numpy"))
+        get_object("json:dumps", parser="numpy")
+
+
 def test_get_object_alias_loads_target_module():
-    """get_object with load_aliases=True loads the target module for aliases."""
+    """get_object loads the target module for aliases."""
 
     # os.path is typically an alias to posixpath or ntpath
-    obj = get_object("os:path", load_aliases=True)
+    obj = get_object("os:path")
     assert obj is not None
 
 
@@ -27815,27 +27895,27 @@ def test_get_object_nested_path():
             sys.modules.pop("introtest_nested", None)
 
 
-def test_resolve_target_direct():
-    """_resolve_target returns the target when it's not an Alias."""
+def test_resolve_alias_direct():
+    """resolve_alias returns the target when it's not an Alias."""
 
-    mod = dc.Module(name="testmod")
-    func = dc.Function(name="my_func", lineno=1)
+    mod = gf.Module(name="testmod")
+    func = gf.Function(name="my_func", lineno=1)
     mod.set_member("my_func", func)
-    alias = dc.Alias("my_alias", func, parent=mod)
-    result = _resolve_target(alias)
+    alias = gf.Alias("my_alias", func, parent=mod)
+    result = resolve_alias(alias)
 
     assert result is func
 
 
-def test_resolve_target_chained():
-    """_resolve_target follows chained aliases."""
+def test_resolve_alias_chained():
+    """resolve_alias follows chained aliases."""
 
-    mod = dc.Module(name="testmod")
-    func = dc.Function(name="my_func", lineno=1)
+    mod = gf.Module(name="testmod")
+    func = gf.Function(name="my_func", lineno=1)
     mod.set_member("my_func", func)
-    alias1 = dc.Alias("alias1", func, parent=mod)
-    alias2 = dc.Alias("alias2", alias1, parent=mod)
-    result = _resolve_target(alias2)
+    alias1 = gf.Alias("alias1", func, parent=mod)
+    alias2 = gf.Alias("alias2", alias1, parent=mod)
+    result = resolve_alias(alias2)
 
     assert result is func
 
@@ -27858,7 +27938,7 @@ def test_replace_docstring_with_explicit_function():
     def custom_func():
         """Custom replacement docstring."""
 
-    replace_docstring(obj, f=custom_func)
+    replace_docstring(obj, runtime_obj=custom_func)
     assert obj.docstring.value == "Custom replacement docstring."
 
 
@@ -27871,7 +27951,7 @@ def test_replace_docstring_none_doc():
         pass
 
     old_docstring = obj.docstring
-    replace_docstring(obj, f=no_doc)
+    replace_docstring(obj, runtime_obj=no_doc)
     # Docstring should be unchanged since f.__doc__ is None
     assert obj.docstring is old_docstring
 
@@ -27930,31 +28010,110 @@ def test_replace_docstring_alias():
 
     obj = get_object("json:dumps")
     mod = get_object("json")
-    alias = dc.Alias("my_alias", obj, parent=mod)
+    alias = gf.Alias("my_alias", obj, parent=mod)
     replace_docstring(alias)
+
+
+def test_replace_docstring_enum_preserves_member_docstrings():
+    """replace_docstring does not overwrite per-member enum docstrings with class docstring."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pkg = Path(tmp_dir) / "introtest_enum_doc"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(
+            "from enum import Enum\n"
+            "class MyEnum(str, Enum):\n"
+            '    """Class docstring."""\n'
+            '    FOO = "foo"\n'
+            '    """Description for variant FOO."""\n'
+            '    BAR = "bar"\n'
+            '    """Description for variant BAR."""\n',
+            encoding="utf-8",
+        )
+        sys.path.insert(0, tmp_dir)
+        try:
+            obj = get_object("introtest_enum_doc:MyEnum")
+            replace_docstring(obj)
+            assert obj.docstring.value == "Class docstring."
+            foo = obj.members["FOO"]
+            bar = obj.members["BAR"]
+            assert foo.docstring.value == "Description for variant FOO."
+            assert bar.docstring.value == "Description for variant BAR."
+        finally:
+            sys.path.remove(tmp_dir)
+            sys.modules.pop("introtest_enum_doc", None)
+
+
+def test_replace_docstring_enum_no_member_docstrings():
+    """replace_docstring does not inject class docstring into undocumented enum members."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pkg = Path(tmp_dir) / "introtest_enum_nodoc"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(
+            "from enum import Enum\n"
+            "class MyEnum(Enum):\n"
+            '    """Class docstring."""\n'
+            "    A = 1\n"
+            "    B = 2\n",
+            encoding="utf-8",
+        )
+        sys.path.insert(0, tmp_dir)
+        try:
+            obj = get_object("introtest_enum_nodoc:MyEnum")
+            replace_docstring(obj)
+            assert obj.docstring.value == "Class docstring."
+            a = obj.members["A"]
+            b = obj.members["B"]
+            assert a.docstring is None
+            assert b.docstring is None
+        finally:
+            sys.path.remove(tmp_dir)
+            sys.modules.pop("introtest_enum_nodoc", None)
+
+
+def test_split_path_without_a_colon_is_all_module():
+    """`resolve_alias` re-loads targets by dotted path, with no object part."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("pkg.mod.func") == ("pkg.mod.func", None)
+
+
+def test_split_path_separates_the_object_part():
+    """Only the first colon separates; the object part keeps its dots."""
+    from great_docs._apiref.introspect import _split_path
+
+    assert _split_path("json:dumps") == ("json", "dumps")
+    assert _split_path("pkg.mod:A.b") == ("pkg.mod", "A.b")
+
+
+def test_same_path_ignores_the_separator():
+    """The `:` in an access path is a module boundary, not part of the name."""
+    from great_docs._apiref.introspect import _same_path
+
+    assert _same_path("pkg:SETTINGS", "pkg.SETTINGS")
+    assert not _same_path("pkg._conf:SETTINGS", "pkg.SETTINGS")
 
 
 def test_canonical_path_module():
     """_canonical_path for a module returns module name."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json, "")
 
     assert result == "json"
 
 
-def test_canonical_path_module_with_qualname():
-    """_canonical_path for a module with qualname appends suffix."""
-    from great_docs._renderer.introspection import _canonical_path
+def test_canonical_path_module_reports_no_home_for_a_member():
+    """A module knows its own name but not where its members were defined."""
+    from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json, "dumps")
 
-    assert result == "json:dumps"
+    assert result is None
 
 
 def test_canonical_path_function():
     """_canonical_path for a function returns module:qualname."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json.dumps, "")
     assert result == "json:dumps"
@@ -27962,7 +28121,7 @@ def test_canonical_path_function():
 
 def test_canonical_path_function_with_qualname():
     """_canonical_path for a function with extra qualname appends it."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json.dumps, "extra")
     assert result == "json:dumps.extra"
@@ -27970,7 +28129,7 @@ def test_canonical_path_function_with_qualname():
 
 def test_canonical_path_class():
     """_canonical_path for a class returns module:qualname."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(json.JSONEncoder, "")
     assert result == "json.encoder:JSONEncoder"
@@ -27978,7 +28137,7 @@ def test_canonical_path_class():
 
 def test_canonical_path_plain_object():
     """_canonical_path for a plain object (not module/class/function) returns None."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     result = _canonical_path(42, "")
     assert result is None
@@ -27986,7 +28145,7 @@ def test_canonical_path_plain_object():
 
 def test_canonical_path_no_module_attr():
     """_canonical_path returns None when __module__ is missing."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     class NoModule:
         pass
@@ -27999,7 +28158,7 @@ def test_canonical_path_no_module_attr():
 
 def test_canonical_path_class_no_module():
     """_canonical_path returns None when class has no __module__."""
-    from great_docs._renderer.introspection import _canonical_path
+    from great_docs._apiref.introspect import _canonical_path
 
     cls = type("DynClass", (), {})
     cls.__module__ = None
@@ -28007,48 +28166,56 @@ def test_canonical_path_class_no_module():
     assert result is None
 
 
-def test_is_valueless_class_attribute_no_value():
-    """_is_valueless returns True for class-attribute with no value."""
+def test_has_no_value_class_attribute_no_value():
+    """_has_no_value returns True for class-attribute with no value."""
 
-    attr = dc.Attribute(name="x", lineno=1, value=None)
+    attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_instance_attribute():
-    """_is_valueless returns True for instance-attribute."""
+def test_has_no_value_instance_attribute():
+    """_has_no_value returns True for instance-attribute."""
 
-    attr = dc.Attribute(name="x", lineno=1)
+    attr = gf.Attribute(name="x", lineno=1)
     attr.labels.add("instance-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
-def test_is_valueless_class_attribute_with_value():
-    """_is_valueless returns False for class-attribute with a value."""
+def test_has_no_value_class_attribute_with_value():
+    """_has_no_value returns False for class-attribute with a value."""
 
-    attr = dc.Attribute(name="x", lineno=1, value="42")
+    attr = gf.Attribute(name="x", lineno=1, value="42")
     attr.labels.add("class-attribute")
 
-    assert _is_valueless(attr) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_function():
-    """_is_valueless returns False for a function."""
+def test_has_no_value_unlabelled_attribute():
+    """_has_no_value returns False for an attribute with none of the labels."""
 
-    func = dc.Function(name="f", lineno=1)
+    attr = gf.Attribute(name="x", lineno=1, value=None)
 
-    assert _is_valueless(func) is False
+    assert _has_no_value(attr) is False
 
 
-def test_is_valueless_module_attribute_no_value():
-    """_is_valueless returns True for module-attribute with no value."""
+def test_has_no_value_function():
+    """_has_no_value returns False for a function."""
 
-    attr = dc.Attribute(name="x", lineno=1, value=None)
+    func = gf.Function(name="f", lineno=1)
+
+    assert _has_no_value(func) is False
+
+
+def test_has_no_value_module_attribute_no_value():
+    """_has_no_value returns True for module-attribute with no value."""
+
+    attr = gf.Attribute(name="x", lineno=1, value=None)
     attr.labels.add("module-attribute")
 
-    assert _is_valueless(attr) is True
+    assert _has_no_value(attr) is True
 
 
 def test_insert_contents_list():
@@ -28168,14 +28335,6 @@ def test_dynamic_alias_nested_class_method():
     assert obj is not None
 
 
-def test_dynamic_alias_with_target():
-    """dynamic_alias with explicit target uses that target."""
-
-    obj = dynamic_alias("json:dumps", target="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
-
-
 def test_dynamic_alias_nonexistent_attr_raises():
     """dynamic_alias raises KeyError for nonexistent attributes in a real module."""
 
@@ -28185,13 +28344,14 @@ def test_dynamic_alias_nonexistent_attr_raises():
 
 def test_dynamic_alias_with_loader():
     """dynamic_alias accepts a shared loader."""
-    from great_docs._renderer.introspection import (
+    from griffe import (
         GriffeLoader,
         LinesCollection,
         ModulesCollection,
         Parser,
-        dynamic_alias,
     )
+
+    from great_docs._apiref.introspect import dynamic_alias
 
     loader = GriffeLoader(
         docstring_parser=Parser("numpy"),
@@ -28265,113 +28425,123 @@ def test_dynamic_alias_reexported_creates_alias():
             sys.modules.pop("introtest_reexp.sub", None)
 
 
-def test_get_object_dynamic_string_target():
-    """get_object with dynamic=<string> passes target to dynamic_alias."""
+def test_spec_object_rejects_a_path_for_dynamic():
+    """`dynamic` selects how an object is inspected, so only a bool will do."""
+    from great_docs._apiref.spec import SpecObject
 
-    obj = get_object("json:dumps", dynamic="json:dumps")
-    assert obj is not None
-    assert obj.name == "dumps"
-
-
-def test_builder_init_basic():
-    """Builder can be instantiated with minimal args."""
-
-    builder = Builder(package="json")
-    assert builder.package == "json"
-    assert builder.dir == "reference"
-    assert builder.title == "Function reference"
-    assert builder.version is None
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecObject(**{"name": "dumps", "dynamic": "json:dumps"})
 
 
-def test_builder_init_with_options():
-    """Builder accepts custom options."""
+def test_spec_options_replace_rejects_a_path_for_dynamic():
+    from great_docs._apiref.spec import SpecOptions
 
-    builder = Builder(
-        package="json",
+    with pytest.raises(ValueError, match="accepts true or false"):
+        SpecOptions().replace(dynamic="json:dumps")
+
+
+def _make_api_ref(**block):
+    """An APIReference built from an `api-reference` block, defaulting package to json."""
+    block.setdefault("package", "json")
+    return APIReference({"api-reference": block})
+
+
+def test_api_reference_init_basic():
+    """APIReference can be instantiated with minimal args."""
+
+    ref = _make_api_ref()
+    assert ref.package == "json"
+    assert ref.settings.dir == "reference"
+    assert ref.title == "Function reference"
+    assert ref.settings.version is None
+
+
+def test_api_reference_init_with_options():
+    """APIReference routes build keys into Settings."""
+
+    ref = _make_api_ref(
         dir="api",
         title="API Reference",
-        version="1.0.0",
         out_index="api-index.qmd",
         rewrite_all_pages=True,
         parser="google",
     )
-    assert builder.dir == "api"
-    assert builder.title == "API Reference"
-    assert builder.out_index == "api-index.qmd"
-    assert builder.rewrite_all_pages is True
-    assert builder.parser == "google"
+    assert ref.settings.dir == "api"
+    assert ref.title == "API Reference"
+    assert ref.settings.out_index == "api-index.qmd"
+    assert ref.settings.rewrite_all_pages is True
+    assert ref.settings.parser == "google"
 
 
-def test_builder_init_sidebar_string():
-    """Builder converts sidebar string to dict."""
+def test_api_reference_init_sidebar_string():
+    """APIReference converts sidebar string to dict."""
 
-    builder = Builder(package="json", sidebar="my-sidebar.yml")
-    assert builder.sidebar == {"file": "my-sidebar.yml"}
-
-
-def test_builder_init_sidebar_dict_no_file():
-    """Builder adds default file to sidebar dict if missing."""
-
-    builder = Builder(package="json", sidebar={"id": "api"})
-    assert builder.sidebar["file"] == "_api-reference-sidebar.yml"
-    assert builder.sidebar["id"] == "api"
+    ref = _make_api_ref(sidebar="my-sidebar.yml")
+    assert ref.settings.sidebar == {"file": "my-sidebar.yml"}
 
 
-def test_builder_init_sidebar_dict_with_file():
-    """Builder preserves sidebar dict with existing file."""
+def test_api_reference_init_sidebar_dict_no_file():
+    """APIReference adds default file to sidebar dict if missing."""
 
-    builder = Builder(package="json", sidebar={"file": "custom.yml"})
-    assert builder.sidebar["file"] == "custom.yml"
-
-
-def test_builder_init_no_sidebar():
-    """Builder handles sidebar=None."""
-
-    builder = Builder(package="json")
-    assert builder.sidebar is None
+    ref = _make_api_ref(sidebar={"id": "api"})
+    assert ref.settings.sidebar["file"] == "_api-reference-sidebar.yml"
+    assert ref.settings.sidebar["id"] == "api"
 
 
-def test_builder_init_source_dir():
-    """Builder converts source_dir to absolute path."""
+def test_api_reference_init_sidebar_dict_with_file():
+    """APIReference preserves sidebar dict with existing file."""
 
-    builder = Builder(package="json", source_dir="src")
-    assert builder.source_dir is not None
-    assert Path(builder.source_dir).is_absolute()
-
-
-def test_builder_init_css():
-    """Builder accepts css parameter."""
-
-    builder = Builder(package="json", css="custom.css")
-    assert builder.css == "custom.css"
+    ref = _make_api_ref(sidebar={"file": "custom.yml"})
+    assert ref.settings.sidebar["file"] == "custom.yml"
 
 
-def test_builder_init_dynamic():
-    """Builder accepts dynamic parameter."""
+def test_api_reference_init_no_sidebar():
+    """APIReference handles sidebar=None."""
 
-    builder = Builder(package="json", dynamic=True)
-    assert builder.dynamic is True
-
-    builder2 = Builder(package="json", dynamic=False)
-    assert builder2.dynamic is False
+    ref = _make_api_ref()
+    assert ref.settings.sidebar is None
 
 
-def test_builder_init_desc():
-    """Builder accepts desc parameter."""
+def test_api_reference_init_source_dir():
+    """APIReference stores source_dir on settings."""
 
-    builder = Builder(package="json", desc="A description")
-    assert builder.desc == "A description"
+    ref = _make_api_ref(source_dir="src")
+    assert ref.settings.source_dir == "src"
 
 
-def test_builder_load_layout_error():
-    """Builder.load_layout raises ValueError for invalid sections."""
+def test_api_reference_init_css():
+    """APIReference accepts css setting."""
+
+    ref = _make_api_ref(css="custom.css")
+    assert ref.settings.css == "custom.css"
+
+
+def test_api_reference_init_dynamic():
+    """APIReference accepts dynamic setting."""
+
+    ref = _make_api_ref(dynamic=True)
+    assert ref.settings.dynamic is True
+
+    ref2 = _make_api_ref(dynamic=False)
+    assert ref2.settings.dynamic is False
+
+
+def test_api_reference_init_desc():
+    """APIReference accepts desc."""
+
+    ref = _make_api_ref(desc="A description")
+    assert ref.desc == "A description"
+
+
+def test_api_reference_invalid_sections_error():
+    """APIReference raises for invalid sections."""
 
     with pytest.raises((ValueError, TypeError)):
-        Builder(package="json", sections=123)
+        _make_api_ref(sections=123)
 
 
-def test_builder_build_basic():
-    """Builder.build creates index, pages, and inventory."""
+def test_api_reference_build_basic():
+    """APIReference.build creates index, pages, and inventory."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         pkg = Path(tmp_dir) / "introtest_build"
@@ -28385,12 +28555,18 @@ def test_builder_build_basic():
         old_cwd = os.getcwd()
         os.chdir(tmp_dir)
         try:
-            builder = Builder(
-                package="introtest_build",
-                sections=[{"title": "Functions", "desc": "", "contents": [{"name": "greet"}]}],
-                dir="reference",
+            ref = APIReference(
+                {
+                    "api-reference": {
+                        "package": "introtest_build",
+                        "sections": [
+                            {"title": "Functions", "desc": "", "contents": [{"name": "greet"}]}
+                        ],
+                        "dir": "reference",
+                    }
+                }
             )
-            builder.build()
+            ref.build()
 
             # Check index was created
             assert (Path(tmp_dir) / "reference" / "index.qmd").exists()
@@ -28406,8 +28582,8 @@ def test_builder_build_basic():
             sys.modules.pop("introtest_build", None)
 
 
-def test_builder_build_with_sidebar():
-    """Builder.build writes sidebar yaml when configured."""
+def test_api_reference_build_with_sidebar():
+    """APIReference.build writes sidebar yaml when configured."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         pkg = Path(tmp_dir) / "introtest_sidebar"
@@ -28422,12 +28598,18 @@ def test_builder_build_with_sidebar():
         os.chdir(tmp_dir)
         try:
             sidebar_file = str(Path(tmp_dir) / "sidebar.yml")
-            builder = Builder(
-                package="introtest_sidebar",
-                sections=[{"title": "Functions", "desc": "", "contents": [{"name": "func"}]}],
-                sidebar=sidebar_file,
+            ref = APIReference(
+                {
+                    "api-reference": {
+                        "package": "introtest_sidebar",
+                        "sections": [
+                            {"title": "Functions", "desc": "", "contents": [{"name": "func"}]}
+                        ],
+                        "sidebar": sidebar_file,
+                    }
+                }
             )
-            builder.build()
+            ref.build()
 
             assert Path(sidebar_file).exists()
         finally:
@@ -28436,8 +28618,8 @@ def test_builder_build_with_sidebar():
             sys.modules.pop("introtest_sidebar", None)
 
 
-def test_builder_build_with_source_dir():
-    """Builder.build adds source_dir to sys.path."""
+def test_api_reference_build_with_source_dir():
+    """APIReference.build adds source_dir to sys.path."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         src = Path(tmp_dir) / "src"
@@ -28452,12 +28634,18 @@ def test_builder_build_with_source_dir():
         old_cwd = os.getcwd()
         os.chdir(tmp_dir)
         try:
-            builder = Builder(
-                package="introtest_srcdir",
-                sections=[{"title": "Functions", "desc": "", "contents": [{"name": "func"}]}],
-                source_dir=str(src),
+            ref = APIReference(
+                {
+                    "api-reference": {
+                        "package": "introtest_srcdir",
+                        "sections": [
+                            {"title": "Functions", "desc": "", "contents": [{"name": "func"}]}
+                        ],
+                        "source_dir": str(src),
+                    }
+                }
             )
-            builder.build()
+            ref.build()
 
             assert (Path(tmp_dir) / "reference" / "func.qmd").exists()
         finally:
@@ -28467,8 +28655,8 @@ def test_builder_build_with_source_dir():
             sys.modules.pop("introtest_srcdir", None)
 
 
-def test_builder_build_with_filter():
-    """Builder.build with filter only writes matching pages."""
+def test_api_reference_build_with_filter():
+    """APIReference.build with filter only writes matching pages."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         pkg = Path(tmp_dir) / "introtest_filter"
@@ -28482,17 +28670,21 @@ def test_builder_build_with_filter():
         old_cwd = os.getcwd()
         os.chdir(tmp_dir)
         try:
-            builder = Builder(
-                package="introtest_filter",
-                sections=[
-                    {
-                        "title": "Funcs",
-                        "desc": "",
-                        "contents": [{"name": "alpha"}, {"name": "beta"}],
+            ref = APIReference(
+                {
+                    "api-reference": {
+                        "package": "introtest_filter",
+                        "sections": [
+                            {
+                                "title": "Funcs",
+                                "desc": "",
+                                "contents": [{"name": "alpha"}, {"name": "beta"}],
+                            }
+                        ],
                     }
-                ],
+                }
             )
-            builder.build(filter="alpha")
+            ref.build(page_filter="alpha")
 
             # alpha should be written, beta should not
             assert (Path(tmp_dir) / "reference" / "alpha.qmd").exists()
@@ -28503,8 +28695,8 @@ def test_builder_build_with_filter():
             sys.modules.pop("introtest_filter", None)
 
 
-def test_builder_write_doc_pages_skip_unchanged():
-    """Builder.write_doc_pages skips pages with unchanged content."""
+def test_api_reference_write_doc_pages_skip_unchanged():
+    """APIReference.build skips pages with unchanged content."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         pkg = Path(tmp_dir) / "introtest_unchanged"
@@ -28518,13 +28710,19 @@ def test_builder_write_doc_pages_skip_unchanged():
         old_cwd = os.getcwd()
         os.chdir(tmp_dir)
         try:
-            builder = Builder(
-                package="introtest_unchanged",
-                sections=[{"title": "Funcs", "desc": "", "contents": [{"name": "func"}]}],
-                rewrite_all_pages=False,
+            ref = APIReference(
+                {
+                    "api-reference": {
+                        "package": "introtest_unchanged",
+                        "sections": [
+                            {"title": "Funcs", "desc": "", "contents": [{"name": "func"}]}
+                        ],
+                        "rewrite_all_pages": False,
+                    }
+                }
             )
             # First build writes everything
-            builder.build()
+            ref.build()
             page_path = Path(tmp_dir) / "reference" / "func.qmd"
             assert page_path.exists()
             mtime1 = page_path.stat().st_mtime
@@ -28532,7 +28730,7 @@ def test_builder_write_doc_pages_skip_unchanged():
             # Second build should skip (content unchanged)
 
             time.sleep(0.01)
-            builder.build()
+            ref.build()
             mtime2 = page_path.stat().st_mtime
 
             # File should not have been rewritten
@@ -28543,27 +28741,22 @@ def test_builder_write_doc_pages_skip_unchanged():
             sys.modules.pop("introtest_unchanged", None)
 
 
-def test_builder_create_inventory():
-    """Builder.create_inventory creates an inventory object."""
+def test_api_reference_inventory_default_version():
+    """APIReference.build writes an inventory using the default version."""
 
-    builder = Builder(package="json")
-    builder.items = []
-    inv = builder.create_inventory(builder.items)
+    inv = create_inventory("json", "0.0.9999", [])
     assert inv is not None
 
 
-def test_builder_create_inventory_with_version():
-    """Builder.create_inventory uses version when available."""
+def test_api_reference_inventory_with_version():
+    """create_inventory uses an explicit version when provided."""
 
-    builder = Builder(package="json")
-    builder.version = "2.0.0"
-    builder.items = []
-    inv = builder.create_inventory(builder.items)
+    inv = create_inventory("json", "2.0.0", [])
     assert inv is not None
 
 
-def test_builder_generate_sidebar_basic():
-    """Builder._generate_sidebar creates sidebar structure from a blueprint layout."""
+def test_api_reference_generate_sidebar_basic():
+    """write._generate_sidebar creates sidebar structure from resolved sections."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         pkg = Path(tmp_dir) / "introtest_sb"
@@ -28577,13 +28770,24 @@ def test_builder_generate_sidebar_basic():
         old_cwd = os.getcwd()
         os.chdir(tmp_dir)
         try:
-            builder = Builder(
-                package="introtest_sb",
-                sections=[{"title": "Functions", "desc": "", "contents": [{"name": "func"}]}],
+            ref = APIReference(
+                {
+                    "api-reference": {
+                        "package": "introtest_sb",
+                        "sections": [
+                            {"title": "Functions", "desc": "", "contents": [{"name": "func"}]}
+                        ],
+                    }
+                }
             )
-            bp = _blueprint(builder.layout, dynamic=builder.dynamic, parser=builder.parser)
+            resolved = ref.resolved
 
-            sidebar = builder._generate_sidebar(bp)
+            sidebar = write._generate_sidebar(
+                resolved,
+                dir=ref.settings.dir,
+                out_page_suffix=ref.settings.out_page_suffix,
+                sidebar=ref.settings.sidebar,
+            )
             assert "website" in sidebar
             assert "sidebar" in sidebar["website"]
         finally:
@@ -28592,80 +28796,130 @@ def test_builder_generate_sidebar_basic():
             sys.modules.pop("introtest_sb", None)
 
 
-def test_builder_generate_sidebar_with_sidebar_config():
-    """Builder._generate_sidebar uses sidebar config overrides."""
-
-    builder = Builder(
-        package="json",
-        sidebar={"id": "api-sidebar", "file": "sidebar.yml"},
+def test_api_reference_generate_sidebar_untitled_first_section():
+    """A leading section with contents but no title attaches links at top level"""
+    sections = [
+        Section(contents=[Page(path="func")]),
+        Section(title="Helpers", contents=[Page(path="helper")]),
+    ]
+    sidebar = write._generate_sidebar(
+        sections, dir="reference", out_page_suffix=".qmd", sidebar=None
     )
-    sidebar = builder._generate_sidebar(builder.layout)
+    contents = sidebar["website"]["sidebar"][0]["contents"]
+    assert {"text": "func", "href": "reference/func.qmd"} in contents
+    assert {
+        "section": "Helpers",
+        "contents": [{"text": "helper", "href": "reference/helper.qmd"}],
+    } in contents
+
+
+def test_api_reference_generate_sidebar_subtitle_first_section():
+    """A leading subtitle-only section becomes a top-level sub-entry"""
+    sections = [Section(subtitle="Internals", contents=[Page(path="func")])]
+    sidebar = write._generate_sidebar(
+        sections, dir="reference", out_page_suffix=".qmd", sidebar=None
+    )
+    contents = sidebar["website"]["sidebar"][0]["contents"]
+    assert {
+        "section": "Internals",
+        "contents": [{"text": "func", "href": "reference/func.qmd"}],
+    } in contents
+
+
+def test_api_reference_generate_sidebar_with_sidebar_config():
+    """write._generate_sidebar uses sidebar config overrides."""
+
+    ref = _make_api_ref(sidebar={"id": "api-sidebar", "file": "sidebar.yml"})
+    sidebar = write._generate_sidebar(
+        ref.sections,
+        dir=ref.settings.dir,
+        out_page_suffix=ref.settings.out_page_suffix,
+        sidebar=ref.settings.sidebar,
+    )
     entries = sidebar["website"]["sidebar"]
     # First entry should have the custom id
     assert entries[0]["id"] == "api-sidebar"
 
 
-def test_builder_generate_sidebar_custom_contents():
-    """Builder._generate_sidebar respects custom sidebar contents with sentinel."""
+def test_api_reference_generate_sidebar_custom_contents():
+    """write._generate_sidebar respects custom sidebar contents with sentinel."""
 
-    builder = Builder(
-        package="json",
+    ref = _make_api_ref(
         sidebar={
             "id": "custom",
             "file": "sidebar.yml",
             "contents": ["intro.qmd", "{{ contents }}", "outro.qmd"],
-        },
+        }
     )
-    sidebar = builder._generate_sidebar(builder.layout)
+    sidebar = write._generate_sidebar(
+        ref.sections,
+        dir=ref.settings.dir,
+        out_page_suffix=ref.settings.out_page_suffix,
+        sidebar=ref.settings.sidebar,
+    )
     entries = sidebar["website"]["sidebar"]
     # Should contain intro.qmd and outro.qmd with contents spliced in
     assert "intro.qmd" in entries[0]["contents"]
     assert "outro.qmd" in entries[0]["contents"]
 
 
-def test_builder_generate_sidebar_no_sentinel():
-    """Builder._generate_sidebar extends contents when no sentinel."""
+def test_api_reference_generate_sidebar_no_sentinel():
+    """write._generate_sidebar extends contents when no sentinel."""
 
-    builder = Builder(
-        package="json",
+    ref = _make_api_ref(
         sidebar={
             "id": "custom",
             "file": "sidebar.yml",
             "contents": ["intro.qmd"],
-        },
+        }
     )
-    sidebar = builder._generate_sidebar(builder.layout)
+    sidebar = write._generate_sidebar(
+        ref.sections,
+        dir=ref.settings.dir,
+        out_page_suffix=ref.settings.out_page_suffix,
+        sidebar=ref.settings.sidebar,
+    )
     entries = sidebar["website"]["sidebar"]
     # Contents should have been extended
     assert "intro.qmd" in entries[0]["contents"]
 
 
-def test_builder_generate_sidebar_invalid_contents_type():
-    """Builder._generate_sidebar raises TypeError for non-list contents."""
+def test_api_reference_generate_sidebar_invalid_contents_type():
+    """write._generate_sidebar raises TypeError for non-list contents."""
 
-    builder = Builder(
-        package="json",
+    ref = _make_api_ref(
         sidebar={
             "id": "custom",
             "file": "sidebar.yml",
             "contents": "not_a_list",
-        },
+        }
     )
     with pytest.raises(TypeError, match="must be a list"):
-        builder._generate_sidebar(builder.layout)
+        write._generate_sidebar(
+            ref.sections,
+            dir=ref.settings.dir,
+            out_page_suffix=ref.settings.out_page_suffix,
+            sidebar=ref.settings.sidebar,
+        )
 
 
-def test_builder_page_to_links():
-    """Builder._page_to_links converts a Page to link paths."""
+def test_api_reference_sidebar_page_links():
+    """_generate_sidebar renders a Page entry as a dir/path.qmd link."""
 
-    builder = Builder(package="json", dir="api")
-    page = layout.Page(path="my_func", contents=[])
-    links = builder._page_to_links(page)
-    assert links == ["api/my_func.qmd"]
+    ref = _make_api_ref(dir="api")
+    page = content.Page(path="my_func", contents=[])
+    section = content.Section(title="Functions", contents=[page])
+    result = write._generate_sidebar(
+        [section],
+        dir=ref.settings.dir,
+        out_page_suffix=ref.settings.out_page_suffix,
+        sidebar=None,
+    )
+    assert "api/my_func.qmd" in str(result)
 
 
-def test_builder_from_quarto_config_dict():
-    """Builder.from_quarto_config creates builder from dict config."""
+def test_api_reference_from_config_dict():
+    """APIReference is created from a dict config."""
 
     cfg = {
         "api-reference": {
@@ -28673,12 +28927,12 @@ def test_builder_from_quarto_config_dict():
             "sections": [],
         }
     }
-    builder = Builder.from_quarto_config(cfg)
-    assert builder.package == "json"
+    ref = APIReference(cfg)
+    assert ref.package == "json"
 
 
-def test_builder_from_quarto_config_yaml_file():
-    """Builder.from_quarto_config creates builder from YAML file."""
+def test_api_reference_from_yaml_file():
+    """APIReference is created from a YAML file path."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         cfg_file = Path(tmp_dir) / "quarto.yml"
@@ -28686,19 +28940,19 @@ def test_builder_from_quarto_config_yaml_file():
             "api-reference:\n  package: json\n  sections: []\n",
             encoding="utf-8",
         )
-        builder = Builder.from_quarto_config(str(cfg_file))
-        assert builder.package == "json"
+        ref = APIReference(str(cfg_file))
+        assert ref.package == "json"
 
 
-def test_builder_from_quarto_config_no_section_raises():
-    """Builder.from_quarto_config raises KeyError when no section found."""
+def test_api_reference_no_section_raises():
+    """APIReference raises KeyError when no section found."""
 
     with pytest.raises(KeyError, match="No .api-reference"):
-        Builder.from_quarto_config({"other": {}})
+        APIReference({"other": {}})
 
 
-def test_builder_from_quarto_config_with_style():
-    """Builder.from_quarto_config ignores style key in config."""
+def test_api_reference_ignores_style_key():
+    """APIReference ignores the compatibility-only style key."""
 
     cfg = {
         "api-reference": {
@@ -28707,12 +28961,12 @@ def test_builder_from_quarto_config_with_style():
             "style": "pkgdown",
         }
     }
-    builder = Builder.from_quarto_config(cfg)
-    assert builder.package == "json"
+    ref = APIReference(cfg)
+    assert ref.package == "json"
 
 
-def test_builder_from_quarto_config_interlinks_fast():
-    """Builder.from_quarto_config reads interlinks.fast setting."""
+def test_api_reference_drops_interlinks_fast():
+    """APIReference does not read the dropped interlinks.fast setting."""
 
     cfg = {
         "api-reference": {
@@ -28723,8 +28977,9 @@ def test_builder_from_quarto_config_interlinks_fast():
             "fast": True,
         },
     }
-    builder = Builder.from_quarto_config(cfg)
-    assert builder._fast_inventory is True
+    ref = APIReference(cfg)
+    assert ref.package == "json"
+    assert not hasattr(ref.settings, "fast_inventory")
 
 
 def test_cli_ordered_group_list_commands():
@@ -29580,7 +29835,7 @@ def test_cli_main_entry_point():
 def test_ast_transform_tuple_examples():
     """transform() converts an examples tuple to ExampleCode."""
 
-    kind_cls = type(ds.DocstringSectionText("x").kind)
+    kind_cls = type(gf.DocstringSectionText("x").kind)
     result = transform((kind_cls["examples"], "print(1)"))
 
     assert isinstance(result, ExampleCode)
@@ -29590,7 +29845,7 @@ def test_ast_transform_tuple_examples():
 def test_ast_transform_tuple_text():
     """transform() converts a text tuple to ExampleText."""
 
-    kind_cls = type(ds.DocstringSectionText("x").kind)
+    kind_cls = type(gf.DocstringSectionText("x").kind)
     result = transform((kind_cls["text"], "some description"))
 
     assert isinstance(result, ExampleText)
@@ -29600,7 +29855,7 @@ def test_ast_transform_tuple_text():
 def test_ast_transform_tuple_unsupported_passthrough():
     """transform() returns unsupported tuple type unchanged when ValueError is raised."""
 
-    kind_cls = type(ds.DocstringSectionText("x").kind)
+    kind_cls = type(gf.DocstringSectionText("x").kind)
 
     # 'parameters' kind is not handled by tuple_to_data, so ValueError → passthrough
     result = transform((kind_cls["parameters"], "stuff"))
@@ -29612,7 +29867,7 @@ def test_ast_transform_tuple_unsupported_passthrough():
 def test_ast_transform_docstring_section_list():
     """transform() processes a list of DocstringSection objects."""
 
-    sections = [ds.DocstringSectionText("Hello world")]
+    sections = [gf.DocstringSectionText("Hello world")]
     result = transform(sections)
 
     assert isinstance(result, list)
@@ -29629,7 +29884,7 @@ def test_ast_transform_passthrough():
 def test_ast_tuple_to_data_examples():
     """tuple_to_data converts examples kind to ExampleCode."""
 
-    kind_cls = type(ds.DocstringSectionText("x").kind)
+    kind_cls = type(gf.DocstringSectionText("x").kind)
     result = tuple_to_data((kind_cls["examples"], "x = 1"))
 
     assert isinstance(result, ExampleCode)
@@ -29639,7 +29894,7 @@ def test_ast_tuple_to_data_examples():
 def test_ast_tuple_to_data_text():
     """tuple_to_data converts text kind to ExampleText."""
 
-    kind_cls = type(ds.DocstringSectionText("x").kind)
+    kind_cls = type(gf.DocstringSectionText("x").kind)
     result = tuple_to_data((kind_cls["text"], "description"))
 
     assert isinstance(result, ExampleText)
@@ -29649,7 +29904,7 @@ def test_ast_tuple_to_data_text():
 def test_ast_tuple_to_data_unsupported_raises():
     """tuple_to_data raises ValueError for unsupported kinds."""
 
-    kind_cls = type(ds.DocstringSectionText("x").kind)
+    kind_cls = type(gf.DocstringSectionText("x").kind)
     with pytest.raises(ValueError, match="Unsupported"):
         tuple_to_data((kind_cls["parameters"], "stuff"))
 
@@ -29688,7 +29943,7 @@ def test_ast_split_sections_empty():
 def test_ast_transform_docstring_section_text():
     """transform() converts DocstringSectionText with known subsections."""
 
-    text_section = ds.DocstringSectionText(
+    text_section = gf.DocstringSectionText(
         "See Also\n--------\nother_func\n\nNotes\n-----\nImportant note.\n"
     )
     result = _DocstringSectionPatched.transform(text_section)
@@ -29701,17 +29956,17 @@ def test_ast_transform_docstring_section_text():
 def test_ast_transform_docstring_section_text_plain():
     """transform() returns plain DocstringSectionText when no subsections found."""
 
-    text_section = ds.DocstringSectionText("Just a plain paragraph.")
+    text_section = gf.DocstringSectionText("Just a plain paragraph.")
     result = _DocstringSectionPatched.transform(text_section)
 
     assert len(result) == 1
-    assert isinstance(result[0], ds.DocstringSectionText)
+    assert isinstance(result[0], gf.DocstringSectionText)
 
 
 def test_ast_transform_docstring_section_admonition_known():
     """transform() converts DocstringSectionAdmonition with known title."""
 
-    adm_section = ds.DocstringSectionAdmonition(
+    adm_section = gf.DocstringSectionAdmonition(
         kind="warning", text="Be careful!", title="Warnings"
     )
     result = _DocstringSectionPatched.transform(adm_section)
@@ -29724,7 +29979,7 @@ def test_ast_transform_docstring_section_admonition_known():
 def test_ast_transform_docstring_section_admonition_unknown():
     """transform() returns unknown DocstringSectionAdmonition unchanged."""
 
-    adm_section = ds.DocstringSectionAdmonition(kind="custom", text="stuff", title="Custom Section")
+    adm_section = gf.DocstringSectionAdmonition(kind="custom", text="stuff", title="Custom Section")
     result = _DocstringSectionPatched.transform(adm_section)
 
     assert len(result) == 1
@@ -29734,7 +29989,7 @@ def test_ast_transform_docstring_section_admonition_unknown():
 def test_ast_transform_docstring_section_passthrough():
     """transform() returns non-text, non-admonition sections unchanged."""
 
-    params_section = ds.DocstringSectionParameters([])
+    params_section = gf.DocstringSectionParameters([])
     result = _DocstringSectionPatched.transform(params_section)
 
     assert result == [params_section]
@@ -29744,8 +29999,8 @@ def test_ast_transform_all():
     """transform_all() processes list of mixed sections."""
 
     sections = [
-        ds.DocstringSectionText("Notes\n-----\nA note.\n"),
-        ds.DocstringSectionParameters([]),
+        gf.DocstringSectionText("Notes\n-----\nA note.\n"),
+        gf.DocstringSectionParameters([]),
     ]
     result = _DocstringSectionPatched.transform_all(sections)
 
@@ -29754,7 +30009,8 @@ def test_ast_transform_all():
 
 def test_ast_fields_example_code():
     """fields() returns dataclass field names for ExampleCode."""
-    from great_docs._renderer._ast import ExampleCode, fields
+    from great_docs._apiref._docstring_sections import ExampleCode
+    from great_docs._apiref._preview import fields
 
     ec = ExampleCode("print(1)")
     result = fields(ec)
@@ -29763,7 +30019,8 @@ def test_ast_fields_example_code():
 
 def test_ast_fields_example_text():
     """fields() returns dataclass field names for ExampleText."""
-    from great_docs._renderer._ast import ExampleText, fields
+    from great_docs._apiref._docstring_sections import ExampleText
+    from great_docs._apiref._preview import fields
 
     et = ExampleText("description")
     result = fields(et)
@@ -29771,83 +30028,83 @@ def test_ast_fields_example_text():
 
 
 def test_ast_fields_function():
-    """fields() returns expected fields for dc.Function."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.Function."""
+    from great_docs._apiref._preview import fields
 
-    func = dc.Function(name="my_func", lineno=1)
+    func = gf.Function(name="my_func", lineno=1)
     result = fields(func)
 
     assert result == ["name", "annotation", "parameters", "docstring"]
 
 
 def test_ast_fields_attribute():
-    """fields() returns expected fields for dc.Attribute."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.Attribute."""
+    from great_docs._apiref._preview import fields
 
-    attr = dc.Attribute(name="x", lineno=1)
+    attr = gf.Attribute(name="x", lineno=1)
     result = fields(attr)
 
     assert result == ["name", "annotation"]
 
 
 def test_ast_fields_docstring():
-    """fields() returns expected fields for dc.Docstring."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.Docstring."""
+    from great_docs._apiref._preview import fields
 
-    ds_obj = dc.Docstring("Hello", parser="numpy")
+    ds_obj = gf.Docstring("Hello", parser="numpy")
     result = fields(ds_obj)
 
     assert result == ["parser", "parsed"]
 
 
 def test_ast_fields_parameter():
-    """fields() returns expected fields for dc.Parameter."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.Parameter."""
+    from great_docs._apiref._preview import fields
 
-    param = dc.Parameter(name="x")
+    param = gf.Parameter(name="x")
     result = fields(param)
 
     assert result == ["annotation", "kind", "name", "default"]
 
 
 def test_ast_fields_docstring_parameter():
-    """fields() returns expected fields for ds.DocstringParameter."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.DocstringParameter."""
+    from great_docs._apiref._preview import fields
 
-    dp = ds.DocstringParameter(name="x", description="a number", annotation="int")
+    dp = gf.DocstringParameter(name="x", description="a number", annotation="int")
     result = fields(dp)
 
     assert result == ["annotation", "default", "description", "name", "value"]
 
 
 def test_ast_fields_docstring_named_element():
-    """fields() returns expected fields for ds.DocstringNamedElement."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.DocstringNamedElement."""
+    from great_docs._apiref._preview import fields
 
-    ne = ds.DocstringNamedElement(name="x", description="desc")
+    ne = gf.DocstringNamedElement(name="x", description="desc")
     result = fields(ne)
 
     assert result == ["name", "annotation", "description"]
 
 
 def test_ast_fields_docstring_section():
-    """fields() returns expected fields for ds.DocstringSection."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.DocstringSection."""
+    from great_docs._apiref._preview import fields
 
-    sec = ds.DocstringSectionText("hello")
+    sec = gf.DocstringSectionText("hello")
     result = fields(sec)
 
     assert result == ["kind", "title", "value"]
 
 
 def test_ast_fields_alias():
-    """fields() follows alias target for dc.Alias."""
-    from great_docs._renderer._ast import fields
+    """fields() follows alias target for gf.Alias."""
+    from great_docs._apiref._preview import fields
 
-    mod = dc.Module(name="testmod")
-    func = dc.Function(name="f", lineno=1)
+    mod = gf.Module(name="testmod")
+    func = gf.Function(name="f", lineno=1)
     mod.set_member("f", func)
-    alias = dc.Alias("f", func, parent=mod)
+    alias = gf.Alias("f", func, parent=mod)
     result = fields(alias)
 
     # Should match fields of the target (Function)
@@ -29859,13 +30116,13 @@ def test_ast_fields_alias_unresolvable():
 
     from griffe import ModulesCollection
 
-    from great_docs._renderer._ast import fields
+    from great_docs._apiref._preview import fields
 
     mc = ModulesCollection()
-    mod = dc.Module(name="testmod")
+    mod = gf.Module(name="testmod")
     mc["testmod"] = mod
 
-    alias = dc.Alias("missing_target", "nonexistent.module.func", parent=mod)
+    alias = gf.Alias("missing_target", "nonexistent.module.func", parent=mod)
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         result = fields(alias)
@@ -29876,10 +30133,10 @@ def test_ast_fields_alias_unresolvable():
 
 
 def test_ast_fields_object():
-    """fields() returns discovered attributes for dc.Object (Module)."""
-    from great_docs._renderer._ast import fields
+    """fields() returns discovered attributes for gf.Object (Module)."""
+    from great_docs._apiref._preview import fields
 
-    mod = dc.Module(name="mymod")
+    mod = gf.Module(name="mymod")
     result = fields(mod)
 
     assert "name" in result
@@ -29887,18 +30144,18 @@ def test_ast_fields_object():
     assert "docstring" in result
 
 
-def test_ast_fields_layout_base():
-    """fields() returns non-default fields for a LayoutBase subclass."""
-    from great_docs._renderer._ast import fields
+def test_ast_fields_walkable():
+    """fields() returns non-default fields for a Walkable subclass."""
+    from great_docs._apiref._preview import fields
 
-    auto = Auto(name="my_func")
-    result = fields(auto)
+    spec_obj = SpecObject(name="my_func")
+    result = fields(spec_obj)
     assert "name" in result
 
 
 def test_ast_fields_dict():
     """fields() returns dict keys."""
-    from great_docs._renderer._ast import fields
+    from great_docs._apiref._preview import fields
 
     result = fields({"a": 1, "b": 2})
     assert result == ["a", "b"]
@@ -29906,17 +30163,17 @@ def test_ast_fields_dict():
 
 def test_ast_fields_list():
     """fields() returns list indices."""
-    from great_docs._renderer._ast import fields
+    from great_docs._apiref._preview import fields
 
     result = fields([10, 20, 30])
     assert result == [0, 1, 2]
 
 
 def test_ast_fields_parameters():
-    """fields() returns indices for dc.Parameters."""
-    from great_docs._renderer._ast import fields
+    """fields() returns indices for gf.Parameters."""
+    from great_docs._apiref._preview import fields
 
-    params = dc.Parameters(dc.Parameter(name="a"), dc.Parameter(name="b"))
+    params = gf.Parameters(gf.Parameter(name="a"), gf.Parameter(name="b"))
     result = fields(params)
 
     assert result == [0, 1]
@@ -29924,7 +30181,7 @@ def test_ast_fields_parameters():
 
 def test_ast_fields_none_for_unknown():
     """fields() returns None for unrecognized types."""
-    from great_docs._renderer._ast import fields
+    from great_docs._apiref._preview import fields
 
     assert fields(42) is None
     assert fields("hello") is None
@@ -30030,7 +30287,7 @@ def test_ast_formatter_format_griffe_function():
     """Formatter.format renders a griffe Function as a tree."""
 
     f = Formatter()
-    func = dc.Function(name="my_func", lineno=1)
+    func = gf.Function(name="my_func", lineno=1)
     result = f.format(func)
 
     assert "Function" in result
@@ -30050,10 +30307,10 @@ def test_ast_formatter_format_nested():
     """Formatter.format handles nested structures."""
 
     f = Formatter()
-    func = dc.Function(
+    func = gf.Function(
         name="my_func",
         lineno=1,
-        docstring=dc.Docstring("A docstring", parser="numpy"),
+        docstring=gf.Docstring("A docstring", parser="numpy"),
     )
     result = f.format(func)
 
@@ -30063,7 +30320,8 @@ def test_ast_formatter_format_nested():
 
 def test_ast_preview_print(capsys):
     """preview() prints the formatted tree."""
-    from great_docs._renderer._ast import ExampleCode, preview
+    from great_docs._apiref._docstring_sections import ExampleCode
+    from great_docs._apiref._preview import preview
 
     preview(ExampleCode("x = 1"))
     captured = capsys.readouterr()
@@ -30072,7 +30330,8 @@ def test_ast_preview_print(capsys):
 
 def test_ast_preview_as_string():
     """preview(as_string=True) returns the tree as a string."""
-    from great_docs._renderer._ast import ExampleCode, preview
+    from great_docs._apiref._docstring_sections import ExampleCode
+    from great_docs._apiref._preview import preview
 
     result = preview(ExampleCode("x = 1"), as_string=True)
     assert isinstance(result, str)
@@ -30081,7 +30340,8 @@ def test_ast_preview_as_string():
 
 def test_ast_preview_max_depth():
     """preview() respects max_depth parameter."""
-    from great_docs._renderer._ast import ExampleCode, preview
+    from great_docs._apiref._docstring_sections import ExampleCode
+    from great_docs._apiref._preview import preview
 
     result = preview(ExampleCode("x = 1"), max_depth=0, as_string=True)
     assert "ExampleCode" in result
@@ -30090,7 +30350,8 @@ def test_ast_preview_max_depth():
 
 def test_ast_preview_compact():
     """preview() respects compact parameter."""
-    from great_docs._renderer._ast import ExampleCode, preview
+    from great_docs._apiref._docstring_sections import ExampleCode
+    from great_docs._apiref._preview import preview
 
     result = preview(ExampleCode("x = 1"), compact=True, as_string=True)
     assert "ExampleCode" in result
@@ -30120,12 +30381,12 @@ def test_ast_docstring_section_warnings():
 
 
 def test_ast_fields_docstring_element():
-    """fields() returns expected fields for ds.DocstringElement."""
-    from great_docs._renderer._ast import fields
+    """fields() returns expected fields for gf.DocstringElement."""
+    from great_docs._apiref._preview import fields
 
     # DocstringElement is the base; DocstringReturn is a subclass not matching
     # DocstringNamedElement or DocstringParameter
-    elem = ds.DocstringElement(annotation="int", description="returns an int")
+    elem = gf.DocstringElement(annotation="int", description="returns an int")
     result = fields(elem)
 
     assert result == ["annotation", "description"]
@@ -30134,40 +30395,40 @@ def test_ast_fields_docstring_element():
 # Helper to build a griffe class with attribute/function/class members
 def _build_class_with_members():
     """Build a griffe Class with one attribute, one function, one inner class."""
-    cls_obj = dc.Class(name="MyClass", lineno=1)
-    attr_obj = dc.Attribute(name="my_attr", lineno=2)
-    func_obj = dc.Function(name="method", lineno=3)
-    inner_obj = dc.Class(name="Inner", lineno=4)
+    cls_obj = gf.Class(name="MyClass", lineno=1)
+    attr_obj = gf.Attribute(name="my_attr", lineno=2)
+    func_obj = gf.Function(name="method", lineno=3)
+    inner_obj = gf.Class(name="Inner", lineno=4)
     cls_obj.set_member("my_attr", attr_obj)
     cls_obj.set_member("method", func_obj)
     cls_obj.set_member("Inner", inner_obj)
 
-    doc_attr = layout.DocAttribute(name="my_attr", obj=attr_obj)
-    doc_func = layout.DocFunction(name="method", obj=func_obj)
-    doc_inner = layout.DocClass(name="Inner", obj=inner_obj, members=[])
-    doc_cls = layout.DocClass(name="MyClass", obj=cls_obj, members=[doc_attr, doc_func, doc_inner])
+    doc_attr = content.DocAttribute(name="my_attr", obj=attr_obj)
+    doc_func = content.DocFunction(name="method", obj=func_obj)
+    doc_inner = content.DocClass(name="Inner", obj=inner_obj, members=[])
+    doc_cls = content.DocClass(name="MyClass", obj=cls_obj, members=[doc_attr, doc_func, doc_inner])
     return cls_obj, doc_cls
 
 
 def _build_class_with_member_pages():
     """Build a griffe Class with MemberPage members."""
-    cls_obj = dc.Class(name="MyClass", lineno=1)
-    attr_obj = dc.Attribute(name="my_attr", lineno=2)
-    func_obj = dc.Function(name="method", lineno=3)
-    inner_obj = dc.Class(name="Inner", lineno=4)
+    cls_obj = gf.Class(name="MyClass", lineno=1)
+    attr_obj = gf.Attribute(name="my_attr", lineno=2)
+    func_obj = gf.Function(name="method", lineno=3)
+    inner_obj = gf.Class(name="Inner", lineno=4)
     cls_obj.set_member("my_attr", attr_obj)
     cls_obj.set_member("method", func_obj)
     cls_obj.set_member("Inner", inner_obj)
 
-    doc_attr = layout.DocAttribute(name="my_attr", obj=attr_obj)
-    doc_func = layout.DocFunction(name="method", obj=func_obj)
-    doc_inner = layout.DocClass(name="Inner", obj=inner_obj, members=[])
+    doc_attr = content.DocAttribute(name="my_attr", obj=attr_obj)
+    doc_func = content.DocFunction(name="method", obj=func_obj)
+    doc_inner = content.DocClass(name="Inner", obj=inner_obj, members=[])
 
-    page_attr = layout.MemberPage(path="my_attr", contents=[doc_attr])
-    page_func = layout.MemberPage(path="method", contents=[doc_func])
-    page_inner = layout.MemberPage(path="Inner", contents=[doc_inner])
+    page_attr = content.MemberPage(path="my_attr", contents=[doc_attr])
+    page_func = content.MemberPage(path="method", contents=[doc_func])
+    page_inner = content.MemberPage(path="Inner", contents=[doc_inner])
 
-    doc_cls = layout.DocClass(
+    doc_cls = content.DocClass(
         name="MyClass", obj=cls_obj, members=[page_attr, page_func, page_inner]
     )
     return cls_obj, doc_cls
@@ -30237,8 +30498,8 @@ def test_mixin_render_body_with_member_pages():
 def test_mixin_render_body_no_members():
     """render_body returns just docstring when no members."""
 
-    cls_obj = dc.Class(name="Empty", lineno=1)
-    doc_cls = layout.DocClass(name="Empty", obj=cls_obj, members=[])
+    cls_obj = gf.Class(name="Empty", lineno=1)
+    doc_cls = content.DocClass(name="Empty", obj=cls_obj, members=[])
     render = RenderDocClass(doc_cls, level=1)
 
     body = render.render_body()
@@ -30247,12 +30508,96 @@ def test_mixin_render_body_no_members():
     assert body is None or "Members" not in str(body)
 
 
+def test_render_section_text_converts_sphinx_fields():
+    """Sphinx fields render from Griffe's structured docstring sections."""
+    from great_docs.hooks._docstring_parsed import emit_docstring_parsed
+    from great_docs.hooks._object_resolved import emit_object_resolved
+
+    func = gf.Function(
+        name="f",
+        lineno=1,
+        parameters=gf.Parameters(gf.Parameter("x", annotation="int")),
+        returns="str",
+    )
+    func.docstring = gf.Docstring(
+        "Do a thing.\n\n:param x: The x value.\n:returns: A result.\n:rtype: str",
+        parent=func,
+        parser="sphinx",
+    )
+    assert emit_object_resolved(func) is func
+    emit_docstring_parsed(func)
+
+    doc_fn = content.DocFunction(name="f", obj=func)
+    out = str(RenderDocFunction(doc_fn, level=1).render_body())
+    assert ".doc-parameters" in out
+    assert "The x value." in out
+
+
+def test_render_section_text_converts_google_sections():
+    """Google sections render from Griffe's structured docstring sections."""
+    from great_docs.hooks._docstring_parsed import emit_docstring_parsed
+    from great_docs.hooks._object_resolved import emit_object_resolved
+
+    func = gf.Function(
+        name="f",
+        lineno=1,
+        parameters=gf.Parameters(gf.Parameter("x", annotation="int")),
+        returns="int",
+    )
+    func.docstring = gf.Docstring(
+        "Do a thing.\n\nArgs:\n    x: The x value.\n\nReturns:\n    (int): A result.",
+        parent=func,
+        parser="google",
+    )
+    assert emit_object_resolved(func) is func
+    emit_docstring_parsed(func)
+
+    doc_fn = content.DocFunction(name="f", obj=func)
+    out = str(RenderDocFunction(doc_fn, level=1).render_body())
+    assert ".doc-parameters" in out
+    assert ".doc-returns" in out
+
+
+def test_render_section_text_fences_doctests():
+    """Unfenced >>> doctest lines in free text render inside a fenced code block."""
+    from great_docs.hooks._docstring_parsed import emit_docstring_parsed
+    from great_docs.hooks._object_resolved import emit_object_resolved
+
+    func = gf.Function(name="f", lineno=1)
+    func.docstring = gf.Docstring(
+        "Do a thing.\n\n>>> f()\n1",
+        parent=func,
+        parser="numpy",
+    )
+    assert emit_object_resolved(func) is func
+    emit_docstring_parsed(func)
+
+    doc_fn = content.DocFunction(name="f", obj=func)
+    out = str(RenderDocFunction(doc_fn, level=1).render_body())
+    assert "```" in out
+
+
+def test_render_example_text_fences_doctests():
+    """An ExampleText block renders its doctest lines inside a fenced code block."""
+    from great_docs._apiref._docstring_sections import ExampleText
+    from great_docs.hooks._object_resolved import emit_object_resolved
+
+    func = gf.Function(name="f", lineno=1)
+    func.docstring = gf.Docstring(">>> f()\n1", parent=func, parser="numpy")
+    assert emit_object_resolved(func) is func
+
+    doc_fn = content.DocFunction(name="f", obj=func)
+    render = RenderDocFunction(doc_fn, level=1)
+    out = str(render.render_docstring_section(ExampleText(func.docstring.value)))
+    assert "```" in out
+
+
 def test_mixin_render_body_invalid_member_type_raises():
     """render_body raises ValueError for unrecognized member types."""
 
-    cls_obj = dc.Class(name="Bad", lineno=1)
+    cls_obj = gf.Class(name="Bad", lineno=1)
     # Use a plain string as a member — not Doc or MemberPage
-    doc_cls = layout.DocClass(name="Bad", obj=cls_obj, members=["not_a_doc"])
+    doc_cls = content.DocClass(name="Bad", obj=cls_obj, members=["not_a_doc"])
     render = RenderDocClass(doc_cls, level=1)
 
     with pytest.raises(ValueError, match="Cannot render members of type"):
@@ -30260,14 +30605,16 @@ def test_mixin_render_body_invalid_member_type_raises():
 
 
 def test_mixin_render_members_returns_groups():
-    """render_members returns [attributes, classes, functions] groups."""
+    """render_members returns [type aliases, attributes, classes, functions] groups."""
 
     _, doc_cls = _build_class_with_members()
     render = RenderDocClass(doc_cls, level=1)
 
     members = render.render_members()
-    assert len(members) == 3
-    for m in members:
+    assert len(members) == 4
+    # No type alias members in this fixture, so that slot is None.
+    assert members[0] is None
+    for m in members[1:]:
         assert isinstance(m, RenderedMembersGroup)
 
 
@@ -30282,14 +30629,16 @@ def test_mixin_render_members_show_members_false():
 
 
 def test_mixin_render_member_pages_returns_groups():
-    """render_member_pages returns [attributes, classes, functions] page groups."""
+    """render_member_pages returns [type aliases, attributes, classes, functions] page groups."""
 
     _, doc_cls = _build_class_with_member_pages()
     render = RenderDocClass(doc_cls, level=1)
 
     pages = render.render_member_pages()
-    assert len(pages) == 3
-    for p in pages:
+    assert len(pages) == 4
+    # No type alias members in this fixture, so that slot is None.
+    assert pages[0] is None
+    for p in pages[1:]:
         assert isinstance(p, RenderedMemberPagesGroup)
 
 
@@ -30301,6 +30650,89 @@ def test_mixin_render_member_pages_show_members_false():
     render.show_members = False
 
     assert render.render_member_pages() == []
+
+
+def _build_class_with_member_pages_and_type_alias():
+    """Build a griffe Class with MemberPage members, including a type alias."""
+    cls_obj, doc_cls = _build_class_with_member_pages()
+    alias_obj = gf.TypeAlias(name="Inline", value=gf.ExprName("int"), lineno=5)
+    cls_obj.set_member("Inline", alias_obj)
+
+    doc_alias = DocTypeAlias(name="Inline", obj=alias_obj)
+    page_alias = MemberPage(path="Inline", contents=[doc_alias])
+    doc_cls.members.append(page_alias)
+    return cls_obj, doc_cls
+
+
+def test_mixin_type_alias_member_pages_property():
+    """type_alias_member_pages filters MemberPage members by is_type_alias."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    pages = render.type_alias_member_pages
+    assert len(pages) == 1
+    assert pages[0].path == "Inline"
+
+
+def test_mixin_type_alias_member_pages_honours_exclusions():
+    """exclude_type_aliases drops a type alias from type_alias_member_pages."""
+
+    cls_obj, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({cls_obj.path: "Inline"})
+        assert render.type_alias_member_pages == []
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
+
+
+def test_exclude_type_aliases_updates_globals():
+    """exclude_type_aliases updates the EXCLUSIONS.type_aliases global dict."""
+
+    original = dict(EXCLUSIONS.type_aliases)
+    try:
+        exclude_type_aliases({"test.MyClass": "Contract"})
+        assert EXCLUSIONS.type_aliases["test.MyClass"] == "Contract"
+    finally:
+        EXCLUSIONS.type_aliases.clear()
+        EXCLUSIONS.type_aliases.update(original)
+
+
+def test_mixin_render_type_alias_member_pages():
+    """render_type_alias_member_pages returns RenderedMemberPagesGroup."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    result = render.render_type_alias_member_pages()
+    assert isinstance(result, RenderedMemberPagesGroup)
+    assert "Type Aliases" in str(result.title)
+
+
+def test_mixin_render_type_alias_member_pages_show_false():
+    """render_type_alias_member_pages returns None when show_type_aliases=False."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+    render.show_type_aliases = False
+
+    assert render.render_type_alias_member_pages() is None
+
+
+def test_mixin_render_member_pages_includes_type_alias_group():
+    """render_member_pages fills the type-alias slot when a MemberPage alias exists."""
+
+    _, doc_cls = _build_class_with_member_pages_and_type_alias()
+    render = RenderDocClass(doc_cls, level=1)
+
+    pages = render.render_member_pages()
+    assert len(pages) == 4
+    assert isinstance(pages[0], RenderedMemberPagesGroup)
+    assert "Type Aliases" in str(pages[0].title)
 
 
 def test_mixin_attributes_property():
@@ -30370,111 +30802,111 @@ def test_mixin_function_member_pages_property():
 
 
 def test_mixin_attributes_exclude_filter():
-    """attributes property respects EXCLUDE_ATTRIBUTES."""
+    """attributes property respects EXCLUSIONS.attributes."""
 
     _, doc_cls = _build_class_with_members()
     render = RenderDocClass(doc_cls, level=1)
 
-    old = _globals.EXCLUDE_ATTRIBUTES.copy()
+    old = _globals.EXCLUSIONS.attributes.copy()
     try:
-        _globals.EXCLUDE_ATTRIBUTES["MyClass"] = ("my_attr",)
+        _globals.EXCLUSIONS.attributes["MyClass"] = ("my_attr",)
         if "attributes" in render.__dict__:
             del render.__dict__["attributes"]
         attrs = render.attributes
         assert len(attrs) == 0
     finally:
-        _globals.EXCLUDE_ATTRIBUTES.clear()
-        _globals.EXCLUDE_ATTRIBUTES.update(old)
+        _globals.EXCLUSIONS.attributes.clear()
+        _globals.EXCLUSIONS.attributes.update(old)
 
 
 def test_mixin_functions_exclude_filter():
-    """functions property respects EXCLUDE_FUNCTIONS."""
+    """functions property respects EXCLUSIONS.functions."""
 
     _, doc_cls = _build_class_with_members()
     render = RenderDocClass(doc_cls, level=1)
 
-    old = _globals.EXCLUDE_FUNCTIONS.copy()
+    old = _globals.EXCLUSIONS.functions.copy()
     try:
-        _globals.EXCLUDE_FUNCTIONS["MyClass"] = ("method",)
+        _globals.EXCLUSIONS.functions["MyClass"] = ("method",)
         if "functions" in render.__dict__:
             del render.__dict__["functions"]
         funcs = render.functions
         assert len(funcs) == 0
     finally:
-        _globals.EXCLUDE_FUNCTIONS.clear()
-        _globals.EXCLUDE_FUNCTIONS.update(old)
+        _globals.EXCLUSIONS.functions.clear()
+        _globals.EXCLUSIONS.functions.update(old)
 
 
 def test_mixin_classes_exclude_filter():
-    """classes property respects EXCLUDE_CLASSES."""
+    """classes property respects EXCLUSIONS.classes."""
 
     _, doc_cls = _build_class_with_members()
     render = RenderDocClass(doc_cls, level=1)
 
-    old = _globals.EXCLUDE_CLASSES.copy()
+    old = _globals.EXCLUSIONS.classes.copy()
     try:
-        _globals.EXCLUDE_CLASSES["MyClass"] = "Inner"
+        _globals.EXCLUSIONS.classes["MyClass"] = "Inner"
         if "classes" in render.__dict__:
             del render.__dict__["classes"]
         classes = render.classes
         assert len(classes) == 0
     finally:
-        _globals.EXCLUDE_CLASSES.clear()
-        _globals.EXCLUDE_CLASSES.update(old)
+        _globals.EXCLUSIONS.classes.clear()
+        _globals.EXCLUSIONS.classes.update(old)
 
 
 def test_mixin_attribute_member_pages_exclude_filter():
-    """attribute_member_pages respects EXCLUDE_ATTRIBUTES."""
+    """attribute_member_pages respects EXCLUSIONS.attributes."""
 
     _, doc_cls = _build_class_with_member_pages()
     render = RenderDocClass(doc_cls, level=1)
 
-    old = _globals.EXCLUDE_ATTRIBUTES.copy()
+    old = _globals.EXCLUSIONS.attributes.copy()
     try:
-        _globals.EXCLUDE_ATTRIBUTES["MyClass"] = "my_attr"
+        _globals.EXCLUSIONS.attributes["MyClass"] = "my_attr"
         if "attribute_member_pages" in render.__dict__:
             del render.__dict__["attribute_member_pages"]
         pages = render.attribute_member_pages
         assert len(pages) == 0
     finally:
-        _globals.EXCLUDE_ATTRIBUTES.clear()
-        _globals.EXCLUDE_ATTRIBUTES.update(old)
+        _globals.EXCLUSIONS.attributes.clear()
+        _globals.EXCLUSIONS.attributes.update(old)
 
 
 def test_mixin_class_member_pages_exclude_filter():
-    """class_member_pages respects EXCLUDE_CLASSES."""
+    """class_member_pages respects EXCLUSIONS.classes."""
 
     _, doc_cls = _build_class_with_member_pages()
     render = RenderDocClass(doc_cls, level=1)
 
-    old = _globals.EXCLUDE_CLASSES.copy()
+    old = _globals.EXCLUSIONS.classes.copy()
     try:
-        _globals.EXCLUDE_CLASSES["MyClass"] = ("Inner",)
+        _globals.EXCLUSIONS.classes["MyClass"] = ("Inner",)
         if "class_member_pages" in render.__dict__:
             del render.__dict__["class_member_pages"]
         pages = render.class_member_pages
         assert len(pages) == 0
     finally:
-        _globals.EXCLUDE_CLASSES.clear()
-        _globals.EXCLUDE_CLASSES.update(old)
+        _globals.EXCLUSIONS.classes.clear()
+        _globals.EXCLUSIONS.classes.update(old)
 
 
 def test_mixin_function_member_pages_exclude_filter():
-    """function_member_pages respects EXCLUDE_FUNCTIONS."""
+    """function_member_pages respects EXCLUSIONS.functions."""
 
     _, doc_cls = _build_class_with_member_pages()
     render = RenderDocClass(doc_cls, level=1)
 
-    old = _globals.EXCLUDE_FUNCTIONS.copy()
+    old = _globals.EXCLUSIONS.functions.copy()
     try:
-        _globals.EXCLUDE_FUNCTIONS["MyClass"] = "method"
+        _globals.EXCLUSIONS.functions["MyClass"] = "method"
         if "function_member_pages" in render.__dict__:
             del render.__dict__["function_member_pages"]
         pages = render.function_member_pages
         assert len(pages) == 0
     finally:
-        _globals.EXCLUDE_FUNCTIONS.clear()
-        _globals.EXCLUDE_FUNCTIONS.update(old)
+        _globals.EXCLUSIONS.functions.clear()
+        _globals.EXCLUSIONS.functions.update(old)
 
 
 def test_mixin_render_classes():
@@ -30639,11 +31071,11 @@ def test_mixin_render_members_group_no_summary_global():
 def test_mixin_render_members_group_empty_returns_none():
     """_render_members_group returns None when no members of that type."""
 
-    cls_obj = dc.Class(name="FuncOnly", lineno=1)
-    func_obj = dc.Function(name="method", lineno=2)
+    cls_obj = gf.Class(name="FuncOnly", lineno=1)
+    func_obj = gf.Function(name="method", lineno=2)
     cls_obj.set_member("method", func_obj)
-    doc_func = layout.DocFunction(name="method", obj=func_obj)
-    doc_cls = layout.DocClass(name="FuncOnly", obj=cls_obj, members=[doc_func])
+    doc_func = content.DocFunction(name="method", obj=func_obj)
+    doc_cls = content.DocClass(name="FuncOnly", obj=cls_obj, members=[doc_func])
 
     render = RenderDocClass(doc_cls, level=1)
 
@@ -30695,13 +31127,13 @@ def test_mixin_render_member_pages_group_no_summary():
 def test_mixin_render_member_pages_group_empty_returns_none():
     """_render_member_pages_group returns None when no pages of that type."""
 
-    cls_obj = dc.Class(name="FuncOnly", lineno=1)
-    func_obj = dc.Function(name="method", lineno=2)
+    cls_obj = gf.Class(name="FuncOnly", lineno=1)
+    func_obj = gf.Function(name="method", lineno=2)
     cls_obj.set_member("method", func_obj)
 
-    doc_func = layout.DocFunction(name="method", obj=func_obj)
-    page_func = layout.MemberPage(path="method", contents=[doc_func])
-    doc_cls = layout.DocClass(name="FuncOnly", obj=cls_obj, members=[page_func])
+    doc_func = content.DocFunction(name="method", obj=func_obj)
+    page_func = content.MemberPage(path="method", contents=[doc_func])
+    doc_cls = content.DocClass(name="FuncOnly", obj=cls_obj, members=[page_func])
 
     render = RenderDocClass(doc_cls, level=1)
 
@@ -30785,12 +31217,12 @@ def test_mixin_render_member_pages_group_has_summary_table():
 def test_mixin_render_functions_module_uses_functions_slug():
     """For DocModule, render_functions uses 'Functions' not 'Methods'."""
 
-    mod_obj = dc.Module(name="mymod")
-    func_obj = dc.Function(name="func", lineno=1)
+    mod_obj = gf.Module(name="mymod")
+    func_obj = gf.Function(name="func", lineno=1)
     mod_obj.set_member("func", func_obj)
 
-    doc_func = layout.DocFunction(name="func", obj=func_obj)
-    doc_mod = layout.DocModule(name="mymod", obj=mod_obj, members=[doc_func])
+    doc_func = content.DocFunction(name="func", obj=func_obj)
+    doc_mod = content.DocModule(name="mymod", obj=mod_obj, members=[doc_func])
 
     render = RenderDocModule(doc_mod, level=1)
 
@@ -30802,23 +31234,23 @@ def test_mixin_render_functions_module_uses_functions_slug():
 def test_mixin_render_members_module_uses_functions_slug():
     """For DocModule, render_members has 'Functions' group not 'Methods'."""
 
-    mod_obj = dc.Module(name="mymod", filepath=Path("/tmp/mymod.py"))
-    func_obj = dc.Function(name="func", lineno=1)
-    cls_obj = dc.Class(name="Cls", lineno=2)
-    attr_obj = dc.Attribute(name="val", lineno=3)
+    mod_obj = gf.Module(name="mymod", filepath=Path("/tmp/mymod.py"))
+    func_obj = gf.Function(name="func", lineno=1)
+    cls_obj = gf.Class(name="Cls", lineno=2)
+    attr_obj = gf.Attribute(name="val", lineno=3)
     mod_obj.set_member("func", func_obj)
     mod_obj.set_member("Cls", cls_obj)
     mod_obj.set_member("val", attr_obj)
 
-    doc_func = layout.DocFunction(name="func", obj=func_obj)
-    doc_cls = layout.DocClass(name="Cls", obj=cls_obj, members=[])
-    doc_attr = layout.DocAttribute(name="val", obj=attr_obj)
-    doc_mod = layout.DocModule(name="mymod", obj=mod_obj, members=[doc_attr, doc_cls, doc_func])
+    doc_func = content.DocFunction(name="func", obj=func_obj)
+    doc_cls = content.DocClass(name="Cls", obj=cls_obj, members=[])
+    doc_attr = content.DocAttribute(name="val", obj=attr_obj)
+    doc_mod = content.DocModule(name="mymod", obj=mod_obj, members=[doc_attr, doc_cls, doc_func])
 
     render = RenderDocModule(doc_mod, level=1)
 
     members = render.render_members()
-    assert len(members) == 3
+    assert len(members) == 4
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
         body_str = str(render.render_body())
@@ -31271,1242 +31703,22 @@ def test_blocks_str_items_single_block():
     assert "```" in result
 
 
-def test_rstconv_escape():
-    """escape() wraps value in backticks."""
-    assert escape("foo") == "`foo`"
-    assert escape("int | str") == "`int | str`"
-
-
-def test_rstconv_sanitize_defaults():
-    """sanitize() replaces newlines and escapes pipes/brackets by default."""
-    assert sanitize("a\nb") == "a b"
-    assert sanitize("a|b") == "a\\|b"
-    assert sanitize("[link]") == "\\[link\\]"
-
-
-def test_rstconv_sanitize_preserve_newlines():
-    """sanitize() with preserve_newlines keeps newlines."""
-    assert sanitize("a\nb", preserve_newlines=True) == "a\nb"
-
-
-def test_rstconv_sanitize_escape_quotes():
-    """sanitize() with escape_quotes escapes single/double quotes."""
-    result = sanitize('it\'s a "test"', escape_quotes=True)
-
-    assert "\\'" in result
-    assert '\\"' in result
-
-
-def test_rstconv_sanitize_allow_markdown():
-    """sanitize() with allow_markdown preserves brackets."""
-    assert sanitize("[link](url)", allow_markdown=True) == "[link](url)"
-
-
-def test_rstconv_convert_rst_text_code_block():
-    """_convert_rst_text converts RST :: code blocks to fenced blocks."""
-    text = "Example::\n\n    x = 1\n    y = 2\n"
-    result = _convert_rst_text(text)
-
-    assert "```python" in result
-    assert "x = 1" in result
-
-
-def test_rstconv_convert_rst_text_math_directive():
-    """_convert_rst_text converts .. math:: to $$...$$ display math."""
-    text = ".. math::\n\n    E = mc^2\n"
-    result = _convert_rst_text(text)
-
-    assert "$$" in result
-    assert "E = mc^2" in result
-
-
-def test_rstconv_convert_rst_text_math_empty_body():
-    """_convert_rst_text handles .. math:: with empty indented body."""
-
-    # Construct text that hits the empty-lines branch of math
-    text = ".. math::\n\n    \n"
-    m = _RST_CODE_BLOCK_RE.search(text)
-    if m:
-        result = _replace_rst_code_block(m)
-
-        assert "$$" in result
-
-
-def test_rstconv_rst_directive_preserved():
-    """Known RST directives like .. note:: are left untouched by code block conversion."""
-    text = ".. note::\n\n    This is a note.\n"
-    result = _convert_rst_text(text)
-
-    # The note directive should be converted by _convert_rst_directives, not code block handler
-    assert "```python" not in result
-
-
-def test_rstconv_code_block_no_prefix():
-    """RST :: code block with no prefix text (bare ::)."""
-    text = "::\n\n    code_here\n"
-    result = _convert_rst_text(text)
-
-    assert "```python" in result
-    assert "code_here" in result
-
-
-def test_rstconv_code_block_with_prefix():
-    """RST :: code block with prefix text gets prefix: before fenced block."""
-    text = "For example::\n\n    x = 1\n"
-    result = _convert_rst_text(text)
-
-    assert "```python" in result
-    assert "For example:" in result
-
-
-def test_rstconv_inline_math():
-    """_convert_rst_text converts :math:`...` to $...$."""
-    text = "The value is :math:`x^2 + y^2`."
-    result = _convert_rst_text(text)
-    assert "$x^2 + y^2$" in result
-
-
-def test_rstconv_quarto_cell_preserved():
-    """_convert_rst_text preserves ```{python} as executable Quarto cells."""
-    text = "```{python}\nprint('hi')\n```"
-    result = _convert_rst_text(text)
-
-    assert "```{python}" in result
-    assert "print('hi')" in result
-
-
-def test_rstconv_smart_dedent_no_indent():
-    """_smart_dedent returns text unchanged when first line has no indent."""
-    text = "no indent\n  some indent\n"
-
-    assert _smart_dedent(text) == text
-
-
-def test_rstconv_smart_dedent_with_indent():
-    """_smart_dedent strips common indent from all lines."""
-    text = "    line1\n    line2\n      line3\n"
-    result = _smart_dedent(text)
-
-    assert result == "line1\nline2\n  line3\n"
-
-
-def test_rstconv_smart_dedent_blank_lines():
-    """_smart_dedent preserves blank lines."""
-    text = "    line1\n\n    line2\n"
-    result = _smart_dedent(text)
-
-    assert result == "line1\n\nline2\n"
-
-
-def test_rstconv_smart_dedent_less_indent():
-    """_smart_dedent tolerates lines with less indent than margin."""
-    text = "    line1\n  line2\n    line3\n"
-    result = _smart_dedent(text)
-
-    # margin=4 from first line, line2 only has 2 spaces -> strips 2
-    assert "line1" in result
-    assert "line2" in result
-
-
-def test_rstconv_smart_dedent_all_blank():
-    """_smart_dedent handles text with only blank lines."""
-    text = "\n\n\n"
-    result = _smart_dedent(text)
-
-    assert result == text
-
-
-def test_rstconv_citations_basic():
-    """_convert_rst_citations converts .. [N] markers to numbered list."""
-    text = ".. [1] Author (Year). Title.\n.. [2] https://example.com\n"
-    result = _convert_rst_citations(text)
-
-    assert "1. Author (Year). Title." in result
-    assert "2. <https://example.com>" in result
-
-
-def test_rstconv_citations_no_citations():
-    """_convert_rst_citations returns text unchanged when no citations present."""
-    text = "Regular paragraph text."
-
-    assert _convert_rst_citations(text) == text
-
-
-def test_rstconv_citations_continuation_lines():
-    """_convert_rst_citations handles continuation lines."""
-    text = ".. [1] Author (Year).\n   Continuation of citation.\n"
-    result = _convert_rst_citations(text)
-
-    assert "1. Author (Year). Continuation of citation." in result
-
-
-def test_rstconv_simple_table_basic():
-    """_convert_rst_simple_tables converts basic 2-separator table."""
-    text = "======  ======\nName    Value\n======  ======\nfoo     1\nbar     2\n======  ======\n"
-    result = _convert_rst_simple_tables(text)
-
-    assert "| Name" in result
-    assert "| ---" in result
-    assert "| foo" in result
-    assert "| bar" in result
-
-
-def test_rstconv_simple_table_three_separators():
-    """_convert_rst_simple_tables handles 3-separator table (header + body)."""
-    text = "======  ======\nName    Value\n======  ======\nfoo     1\nbar     2\n======  ======\n"
-    result = _convert_rst_simple_tables(text)
-
-    assert "| Name" in result
-    assert "| foo" in result
-
-
-def test_rstconv_simple_table_no_header_rows():
-    """_rst_simple_table_to_md returns None when no header rows exist."""
-    # Only one separator line -> returns None
-    result = _rst_simple_table_to_md(["======  ======"])
-
-    assert result is None
-
-
-def test_rstconv_simple_table_to_md_two_sep():
-    """_rst_simple_table_to_md with 2 separators uses first data row as header."""
-    table_lines = [
-        "======  ======",
-        "Name    Value",
-        "foo     1",
-        "======  ======",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| Name" in result
-    assert "| foo" in result
-
-
-def test_rstconv_simple_table_to_md_three_sep():
-    """_rst_simple_table_to_md with 3 separators separates header from body."""
-    table_lines = [
-        "=====  =====",
-        "Col1   Col2",
-        "=====  =====",
-        "a      b",
-        "c      d",
-        "=====  =====",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| Col1" in result
-    assert "| a" in result
-    assert "| c" in result
-
-
-def test_rstconv_simple_table_padding():
-    """_rst_simple_table_to_md pads rows with fewer cells than columns."""
-    table_lines = [
-        "=====  =====  =====",
-        "A      B      C",
-        "=====  =====  =====",
-        "x",  # short row
-        "=====  =====  =====",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| A | B | C |" in result
-
-
-def test_rstconv_simple_table_no_col_spans():
-    """_rst_simple_table_to_md returns None when separator has no column spans."""
-    # A single block of === with no spaces -> no col_spans
-    table_lines = [
-        "==========",
-        "header",
-        "==========",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    assert result is None
-
-
-def test_rstconv_simple_table_in_context():
-    """_convert_rst_simple_tables converts a table surrounded by text."""
-    text = (
-        "Before text.\n=====  =====\nA      B\n=====  =====\n1      2\n=====  =====\nAfter text.\n"
-    )
-    result = _convert_rst_simple_tables(text)
-
-    assert "Before text." in result
-    assert "After text." in result
-    assert "| A" in result
-
-
-def test_rstconv_simple_table_conversion_fails():
-    """_convert_rst_simple_tables falls back when table conversion returns None."""
-    # A separator-like line that looks like a table start but isn't valid
-    text = "=====  =====\n"
-    result = _convert_rst_simple_tables(text)
-
-    assert "=====" in result
-
-
-def test_rstconv_grid_table_basic():
-    """_convert_rst_grid_tables converts a basic grid table."""
-    text = "+------+------+\n| Name | Val  |\n+======+======+\n| foo  | 1    |\n+------+------+\n"
-    result = _convert_rst_grid_tables(text)
-
-    assert "| Name | Val |" in result
-    assert "| ---" in result
-    assert "| foo | 1 |" in result
-
-
-def test_rstconv_grid_table_no_header_sep():
-    """_rst_grid_table_to_md without header separator uses first row as header."""
-    table_lines = [
-        "+------+------+",
-        "| A    | B    |",
-        "+------+------+",
-        "| 1    | 2    |",
-        "+------+------+",
-    ]
-    result = _rst_grid_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| A | B |" in result
-    assert "| 1 | 2 |" in result
-
-
-def test_rstconv_grid_table_to_md_too_few_positions():
-    """_rst_grid_table_to_md returns None when < 2 column positions."""
-    result = _rst_grid_table_to_md(["+"])
-
-    assert result is None
-
-
-def test_rstconv_grid_table_header_sep_no_header_rows():
-    """_rst_grid_table_to_md with header sep but no header rows returns None."""
-    table_lines = [
-        "+------+------+",
-        "+======+======+",
-        "| 1    | 2    |",
-        "+------+------+",
-    ]
-    result = _rst_grid_table_to_md(table_lines)
-
-    assert result is None
-
-
-def test_rstconv_grid_table_no_body_rows():
-    """_rst_grid_table_to_md without header sep and empty rows returns None."""
-    table_lines = [
-        "+------+------+",
-        "+------+------+",
-    ]
-    result = _rst_grid_table_to_md(table_lines)
-
-    assert result is None
-
-
-def test_rstconv_grid_table_padding():
-    """_rst_grid_table_to_md pads rows with fewer cells."""
-    table_lines = [
-        "+---+---+---+",
-        "| A | B | C |",
-        "+===+===+===+",
-        "| 1 |",  # short row
-        "+---+---+---+",
-    ]
-    result = _rst_grid_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| A | B | C |" in result
-
-
-def test_rstconv_grid_table_in_context():
-    """_convert_rst_grid_tables handles tables surrounded by text."""
-    text = (
-        "Before.\n"
-        "+------+------+\n"
-        "| A    | B    |\n"
-        "+======+======+\n"
-        "| 1    | 2    |\n"
-        "+------+------+\n"
-        "After.\n"
-    )
-    result = _convert_rst_grid_tables(text)
-
-    assert "Before." in result
-    assert "After." in result
-    assert "| A | B |" in result
-
-
-def test_rstconv_grid_table_conversion_fails():
-    """_convert_rst_grid_tables falls back when conversion returns None."""
-    text = "+---+---+\n+---+---+\n"
-    result = _convert_rst_grid_tables(text)
-
-    assert "+---+" in result
-
-
-def test_rstconv_sphinx_role_func():
-    """Sphinx :func: role adds ()."""
-    assert _convert_sphinx_roles(":func:`get_object`") == "`get_object()`"
-
-
-def test_rstconv_sphinx_role_func_already_parens():
-    """Sphinx :func: role with existing () doesn't double them."""
-    assert _convert_sphinx_roles(":func:`get_object()`") == "`get_object()`"
-
-
-def test_rstconv_sphinx_role_meth():
-    """Sphinx :meth: role adds ()."""
-    assert _convert_sphinx_roles(":meth:`process`") == "`process()`"
-
-
-def test_rstconv_sphinx_role_class():
-    """Sphinx :class: role produces code span without ()."""
-    assert _convert_sphinx_roles(":class:`MyClass`") == "`MyClass`"
-
-
-def test_rstconv_sphinx_role_exc():
-    """Sphinx :exc: role."""
-    assert _convert_sphinx_roles(":exc:`ValueError`") == "`ValueError`"
-
-
-def test_rstconv_sphinx_role_py_prefix():
-    """Sphinx :py:class: prefix is handled."""
-    assert _convert_sphinx_roles(":py:class:`int`") == "`int`"
-
-
-def test_rstconv_sphinx_role_attr():
-    """Sphinx :attr: role."""
-    assert _convert_sphinx_roles(":attr:`name`") == "`name`"
-
-
-def test_rstconv_sphinx_role_data():
-    """Sphinx :data: role."""
-    assert _convert_sphinx_roles(":data:`MY_CONST`") == "`MY_CONST`"
-
-
-def test_rstconv_sphinx_role_multiple():
-    """Multiple Sphinx roles in same text are all converted."""
-    text = "Use :func:`foo` or :class:`Bar`."
-    result = _convert_sphinx_roles(text)
-
-    assert "`foo()`" in result
-    assert "`Bar`" in result
-
-
-def test_rstconv_directive_note_block():
-    """Block-form .. note:: converted to callout-note."""
-    text = ".. note::\n\n    This is important.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "This is important." in result
-
-
-def test_rstconv_directive_warning_block():
-    """Block-form .. warning:: converted to callout-warning."""
-    text = ".. warning::\n\n    Be careful.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-warning" in result
-
-
-def test_rstconv_directive_tip_block():
-    """Block-form .. tip:: converted to callout-tip."""
-    text = ".. tip::\n\n    A useful tip.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-tip" in result
-
-
-def test_rstconv_directive_hint_block():
-    """.. hint:: maps to callout-tip."""
-    text = ".. hint::\n\n    A hint.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-tip" in result
-
-
-def test_rstconv_directive_danger_block():
-    """.. danger:: maps to callout-important."""
-    text = ".. danger::\n\n    Dangerous.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-important" in result
-
-
-def test_rstconv_directive_important_block():
-    """.. important:: maps to callout-important."""
-    text = ".. important::\n\n    Very important.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-important" in result
-
-
-def test_rstconv_directive_caution_block():
-    """.. caution:: maps to callout-caution."""
-    text = ".. caution::\n\n    Exercise caution.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-caution" in result
-
-
-def test_rstconv_directive_inline_form():
-    """Inline-form ``.. note:: text`` on a single line."""
-    text = ".. note:: This is a quick note."
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "This is a quick note." in result
-
-
-def test_rstconv_directive_bare():
-    """Bare directive ``.. note::`` with no body."""
-    text = ".. note::"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-
-
-def test_rstconv_directive_versionadded():
-    """.. versionadded:: produces callout-note with version title."""
-    text = ".. versionadded:: 2.0"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "Added in version 2.0" in result
-
-
-def test_rstconv_directive_versionchanged():
-    """.. versionchanged:: produces callout-note."""
-    text = ".. versionchanged:: 3.1"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-    assert "Changed in version 3.1" in result
-
-
-def test_rstconv_directive_deprecated():
-    """.. deprecated:: produces callout-warning."""
-    text = ".. deprecated:: 1.5"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-warning" in result
-    assert "Deprecated since version 1.5" in result
-
-
-def test_rstconv_directive_versionadded_block():
-    """Block-form .. versionadded:: with body text."""
-    text = ".. versionadded:: 2.0\n\n    Use the new API.\n"
-    result = _convert_rst_directives(text)
-
-    assert "Added in version 2.0" in result
-    assert "Use the new API." in result
-
-
-def test_rstconv_directive_deprecated_with_description():
-    """.. deprecated:: with inline version and block description."""
-    text = ".. deprecated:: 1.0\n\n    Use new_func() instead.\n"
-    result = _convert_rst_directives(text)
-
-    assert "Deprecated since version 1.0" in result
-    assert "Use new_func() instead." in result
-
-
-def test_rstconv_directive_to_callout_version_no_version():
-    """_rst_directive_to_callout handles version directive with no version string."""
-    result = _rst_directive_to_callout("versionadded", "")
-
-    assert "Added in version" in result
-    assert ".callout-note" in result
-
-
-def test_rstconv_directive_to_callout_note_empty():
-    """_rst_directive_to_callout for note with empty body."""
-    result = _rst_directive_to_callout("note", "")
-
-    assert ".callout-note" in result
-    assert ":::" in result
-
-
-def test_rstconv_directive_to_callout_note_with_content():
-    """_rst_directive_to_callout for note with content."""
-    result = _rst_directive_to_callout("note", "Some text", "inline part")
-
-    assert ".callout-note" in result
-    assert "inline part" in result or "Some text" in result
-
-
-def test_rstconv_directive_inline_with_inline_arg():
-    """Block directive with inline text plus block body."""
-    text = ".. note:: Important\n\n    Details here.\n"
-    result = _convert_rst_directives(text)
-
-    assert ".callout-note" in result
-
-
-def test_rstconv_bold_section_examples():
-    """**Examples**:: is converted to QMD section heading."""
-    text = "**Examples**::"
-    result = _convert_bold_section_headers(text, 2)
-
-    assert "## Examples {.doc-section .doc-section-examples}" in result
-
-
-def test_rstconv_bold_section_notes():
-    """**Notes**:: is converted."""
-    text = "**Notes**::"
-    result = _convert_bold_section_headers(text, 3)
-
-    assert "### Notes {.doc-section .doc-section-notes}" in result
-
-
-def test_rstconv_bold_section_references():
-    """**References**:: is converted."""
-    text = "**References**::"
-    result = _convert_bold_section_headers(text, 2)
-
-    assert "## References {.doc-section .doc-section-references}" in result
-
-
-def test_rstconv_bold_section_see_also():
-    """**See Also**:: is converted."""
-    text = "**See Also**::"
-    result = _convert_bold_section_headers(text, 2)
-
-    assert "## See Also {.doc-section .doc-section-see-also}" in result
-
-
-def test_rstconv_bold_section_warnings():
-    """**Warnings**:: is converted."""
-    text = "**Warnings**::"
-    result = _convert_bold_section_headers(text, 2)
-
-    assert "## Warnings {.doc-section .doc-section-warnings}" in result
-
-
-def test_rstconv_bold_section_no_match():
-    """Text without bold section headers is unchanged."""
-    text = "Regular text without bold sections."
-
-    assert _convert_bold_section_headers(text, 2) == text
-
-
-def test_rstconv_sphinx_fields_param():
-    """:param: fields produce a Parameters table."""
-    text = ":param x: The x value.\n:param y: The y value.\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Parameters" in result
-    assert "| x |" in result
-    assert "| y |" in result
-
-
-def test_rstconv_sphinx_fields_param_with_type():
-    """:param: + :type: fields populate Type column."""
-    text = ":param x: The x value.\n:type x: int\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Parameters" in result
-    assert "int" in result
-
-
-def test_rstconv_sphinx_fields_returns():
-    """:returns: field produces a Returns table."""
-    text = ":returns: The computed result.\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Returns" in result
-    assert "The computed result." in result
-
-
-def test_rstconv_sphinx_fields_return_singular():
-    """:return: (singular) field produces a Returns table."""
-    text = ":return: A value.\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Returns" in result
-
-
-def test_rstconv_sphinx_fields_rtype():
-    """:rtype: field populates the return type."""
-    text = ":returns: Result.\n:rtype: int\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Returns" in result
-    assert "int" in result
-
-
-def test_rstconv_sphinx_fields_rtype_no_returns():
-    """:rtype: without preceding :returns: creates a returns entry."""
-    text = ":rtype: str\n"
-    result = _convert_sphinx_fields(text, 3)
-
-    assert "### Returns" in result
-    assert "str" in result
-
-
-def test_rstconv_sphinx_fields_raises():
-    """:raises: field produces a Raises table."""
-    text = ":raises ValueError: If input is invalid.\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Raises" in result
-    assert "ValueError" in result
-    assert "If input is invalid." in result
-
-
-def test_rstconv_sphinx_fields_raise_singular():
-    """:raise: (singular) field produces a Raises table."""
-    text = ":raise TypeError: Wrong type.\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Raises" in result
-    assert "TypeError" in result
-
-
-def test_rstconv_sphinx_fields_combined():
-    """Multiple Sphinx field types produce all sections."""
-    text = (
-        "Description.\n\n"
-        ":param x: Input.\n"
-        ":type x: int\n"
-        ":returns: Output.\n"
-        ":rtype: str\n"
-        ":raises ValueError: Bad input.\n"
-    )
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "## Parameters" in result
-    assert "## Returns" in result
-    assert "## Raises" in result
-    assert "Description." in result
-
-
-def test_rstconv_sphinx_fields_no_fields():
-    """Text without Sphinx fields is returned unchanged."""
-    text = "Just a plain text paragraph."
-
-    assert _convert_sphinx_fields(text, 2) == text
-
-
-def test_rstconv_sphinx_fields_before_text():
-    """Text before fields is preserved."""
-    text = "This function does things.\n\n:param x: Value.\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "This function does things." in result
-    assert "## Parameters" in result
-
-
-def test_rstconv_google_args_section():
-    """Google-style Args: section produces a Parameters table."""
-    text = "Args:\n    x: The x value.\n    y: The y value.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Parameters" in result
-    assert "| x |" in result
-    assert "| y |" in result
-
-
-def test_rstconv_google_parameters_section():
-    """Google-style Parameters: section."""
-    text = "Parameters:\n    name: A name.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Parameters" in result
-    assert "| name |" in result
-
-
-def test_rstconv_google_returns_section():
-    """Google-style Returns: section."""
-    text = "Returns:\n    The result value.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Returns" in result
-    assert "The result value." in result
-
-
-def test_rstconv_google_raises_section():
-    """Google-style Raises: section produces a Raises table."""
-    text = "Raises:\n    ValueError: If input is bad.\n    TypeError: Wrong type.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Raises" in result
-    assert "ValueError" in result
-    assert "TypeError" in result
-
-
-def test_rstconv_google_raises_no_entries():
-    """Google-style Raises: with unparsable body falls back to raw text."""
-    text = "Raises:\n    some random text without proper format\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "some random text" in result
-
-
-def test_rstconv_google_examples_section():
-    """Google-style Examples: section produces a prose section."""
-    text = "Examples:\n    >>> import foo\n    >>> foo.bar()\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Examples" in result
-    assert ".doc-section-examples" in result
-
-
-def test_rstconv_google_notes_section():
-    """Google-style Notes: section."""
-    text = "Notes:\n    This is a note.\n"
-    result = _convert_google_sections(text, 3)
-
-    assert "### Notes" in result
-    assert ".doc-section-notes" in result
-
-
-def test_rstconv_google_warning_section():
-    """Google-style Warning: section."""
-    text = "Warning:\n    Be careful.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Warning" in result
-    assert ".doc-section-warnings" in result
-
-
-def test_rstconv_google_see_also_section():
-    """Google-style See Also: section."""
-    text = "See Also:\n    other_func\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## See Also" in result
-    assert ".doc-section-see-also" in result
-
-
-def test_rstconv_google_no_sections():
-    """Text without Google-style sections is unchanged."""
-    text = "Plain text."
-
-    assert _convert_google_sections(text, 2) == text
-
-
-def test_rstconv_google_args_no_entries():
-    """Google-style Args: with no parsable entries falls back to raw text."""
-    text = "Args:\n    just some plain text without entries\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "just some plain text" in result
-
-
-def test_rstconv_google_before_text():
-    """Text before Google sections is preserved."""
-    text = "This function does stuff.\n\nArgs:\n    x: Value.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "This function does stuff." in result
-    assert "## Parameters" in result
-
-
-def test_rstconv_google_multiple_sections():
-    """Multiple Google-style sections produce all sections."""
-    text = (
-        "Description.\n\n"
-        "Args:\n    x: Input.\n\n"
-        "Returns:\n    Result.\n\n"
-        "Raises:\n    ValueError: Bad.\n"
-    )
-    result = _convert_google_sections(text, 2)
-
-    assert "## Parameters" in result
-    assert "## Returns" in result
-    assert "## Raises" in result
-
-
-def test_rstconv_google_inline_section():
-    """Google-style section with inline text on same line."""
-    text = "Returns: The result.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Returns" in result
-    assert "The result." in result
-
-
-def test_rstconv_google_args_continuation_lines():
-    """Google-style Args entries with continuation lines."""
-    text = "Args:\n    x: The first\n        value.\n    y: Second.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Parameters" in result
-
-
-def test_rstconv_google_raises_continuation():
-    """Google-style Raises entries with continuation lines."""
-    body = "ValueError: If x is\n    negative.\nTypeError: Wrong type.\n"
-    entries = _parse_google_raises(body)
-
-    assert len(entries) == 2
-    assert "negative" in entries[0][1]
-
-
-def test_rstconv_parse_google_entries_basic():
-    """_parse_google_entries parses name: desc pairs."""
-    body = "x: The x value.\ny: The y value.\n"
-    entries = _parse_google_entries(body)
-
-    assert len(entries) == 2
-    assert entries[0] == ("x", "The x value.")
-    assert entries[1] == ("y", "The y value.")
-
-
-def test_rstconv_parse_google_entries_with_type():
-    """_parse_google_entries handles name (type): desc format."""
-    body = "x (int): The x value.\n"
-    entries = _parse_google_entries(body)
-
-    assert len(entries) == 1
-    assert entries[0][0] == "x"
-
-
-def test_rstconv_parse_google_entries_continuation():
-    """_parse_google_entries handles continuation lines."""
-    body = "x: The first\n    value.\ny: Second.\n"
-    entries = _parse_google_entries(body)
-
-    assert len(entries) == 2
-    assert "first" in entries[0][1]
-    assert "value" in entries[0][1]
-
-
-def test_rstconv_parse_google_entries_empty():
-    """_parse_google_entries with empty body returns empty list."""
-    assert _parse_google_entries("") == []
-    assert _parse_google_entries("\n\n") == []
-
-
-def test_rstconv_parse_google_raises_basic():
-    """_parse_google_raises parses ExcType: desc pairs."""
-    body = "ValueError: If x is negative.\nTypeError: Wrong type.\n"
-    entries = _parse_google_raises(body)
-
-    assert len(entries) == 2
-    assert entries[0] == ("ValueError", "If x is negative.")
-
-
-def test_rstconv_parse_google_raises_empty():
-    """_parse_google_raises with empty body returns empty list."""
-    assert _parse_google_raises("") == []
-
-
-def test_rstconv_fence_doctest_basic():
-    """_fence_doctest_blocks wraps >>> lines in fenced blocks."""
-    text = ">>> import os\n>>> os.getcwd()\n"
-    result = _fence_doctest_blocks(text)
-
-    assert "```python" in result
-    assert ">>> import os" in result
-    assert result.count("```") == 2  # open + close
-
-
-def test_rstconv_fence_doctest_with_continuation():
-    """_fence_doctest_blocks handles ... continuation lines."""
-    text = ">>> for i in range(3):\n...     print(i)\n"
-    result = _fence_doctest_blocks(text)
-
-    assert "```python" in result
-    assert "... " in result
-
-
-def test_rstconv_fence_doctest_mixed_with_text():
-    """_fence_doctest_blocks preserves non-doctest lines."""
-    text = "Some text.\n>>> x = 1\nMore text.\n>>> y = 2\n"
-    result = _fence_doctest_blocks(text)
-
-    assert "Some text." in result
-    assert "More text." in result
-    assert result.count("```python") == 2
-    assert result.count("```") == 4  # 2 open + 2 close
-
-
-def test_rstconv_fence_doctest_no_doctest():
-    """_fence_doctest_blocks returns text unchanged without doctest lines."""
-    text = "Regular text.\nNo doctest here.\n"
-    result = _fence_doctest_blocks(text)
-
-    assert "```" not in result
-    assert result == text
-
-
-def test_rstconv_fence_doctest_bare_prompt():
-    """_fence_doctest_blocks handles bare >>> without trailing space."""
-    text = ">>>\n"
-    result = _fence_doctest_blocks(text)
-
-    assert "```python" in result
-
-
-def test_rstconv_convert_rst_text_all_transforms():
-    """_convert_rst_text applies all transforms in sequence."""
-    text = "Use :func:`foo` to call.\n\nExample::\n\n    x = 1\n\nInline math :math:`E = mc^2`.\n"
-    result = _convert_rst_text(text)
-    assert "`foo()`" in result
-    assert "```python" in result
-    assert "$E = mc^2$" in result
-
-
-def test_rstconv_convert_rst_text_simple_table():
-    """_convert_rst_text handles RST simple tables."""
-    text = "=====  =====\nA      B\n=====  =====\n1      2\n=====  =====\n"
-    result = _convert_rst_text(text)
-    assert "| A" in result
-
-
-def test_rstconv_convert_rst_text_grid_table():
-    """_convert_rst_text converts RST grid tables."""
-    text = "+------+------+\n| A    | B    |\n+======+======+\n| 1    | 2    |\n+------+------+\n"
-    result = _convert_rst_text(text)
-
-    assert "| A | B |" in result
-
-
-def test_rstconv_convert_rst_text_citations():
-    """_convert_rst_text converts RST citations."""
-    text = ".. [1] Author. Title.\n"
-    result = _convert_rst_text(text)
-
-    assert "1. Author. Title." in result
-
-
-def test_rstconv_grid_table_non_table_line_breaks():
-    """Grid table collection stops on non-table lines."""
-    text = (
-        "+------+------+\n"
-        "| A    | B    |\n"
-        "+======+======+\n"
-        "| 1    | 2    |\n"
-        "+------+------+\n"
-        "Not a table line.\n"
-    )
-    result = _convert_rst_grid_tables(text)
-
-    assert "| A | B |" in result
-    assert "Not a table line." in result
-
-
-def test_rstconv_simple_table_peek_logic():
-    """Simple table handles the peek-ahead logic for mid-table separators."""
-    # Two separators with data that has content in the second column position
-    text = "======  ======\nHead1   Head2\n======  ======\ndata1   data2\n======  ======\n"
-    result = _convert_rst_simple_tables(text)
-    assert "| Head1" in result or "| data1" in result
-
-
-def test_rstconv_simple_table_peek_pass():
-    """Simple table mid-separator peek passes through when next line has 2nd-col content."""
-    # This triggers the `pass` branch at: a mid-table separator where
-    # the next line has non-space content at the second_col_start position.
-    # Structure: sep, header, sep (mid-table), data (with 2nd-col content), sep
-    text = "=====  =====\nCol1   Col2\n=====  =====\nval1   val2\n=====  =====\n"
-    result = _convert_rst_simple_tables(text)
-    assert "|" in result
-
-
-def test_rstconv_simple_table_3sep_no_header():
-    """_rst_simple_table_to_md returns None if 3 seps but no header rows."""
-    # 3 separators with nothing between first and second
-    table_lines = [
-        "=====  =====",
-        "=====  =====",
-        "data   val",
-        "=====  =====",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    # first_sep=0, second_sep=1, range(1,1) is empty -> no header_rows -> None
-    assert result is None
-
-
-def test_rstconv_simple_table_header_short_padding():
-    """Simple table pads header row when shorter than total columns."""
-    table_lines = [
-        "===  ===  ===",
-        "A    B",
-        "===  ===  ===",
-        "1    2    3",
-        "===  ===  ===",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| ---" in result
-
-
-def test_rstconv_simple_table_data_row_short_padding():
-    """Simple table pads data rows shorter than columns."""
-    table_lines = [
-        "===  ===  ===",
-        "A    B    C",
-        "===  ===  ===",
-        "1",
-        "===  ===  ===",
-    ]
-    result = _rst_simple_table_to_md(table_lines)
-
-    assert result is not None
-    assert result.count("|") > 4
-
-
-def test_rstconv_grid_table_header_short_padding():
-    """Grid table pads header when shorter than column count."""
-    # Grid table with 3 columns but header row that's short
-    table_lines = [
-        "+---+---+---+",
-        "| A |",
-        "+===+===+===+",
-        "| 1 | 2 | 3 |",
-        "+---+---+---+",
-    ]
-    result = _rst_grid_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| ---" in result
-
-
-def test_rstconv_grid_table_body_row_short_padding():
-    """Grid table pads body rows shorter than column count."""
-    table_lines = [
-        "+---+---+---+",
-        "| A | B | C |",
-        "+===+===+===+",
-        "| 1 |",
-        "+---+---+---+",
-    ]
-    result = _rst_grid_table_to_md(table_lines)
-
-    assert result is not None
-    assert "| A | B | C |" in result
-
-
-def test_rstconv_directive_block_empty_body():
-    """Block directive with empty body lines hits else branch."""
-    result = _rst_directive_to_callout("warning", "")
-
-    assert ".callout-warning" in result
-    assert ":::" in result
-
-
-def test_rstconv_sphinx_fields_no_matching():
-    """Sphinx fields regex matches but produces no params/returns/raises."""
-    # Text that has :param-like patterns but doesn't match SPHINX_FIELD_RE
-    text = "Something :parameter note: not a field."
-    result = _convert_sphinx_fields(text, 2)
-
-    assert result == text
-
-
-def test_rstconv_sphinx_fields_rtype_appends_to_returns():
-    """:rtype: adds type to most recent :returns: entry."""
-    text = ":returns: The result.\n:rtype: list\n"
-    result = _convert_sphinx_fields(text, 2)
-
-    assert "list" in result
-    assert "## Returns" in result
-
-
-def test_rstconv_google_entries_continuation():
-    """_parse_google_entries appends continuation lines to previous entry."""
-    body = "x: First line\n    continuation line\ny: Second.\n"
-    entries = _parse_google_entries(body)
-
-    assert len(entries) == 2
-    assert "continuation" in entries[0][1]
-
-
-def test_rstconv_google_section_body_dedent():
-    """Google section body lines are properly dedented."""
-    text = "Args:\n    x: First.\n    y: Second.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Parameters" in result
-    assert "| x |" in result
-    assert "| y |" in result
-
-
-def test_rstconv_google_section_with_blank_body_lines():
-    """Google section with blank lines in the body."""
-    text = "Notes:\n    First paragraph.\n\n    Second paragraph.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Notes" in result
-    assert "First paragraph." in result
-
-
-def test_rstconv_google_section_tab_indent():
-    """Google section body with tab-indented lines."""
-    text = "Returns:\n\tThe result.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Returns" in result
-    assert "The result." in result
-
-
-def test_rstconv_google_section_non_indented_break():
-    """Google section body collection stops at non-indented lines."""
-    text = "Notes:\n    A note.\nNot indented.\n"
-    result = _convert_google_sections(text, 2)
-
-    assert "## Notes" in result
-    assert "A note." in result
-
-
-def test_rstconv_parse_google_raises_blank_lines():
-    """_parse_google_raises skips blank lines in the body."""
-    body = "ValueError: Bad input.\n\nTypeError: Wrong type.\n"
-    entries = _parse_google_raises(body)
-
-    assert len(entries) == 2
-    assert entries[0][0] == "ValueError"
-    assert entries[1][0] == "TypeError"
-
-
-def test_rstconv_simple_table_peek_pass_branch():
-    """Trigger the peek `pass` branch in simple table parsing."""
-    # The pass branch triggers when the middle separator is followed by a line
-    # that: is non-empty, is not a separator, is longer than second_col_start,
-    # and has a non-space char at second_col_start.
-    # This makes the parser continue collecting rather than breaking.
-    text = "=====  =====\nHdr1   Hdr2\n=====  =====\nval1   val2\nmore   data\n=====  =====\n"
-    result = _convert_rst_simple_tables(text)
-
-    assert "| Hdr1" in result or "|" in result
-
-
-def test_rstconv_simple_table_two_sep_via_wrapper():
-    """_convert_rst_simple_tables with 2-separator table hits the else/break branch."""
-    # Only 2 separators: the else branch (j += 1; break) fires at the 2nd sep
-    text = "=====  =====\nA      B\n=====  =====\n"
-    result = _convert_rst_simple_tables(text)
-
-    # _rst_simple_table_to_md needs >=2 seps, which we have; first data row becomes header
-    assert "|" in result
-
-
 def test_docclass_attributes_excludes_dataclass_params():
     """DocClass.attributes filters out dataclass params when is_dataclass=True."""
 
-    cls_obj = dc.Class(name="DC", lineno=1)
+    cls_obj = gf.Class(name="DC", lineno=1)
     cls_obj.labels.add("dataclass")
 
     # Create attributes on the class
-    attr_x = dc.Attribute(name="x", lineno=2)
+    attr_x = gf.Attribute(name="x", lineno=2)
     attr_x.annotation = gf.ExprName("int")
-    attr_y = dc.Attribute(name="y", lineno=3)
+    attr_y = gf.Attribute(name="y", lineno=3)
     attr_y.annotation = gf.ExprName("str")
     cls_obj.set_member("x", attr_x)
     cls_obj.set_member("y", attr_y)
 
     # Create init function with parameter "x"
-    init_fn = dc.Function(name="__init__", lineno=4)
+    init_fn = gf.Function(name="__init__", lineno=4)
     init_fn.parameters = gf.Parameters(
         gf.Parameter("self", kind=gf.ParameterKind.positional_or_keyword),
         gf.Parameter(
@@ -32515,9 +31727,9 @@ def test_docclass_attributes_excludes_dataclass_params():
     )
     cls_obj.set_member("__init__", init_fn)
 
-    doc_attr_x = layout.DocAttribute(name="x", obj=attr_x)
-    doc_attr_y = layout.DocAttribute(name="y", obj=attr_y)
-    doc_cls = layout.DocClass(name="DC", obj=cls_obj, members=[doc_attr_x, doc_attr_y])
+    doc_attr_x = content.DocAttribute(name="x", obj=attr_x)
+    doc_attr_y = content.DocAttribute(name="y", obj=attr_y)
+    doc_cls = content.DocClass(name="DC", obj=cls_obj, members=[doc_attr_x, doc_attr_y])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32535,14 +31747,14 @@ def test_docclass_attributes_excludes_dataclass_params():
 def test_docclass_parameter_attributes_with_dataclass():
     """DocClass.parameter_attributes returns params found in class attributes."""
 
-    cls_obj = dc.Class(name="DC2", lineno=1)
+    cls_obj = gf.Class(name="DC2", lineno=1)
     cls_obj.labels.add("dataclass")
 
-    attr_a = dc.Attribute(name="a", lineno=2)
+    attr_a = gf.Attribute(name="a", lineno=2)
     attr_a.annotation = gf.ExprName("int")
     cls_obj.set_member("a", attr_a)
 
-    init_fn = dc.Function(name="__init__", lineno=3)
+    init_fn = gf.Function(name="__init__", lineno=3)
     init_fn.parameters = gf.Parameters(
         gf.Parameter("self", kind=gf.ParameterKind.positional_or_keyword),
         gf.Parameter(
@@ -32551,8 +31763,8 @@ def test_docclass_parameter_attributes_with_dataclass():
     )
     cls_obj.set_member("__init__", init_fn)
 
-    doc_attr_a = layout.DocAttribute(name="a", obj=attr_a)
-    doc_cls = layout.DocClass(name="DC2", obj=cls_obj, members=[doc_attr_a])
+    doc_attr_a = content.DocAttribute(name="a", obj=attr_a)
+    doc_cls = content.DocClass(name="DC2", obj=cls_obj, members=[doc_attr_a])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32565,15 +31777,15 @@ def test_docclass_parameter_attributes_with_dataclass():
 def test_docclass_init_parameters_with_dataclass():
     """DocClass.init_parameters returns params NOT in class attributes."""
 
-    cls_obj = dc.Class(name="DC3", lineno=1)
+    cls_obj = gf.Class(name="DC3", lineno=1)
     cls_obj.labels.add("dataclass")
 
     # "a" is in attributes, "b" is NOT in attributes
-    attr_a = dc.Attribute(name="a", lineno=2)
+    attr_a = gf.Attribute(name="a", lineno=2)
     attr_a.annotation = gf.ExprName("int")
     cls_obj.set_member("a", attr_a)
 
-    init_fn = dc.Function(name="__init__", lineno=3)
+    init_fn = gf.Function(name="__init__", lineno=3)
     init_fn.parameters = gf.Parameters(
         gf.Parameter("self", kind=gf.ParameterKind.positional_or_keyword),
         gf.Parameter(
@@ -32585,8 +31797,8 @@ def test_docclass_init_parameters_with_dataclass():
     )
     cls_obj.set_member("__init__", init_fn)
 
-    doc_attr_a = layout.DocAttribute(name="a", obj=attr_a)
-    doc_cls = layout.DocClass(name="DC3", obj=cls_obj, members=[doc_attr_a])
+    doc_attr_a = content.DocAttribute(name="a", obj=attr_a)
+    doc_cls = content.DocClass(name="DC3", obj=cls_obj, members=[doc_attr_a])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32603,8 +31815,8 @@ def test_docclass_init_parameters_with_dataclass():
 def test_docmodule_render_signature_no_signature_name():
     """DocModule.render_signature() returns None when signature_name is falsy."""
 
-    mod_obj = dc.Module(name="my_module")
-    doc_mod = layout.DocModule(name="my_module", obj=mod_obj)
+    mod_obj = gf.Module(name="my_module")
+    doc_mod = content.DocModule(name="my_module", obj=mod_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32618,8 +31830,8 @@ def test_docmodule_render_signature_no_signature_name():
 def test_docmodule_render_signature_with_name():
     """DocModule.render_signature() returns Div when signature_name is set."""
 
-    mod_obj = dc.Module(name="my_module")
-    doc_mod = layout.DocModule(name="my_module", obj=mod_obj)
+    mod_obj = gf.Module(name="my_module")
+    doc_mod = content.DocModule(name="my_module", obj=mod_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32635,8 +31847,8 @@ def test_docmodule_render_signature_with_name():
 def test_docmodule_post_init_narrows_types():
     """DocModule.__post_init__() narrows self.doc and self.obj types."""
 
-    mod_obj = dc.Module(name="test_mod")
-    doc_mod = layout.DocModule(name="test_mod", obj=mod_obj)
+    mod_obj = gf.Module(name="test_mod")
+    doc_mod = content.DocModule(name="test_mod", obj=mod_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32660,8 +31872,8 @@ def test_get_render_type_raises_for_unmapped_type():
 def test_renderbase_title_property():
     """RenderBase.title calls render_title()."""
 
-    mod_obj = dc.Module(name="tmod")
-    doc_mod = layout.DocModule(name="tmod", obj=mod_obj)
+    mod_obj = gf.Module(name="tmod")
+    doc_mod = content.DocModule(name="tmod", obj=mod_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32679,46 +31891,21 @@ def test_renderbase_summary_name_property():
 
     # Create a mock that won't trigger __post_init__ logic
     rb = object.__new__(RenderBase)
-    rb.layout_obj = MagicMock()
+    rb.node = MagicMock()
     rb.level = 1
     assert rb.summary_name == ""
-
-
-def test_extract_directives_nodoc():
-    """extract_directives() sets nodoc=True when %nodoc is in docstring."""
-
-    docstring = """
-    Short description.
-
-    %nodoc
-
-    Parameters
-    ----------
-    x : int
-    """
-    result = extract_directives(docstring)
-    assert result.nodoc is True
-
-
-def test_extract_directives_seealso_empty_entry():
-    """extract_directives() skips empty entries in seealso list."""
-
-    docstring = "%seealso func_a,,func_b"
-    result = extract_directives(docstring)
-
-    assert result.seealso == [("func_a", ""), ("func_b", "")]
 
 
 def test_docattribute_render_signature_type_kind():
     """DocAttribute.render_signature() clears name/annotation for TypeAlias kind."""
 
-    attr_obj = dc.Attribute(name="MyType", lineno=1)
+    attr_obj = gf.Attribute(name="MyType", lineno=1)
     attr_obj.annotation = gf.ExprName("str")
 
     # Set the kind to TYPE_ALIAS so kind.value is "type alias" which contains "type"
     attr_obj.kind = gf.Kind.TYPE_ALIAS
 
-    doc_attr = layout.DocAttribute(name="MyType", obj=attr_obj)
+    doc_attr = content.DocAttribute(name="MyType", obj=attr_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32737,7 +31924,7 @@ def test_mixin_page_render_title():
 
     # Create instance bypassing __init__
     obj = object.__new__(RenderPageMixin)
-    obj.layout_obj = MagicMock()
+    obj.node = MagicMock()
     obj.level = 1
 
     # render_metadata returns None by default (no override)
@@ -32750,7 +31937,7 @@ def test_mixin_page_render_title():
 def test_get_render_type_valid_type():
     """get_render_type() returns correct class for a mapped type."""
 
-    obj = DocClass(name="X", obj=dc.Class(name="X", lineno=1))
+    obj = DocClass(name="X", obj=gf.Class(name="X", lineno=1))
     result = get_render_type(obj)
     assert result is RenderDocClass
 
@@ -32759,7 +31946,7 @@ def test_renderbase_summary_property():
     """RenderBase.summary calls render_summary()."""
 
     rb = object.__new__(RenderBase)
-    rb.layout_obj = MagicMock()
+    rb.node = MagicMock()
     rb.level = 1
     # Access summary cached_property which calls render_summary()
     result = rb.summary
@@ -32769,17 +31956,17 @@ def test_renderbase_summary_property():
 def test_docclass_attribute_member_pages_dataclass():
     """DocClass.attribute_member_pages filters dataclass params."""
 
-    cls_obj = dc.Class(name="DC4", lineno=1)
+    cls_obj = gf.Class(name="DC4", lineno=1)
     cls_obj.labels.add("dataclass")
 
-    attr_x = dc.Attribute(name="x", lineno=2)
+    attr_x = gf.Attribute(name="x", lineno=2)
     attr_x.annotation = gf.ExprName("int")
-    attr_y = dc.Attribute(name="y", lineno=3)
+    attr_y = gf.Attribute(name="y", lineno=3)
     attr_y.annotation = gf.ExprName("str")
     cls_obj.set_member("x", attr_x)
     cls_obj.set_member("y", attr_y)
 
-    init_fn = dc.Function(name="__init__", lineno=4)
+    init_fn = gf.Function(name="__init__", lineno=4)
     init_fn.parameters = gf.Parameters(
         gf.Parameter("self", kind=gf.ParameterKind.positional_or_keyword),
         gf.Parameter(
@@ -32788,11 +31975,11 @@ def test_docclass_attribute_member_pages_dataclass():
     )
     cls_obj.set_member("__init__", init_fn)
 
-    doc_attr_x = layout.DocAttribute(name="x", obj=attr_x)
-    doc_attr_y = layout.DocAttribute(name="y", obj=attr_y)
-    page_x = layout.MemberPage(path="x", contents=[doc_attr_x])
-    page_y = layout.MemberPage(path="y", contents=[doc_attr_y])
-    doc_cls = layout.DocClass(name="DC4", obj=cls_obj, members=[page_x, page_y])
+    doc_attr_x = content.DocAttribute(name="x", obj=attr_x)
+    doc_attr_y = content.DocAttribute(name="y", obj=attr_y)
+    page_x = content.MemberPage(path="x", contents=[doc_attr_x])
+    page_y = content.MemberPage(path="y", contents=[doc_attr_y])
+    doc_cls = content.DocClass(name="DC4", obj=cls_obj, members=[page_x, page_y])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32806,8 +31993,8 @@ def test_docclass_attribute_member_pages_dataclass():
 def test_docclass_parameter_attributes_non_dataclass():
     """DocClass.parameter_attributes returns empty for non-dataclass."""
 
-    cls_obj = dc.Class(name="RegularClass", lineno=1)
-    doc_cls = layout.DocClass(name="RegularClass", obj=cls_obj, members=[])
+    cls_obj = gf.Class(name="RegularClass", lineno=1)
+    doc_cls = content.DocClass(name="RegularClass", obj=cls_obj, members=[])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32820,8 +32007,8 @@ def test_docclass_parameter_attributes_non_dataclass():
 def test_docclass_init_parameters_non_dataclass():
     """DocClass.init_parameters returns empty for non-dataclass."""
 
-    cls_obj = dc.Class(name="RegularClass2", lineno=1)
-    doc_cls = layout.DocClass(name="RegularClass2", obj=cls_obj, members=[])
+    cls_obj = gf.Class(name="RegularClass2", lineno=1)
+    doc_cls = content.DocClass(name="RegularClass2", obj=cls_obj, members=[])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -32922,7 +32109,7 @@ def test_emph_str():
 
 def test_image_str():
     """Image.__str__ renders markdown image syntax."""
-    from great_docs._renderer.pandoc.inlines import Image
+    from great_docs.pandoc.inlines import Image
 
     img = Image(caption="Logo", src="img.png")
     assert str(img) == "![Logo](img.png)"
@@ -33054,35 +32241,13 @@ def test_is_initvar_false():
     assert is_initvar("something") is False
 
 
-def test_isdoc_module():
-    """isDoc.Module checks obj.is_attribute."""
-
-    el = MagicMock()
-    el.obj.is_attribute = True
-    assert isDoc.Module(el) is True
-
-    el2 = MagicMock()
-    el2.obj.is_attribute = False
-    assert isDoc.Module(el2) is False
-
-
 def test_griffe_to_doc():
-    """griffe_to_doc converts griffe object to layout Doc."""
+    """griffe_to_doc converts a griffe object to a content Doc."""
 
     func = gf.Function(name="my_func", lineno=1)
     result = griffe_to_doc(func, deep=False)
     assert isinstance(result, DocFunction)
     assert result.name == "my_func"
-
-
-def test_no_init():
-    """no_init returns a dataclass field with init=False."""
-    from dataclasses import fields, Field
-
-    result = no_init(42)
-    assert isinstance(result, Field)
-    assert result.default == 42
-    assert result.init is False
 
 
 def test_is_field_init_false_true():
@@ -33112,7 +32277,7 @@ def test_is_field_init_false_no_field():
 
 def test_canonical_path_with_type():
     """_canonical_path returns module.qualname for a type."""
-    from great_docs._renderer._tools import _canonical_path
+    from great_docs._apiref._tools import _canonical_path
 
     result = _canonical_path(int)
     assert result == "int"  # builtins returns just qualname
@@ -33123,7 +32288,7 @@ def test_canonical_path_with_type():
 
 def test_canonical_path_with_class():
     """_canonical_path returns full path for non-builtin type."""
-    from great_docs._renderer._tools import _canonical_path
+    from great_docs._apiref._tools import _canonical_path
 
     result = _canonical_path(Attr)
     assert "Attr" in result
@@ -33132,7 +32297,7 @@ def test_canonical_path_with_class():
 
 def test_canonical_path_with_instance():
     """_canonical_path handles non-type by using __class__."""
-    from great_docs._renderer._tools import _canonical_path
+    from great_docs._apiref._tools import _canonical_path
 
     result = _canonical_path("hello")
     assert result == "str"  # builtins
@@ -33158,7 +32323,7 @@ def test_render_type_object_with_type():
     """render_type_object renders a python type."""
 
     # Use a type from the package itself that griffe can find
-    result = render_type_object("great_docs._renderer.pandoc.components.Attr")
+    result = render_type_object("great_docs.pandoc.components.Attr")
     assert isinstance(result, str)
 
 
@@ -33304,14 +32469,46 @@ def test_get_label_attribute_constant():
     assert get_label(obj) == "constant"
 
 
-def test_attribute_label_typealias():
-    """_attribute_label returns 'typealias' for a type alias."""
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias():
+    """get_label returns 'typealias' for a real PEP 695 alias."""
 
-    obj = MagicMock(spec=gf.Attribute)
-    obj.kind.value = "type alias"
-    obj.annotation = None
-    obj.labels = set()
-    assert _attribute_label(obj) == "typealias"
+    with gf.temporary_visited_package("pkg", {"__init__.py": "type Contract = int | str\n"}) as pkg:
+        assert get_label(pkg["Contract"]) == "typealias"
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias_reexported():
+    """A re-exported alias reaches get_label as an Alias proxy, not a raw TypeAlias.
+
+    This is the regression guard for a crash where `isinstance(obj, gf.TypeAlias)`
+    missed the proxy and fell through to code that reads `obj.annotation`, which
+    a type alias does not have.
+    """
+    with gf.temporary_visited_package(
+        "pkg",
+        {
+            "__init__.py": "from ._impl import Contract\n",
+            "_impl.py": "type Contract = int | str\n",
+        },
+    ) as pkg:
+        obj = pkg["Contract"]
+        assert isinstance(obj, gf.Alias)
+        assert get_label(obj) == "typealias"
+
+
+def test_get_label_typealias_legacy_spelling():
+    """get_label returns 'typealias' for the legacy `X: TypeAlias = ...` spelling."""
+
+    code = "from typing import TypeAlias\nContract: TypeAlias = int | str\n"
+    with gf.temporary_visited_package("pkg", {"__init__.py": code}) as pkg:
+        assert get_label(pkg["Contract"]) == "typealias"
 
 
 def test_attribute_label_typevar():
@@ -33432,57 +32629,24 @@ def test_class_label_abc():
     assert _class_label(obj) == "abc"
 
 
-def test_convert_inventory_dict(tmp_path):
-    """convert_inventory writes a dict directly as JSON."""
+def test_write_inventory_dict(tmp_path):
+    """write_inventory writes a dict directly as JSON."""
 
     inv = {"project": "test", "version": "1.0", "items": []}
     out = str(tmp_path / "inv.json")
-    convert_inventory(inv, out_name=out)
+    write_inventory(inv, out_name=out)
 
     with open(out) as f:
         result = json.load(f)
     assert result == inv
 
 
-def test_convert_inventory_requires_out_name():
-    """convert_inventory raises TypeError if out_name not given."""
-
-    with pytest.raises(TypeError, match="out_name is required"):
-        convert_inventory({})
-
-
-def test_convert_inventory_unsupported_type():
-    """convert_inventory raises TypeError for unsupported types."""
-
-    with pytest.raises(TypeError, match="Unsupported inventory type"):
-        convert_inventory(42, out_name="/tmp/test.json")
-
-
-def test_convert_inventory_sphobjinv(tmp_path):
-    """convert_inventory handles sphobjinv-like Inventory objects."""
-
-    mock_inv = MagicMock()
-    mock_inv.json_dict.return_value = {
-        "project": "myproj",
-        "version": "2.0",
-        "count": 1,
-        "py:function:myproj.func": {"name": "myproj.func", "domain": "py"},
-    }
-    out = str(tmp_path / "inv.json")
-    convert_inventory(mock_inv, out_name=out)
-
-    with open(out) as f:
-        result = json.load(f)
-
-    assert result["project"] == "myproj"
-    assert "items" in result
-
-
 def test_create_inventory_basic():
     """create_inventory returns a properly structured dict."""
 
     obj = gf.Function(name="my_func", lineno=1)
-    result = create_inventory("myproj", "1.0", [obj])
+    item = InventoryItem(name="myproj.my_func", obj=obj, uri="my_func.html")
+    result = create_inventory("myproj", "1.0", [item])
 
     assert result["project"] == "myproj"
     assert result["version"] == "1.0"
@@ -33492,10 +32656,10 @@ def test_create_inventory_basic():
 
 
 def test_create_inventory_with_layout_item():
-    """create_inventory handles layout.Item objects."""
+    """create_inventory handles InventoryItem objects."""
 
     obj = gf.Function(name="my_func", lineno=1)
-    item = layout.Item(
+    item = InventoryItem(
         name="myproj.my_func",
         obj=obj,
         uri="my_func.html",
@@ -33509,59 +32673,14 @@ def test_create_inventory_with_layout_item():
     assert result["items"][0]["dispname"] == "my_func"
 
 
-def test_create_inventory_custom_uri_and_dispname():
-    """create_inventory uses custom uri/dispname callables."""
+def test_create_inventory_default_dispname():
+    """create_inventory falls back to "-" when an item has no dispname."""
 
     obj = gf.Function(name="my_func", lineno=1)
-    result = create_inventory(
-        "myproj",
-        "1.0",
-        [obj],
-        uri=lambda s: f"api/{s.name}.html",
-        dispname=lambda s: s.name.upper(),
-    )
-
-    assert result["items"][0]["uri"] == "api/my_func.html"
-    assert result["items"][0]["dispname"] == "MY_FUNC"
-
-
-def test_create_inventory_string_dispname():
-    """create_inventory uses string dispname directly."""
-
-    obj = gf.Function(name="my_func", lineno=1)
-    result = create_inventory("myproj", "1.0", [obj], dispname="-")
+    item = InventoryItem(name="myproj.my_func", obj=obj, uri="my_func.html")
+    result = create_inventory("myproj", "1.0", [item])
 
     assert result["items"][0]["dispname"] == "-"
-
-
-def test_create_inventory_item_unsupported_type():
-    """_create_inventory_item raises TypeError for unsupported items."""
-
-    with pytest.raises(TypeError, match="Unsupported item type"):
-        _create_inventory_item("not_an_item", uri="test.html")
-
-
-def test_maybe_call_with_callable():
-    """_maybe_call invokes a callable."""
-
-    result = _maybe_call(lambda x: x.upper(), "hello")
-
-    assert result == "HELLO"
-
-
-def test_maybe_call_with_string():
-    """_maybe_call returns the string directly."""
-
-    result = _maybe_call("fixed", "ignored")
-
-    assert result == "fixed"
-
-
-def test_maybe_call_unsupported_type():
-    """_maybe_call raises TypeError for non-string non-callable."""
-
-    with pytest.raises(TypeError, match="Expected string or callable"):
-        _maybe_call(42, "obj")
 
 
 def test_extend_base_class_copies_methods():
@@ -33620,60 +32739,60 @@ def test_set_class_attr_cached_property():
 
 
 def test_exclude_parameters_updates_globals():
-    """exclude_parameters updates the EXCLUDE_PARAMETERS global dict."""
+    """exclude_parameters updates the EXCLUSIONS.parameters global dict."""
 
-    original = dict(EXCLUDE_PARAMETERS)
+    original = dict(EXCLUSIONS.parameters)
     try:
         exclude_parameters({"test.MyClass": "param1"})
-        assert "test.MyClass" in EXCLUDE_PARAMETERS
-        assert EXCLUDE_PARAMETERS["test.MyClass"] == "param1"
+        assert "test.MyClass" in EXCLUSIONS.parameters
+        assert EXCLUSIONS.parameters["test.MyClass"] == "param1"
     finally:
-        EXCLUDE_PARAMETERS.clear()
-        EXCLUDE_PARAMETERS.update(original)
+        EXCLUSIONS.parameters.clear()
+        EXCLUSIONS.parameters.update(original)
 
 
 def test_exclude_attributes_updates_globals():
-    """exclude_attributes updates the EXCLUDE_ATTRIBUTES global dict."""
+    """exclude_attributes updates the EXCLUSIONS.attributes global dict."""
 
-    original = dict(EXCLUDE_ATTRIBUTES)
+    original = dict(EXCLUSIONS.attributes)
     try:
         exclude_attributes({"test.MyClass": ("a", "b")})
-        assert "test.MyClass" in EXCLUDE_ATTRIBUTES
+        assert "test.MyClass" in EXCLUSIONS.attributes
     finally:
-        EXCLUDE_ATTRIBUTES.clear()
-        EXCLUDE_ATTRIBUTES.update(original)
+        EXCLUSIONS.attributes.clear()
+        EXCLUSIONS.attributes.update(original)
 
 
 def test_exclude_functions_updates_globals():
-    """exclude_functions updates the EXCLUDE_FUNCTIONS global dict."""
+    """exclude_functions updates the EXCLUSIONS.functions global dict."""
 
-    original = dict(EXCLUDE_FUNCTIONS)
+    original = dict(EXCLUSIONS.functions)
     try:
         exclude_functions({"test.MyClass": "func_a"})
-        assert "test.MyClass" in EXCLUDE_FUNCTIONS
+        assert "test.MyClass" in EXCLUSIONS.functions
     finally:
-        EXCLUDE_FUNCTIONS.clear()
-        EXCLUDE_FUNCTIONS.update(original)
+        EXCLUSIONS.functions.clear()
+        EXCLUSIONS.functions.update(original)
 
 
 def test_exclude_classes_updates_globals():
-    """exclude_classes updates the EXCLUDE_CLASSES global dict."""
+    """exclude_classes updates the EXCLUSIONS.classes global dict."""
 
-    original = dict(EXCLUDE_CLASSES)
+    original = dict(EXCLUSIONS.classes)
     try:
         exclude_classes({"test.MyClass": "Contained1"})
-        assert "test.MyClass" in EXCLUDE_CLASSES
+        assert "test.MyClass" in EXCLUSIONS.classes
     finally:
-        EXCLUDE_CLASSES.clear()
-        EXCLUDE_CLASSES.update(original)
+        EXCLUSIONS.classes.clear()
+        EXCLUSIONS.classes.update(original)
 
 
 def test_render_reference_section_title():
     """RenderReferenceSection.render_title() returns a Header."""
 
-    section = layout.Section(title="Functions", contents=[layout.Auto(name="x")])
+    section = content.Section(title="Functions", contents=[spec.SpecObject(name="x")])
 
-    rs = RenderReferenceSection(layout_obj=section, level=1)
+    rs = RenderReferenceSection(node=section, level=1)
     title = rs.render_title()
 
     assert title is not None
@@ -33683,9 +32802,9 @@ def test_render_reference_section_title():
 def test_render_reference_section_subtitle():
     """RenderReferenceSection.render_title() handles subtitles."""
 
-    section = layout.Section(subtitle="Helper Functions", contents=[layout.Auto(name="x")])
+    section = content.Section(subtitle="Helper Functions", contents=[spec.SpecObject(name="x")])
 
-    rs = RenderReferenceSection(layout_obj=section, level=1)
+    rs = RenderReferenceSection(node=section, level=1)
     title = rs.render_title()
 
     assert title is not None
@@ -33695,9 +32814,9 @@ def test_render_reference_section_subtitle():
 def test_render_reference_section_no_title():
     """RenderReferenceSection.render_title() returns None when no title/subtitle."""
 
-    section = layout.Section(contents=[layout.Auto(name="x")])
+    section = content.Section(contents=[spec.SpecObject(name="x")])
 
-    rs = RenderReferenceSection(layout_obj=section, level=1)
+    rs = RenderReferenceSection(node=section, level=1)
     title = rs.render_title()
 
     assert title is None
@@ -33706,9 +32825,11 @@ def test_render_reference_section_no_title():
 def test_render_reference_section_description():
     """RenderReferenceSection.render_description() returns a Div."""
 
-    section = layout.Section(title="Test", desc="A description", contents=[layout.Auto(name="x")])
+    section = content.Section(
+        title="Test", desc="A description", contents=[spec.SpecObject(name="x")]
+    )
 
-    rs = RenderReferenceSection(layout_obj=section, level=1)
+    rs = RenderReferenceSection(node=section, level=1)
     desc = rs.render_description()
 
     assert "A description" in str(desc)
@@ -33717,28 +32838,33 @@ def test_render_reference_section_description():
 def test_render_reference_section_body_empty():
     """RenderReferenceSection.render_body() returns None for empty section."""
 
-    section = layout.Section(title="Empty", contents=[])
+    section = content.Section(title="Empty", contents=[])
 
-    rs = RenderReferenceSection(layout_obj=section, level=1)
+    rs = RenderReferenceSection(node=section, level=1)
     body = rs.render_body()
 
     assert body is None
 
 
+def _make_render_ref(*, title="API Reference", desc=None, package="mypkg", options=None):
+    """An APIReference content stand-in for RenderReferencePage tests."""
+    ref = APIReference({"api-reference": {"package": package}})
+    ref.title = title
+    ref.desc = desc
+    ref.options = options
+    return ref
+
+
 def test_render_reference_page_post_init():
-    """RenderReferencePage.__post_init__ sets layout, sections, package, options."""
+    """RenderReferencePage.__init__ sets api_ref, sections, package, options."""
 
-    lyt = layout.Layout(
-        title="API Ref",
-        description="My API",
-        sections=[layout.Section(title="Funcs", contents=[layout.Auto(name="x")])],
-        package="mypkg",
-    )
+    ref = _make_render_ref(title="API Ref", desc="My API", package="mypkg")
+    sections = [content.Section(title="Funcs", contents=[spec.SpecObject(name="x")])]
 
-    rp = RenderReferencePage(layout_obj=lyt, level=1)
+    rp = RenderReferencePage(ref, sections, level=1)
 
-    assert rp.layout is lyt
-    assert rp.sections == lyt.sections
+    assert rp.api_ref is ref
+    assert rp.sections == sections
     assert rp.package == "mypkg"
     assert rp.options is None
 
@@ -33746,13 +32872,10 @@ def test_render_reference_page_post_init():
 def test_render_reference_page_description():
     """RenderReferencePage.render_description() returns a Div when description exists."""
 
-    lyt = layout.Layout(
-        title="API Ref",
-        description="My description",
-        sections=[layout.Section(title="S", contents=[layout.Auto(name="x")])],
-    )
+    ref = _make_render_ref(title="API Ref", desc="My description")
+    sections = [content.Section(title="S", contents=[spec.SpecObject(name="x")])]
 
-    rp = RenderReferencePage(layout_obj=lyt, level=1)
+    rp = RenderReferencePage(ref, sections, level=1)
     desc = rp.render_description()
 
     assert desc is not None
@@ -33762,12 +32885,10 @@ def test_render_reference_page_description():
 def test_render_reference_page_no_description():
     """RenderReferencePage.render_description() returns None when no description."""
 
-    lyt = layout.Layout(
-        title="API Ref",
-        sections=[layout.Section(title="S", contents=[layout.Auto(name="x")])],
-    )
+    ref = _make_render_ref(title="API Ref")
+    sections = [content.Section(title="S", contents=[spec.SpecObject(name="x")])]
 
-    rp = RenderReferencePage(layout_obj=lyt, level=1)
+    rp = RenderReferencePage(ref, sections, level=1)
     desc = rp.render_description()
 
     assert desc is None
@@ -33776,12 +32897,10 @@ def test_render_reference_page_no_description():
 def test_render_reference_page_metadata():
     """RenderReferencePage.render_metadata() returns Meta with title."""
 
-    lyt = layout.Layout(
-        title="API Reference",
-        sections=[layout.Section(title="S", contents=[layout.Auto(name="x")])],
-    )
+    ref = _make_render_ref(title="API Reference")
+    sections = [content.Section(title="S", contents=[spec.SpecObject(name="x")])]
 
-    rp = RenderReferencePage(layout_obj=lyt, level=1)
+    rp = RenderReferencePage(ref, sections, level=1)
     meta = rp.render_metadata()
 
     assert "API Reference" in str(meta)
@@ -33792,9 +32911,9 @@ def test_render_api_page_post_init():
 
     func_obj = gf.Function(name="my_func", lineno=1)
     doc_obj = griffe_to_doc(func_obj)
-    page = layout.Page(path="reference/my_func", contents=[doc_obj])
+    page = content.Page(path="reference/my_func", contents=[doc_obj])
 
-    ap = RenderAPIPage(layout_obj=page, level=1)
+    ap = RenderAPIPage(node=page, level=1)
 
     assert ap.page is page
     assert ap.path == "reference/my_func.qmd"
@@ -33805,9 +32924,9 @@ def test_render_api_page_has_one_object():
 
     func_obj = gf.Function(name="my_func", lineno=1)
     doc_obj = griffe_to_doc(func_obj)
-    page = layout.Page(path="reference/my_func", contents=[doc_obj])
+    page = content.Page(path="reference/my_func", contents=[doc_obj])
 
-    ap = RenderAPIPage(layout_obj=page, level=1)
+    ap = RenderAPIPage(node=page, level=1)
 
     assert ap._has_one_object is True
 
@@ -33817,9 +32936,9 @@ def test_render_api_page_metadata():
 
     func_obj = gf.Function(name="my_func", lineno=1)
     doc_obj = griffe_to_doc(func_obj)
-    page = layout.Page(path="reference/my_func", contents=[doc_obj])
+    page = content.Page(path="reference/my_func", contents=[doc_obj])
 
-    ap = RenderAPIPage(layout_obj=page, level=1)
+    ap = RenderAPIPage(node=page, level=1)
     meta = ap.render_metadata()
     meta_str = str(meta)
 
@@ -33831,9 +32950,9 @@ def test_render_api_page_render_body():
 
     func_obj = gf.Function(name="my_func", lineno=1)
     doc_obj = griffe_to_doc(func_obj)
-    page = layout.Page(path="reference/my_func", contents=[doc_obj])
+    page = content.Page(path="reference/my_func", contents=[doc_obj])
 
-    ap = RenderAPIPage(layout_obj=page, level=1)
+    ap = RenderAPIPage(node=page, level=1)
     body = ap.render_body()
 
     assert body is not None
@@ -33844,14 +32963,14 @@ def test_render_api_page_summary_with_summary_details():
 
     func_obj = gf.Function(name="my_func", lineno=1)
     doc_obj = griffe_to_doc(func_obj)
-    summary = layout.SummaryDetails(name="my_func", desc="A function")
-    page = layout.Page(
+    summary = content.SummaryItem(name="my_func", desc="A function")
+    page = content.Page(
         path="reference/my_func",
         contents=[doc_obj],
         summary=summary,
     )
 
-    ap = RenderAPIPage(layout_obj=page, level=1)
+    ap = RenderAPIPage(node=page, level=1)
     result = ap.render_summary()
 
     assert len(result) == 1
@@ -33863,13 +32982,13 @@ def test_render_api_page_summary_multi_no_flatten_raises():
 
     f1 = griffe_to_doc(gf.Function(name="func1", lineno=1))
     f2 = griffe_to_doc(gf.Function(name="func2", lineno=2))
-    page = layout.Page(
+    page = content.Page(
         path="reference/funcs",
         contents=[f1, f2],
         flatten=False,
     )
 
-    ap = RenderAPIPage(layout_obj=page, level=1)
+    ap = RenderAPIPage(node=page, level=1)
     with pytest.raises(ValueError, match="Cannot summarize page"):
         ap.render_summary()
 
@@ -33887,13 +33006,17 @@ def test_label_unknown_kind_raises():
         get_label(obj)
 
 
-def test_attribute_label_typealias_kind():
-    """_attribute_label returns 'typealias' for type alias kind."""
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement requires Python 3.12+",
+)
+def test_get_label_typealias_kind():
+    """get_label returns 'typealias' for a real griffe TYPE_ALIAS-kind object."""
 
-    obj = gf.Attribute(name="MyType", lineno=1)
-    obj.kind = gf.Kind.TYPE_ALIAS
-
-    assert _attribute_label(obj) == "typealias"
+    with gf.temporary_visited_package("pkg", {"__init__.py": "type MyType = int\n"}) as pkg:
+        obj = pkg["MyType"]
+        assert obj.kind is gf.Kind.TYPE_ALIAS
+        assert get_label(obj) == "typealias"
 
 
 def test_attribute_label_typevar_annotation():
@@ -34071,65 +33194,65 @@ def test_set_class_attr_static_method():
 
 
 def test_exclude_parameters_function():
-    """exclude_parameters updates EXCLUDE_PARAMETERS."""
+    """exclude_parameters updates EXCLUSIONS.parameters."""
 
-    original = dict(EXCLUDE_PARAMETERS)
+    original = dict(EXCLUSIONS.parameters)
     try:
         exclude_parameters({"pkg.Cls": ("p1", "p2")})
-        assert EXCLUDE_PARAMETERS["pkg.Cls"] == ("p1", "p2")
+        assert EXCLUSIONS.parameters["pkg.Cls"] == ("p1", "p2")
     finally:
-        EXCLUDE_PARAMETERS.clear()
-        EXCLUDE_PARAMETERS.update(original)
+        EXCLUSIONS.parameters.clear()
+        EXCLUSIONS.parameters.update(original)
 
 
 def test_exclude_attributes_function():
-    """exclude_attributes updates EXCLUDE_ATTRIBUTES."""
+    """exclude_attributes updates EXCLUSIONS.attributes."""
 
-    original = dict(EXCLUDE_ATTRIBUTES)
+    original = dict(EXCLUSIONS.attributes)
     try:
         exclude_attributes({"pkg.Cls": ("a", "b")})
-        assert EXCLUDE_ATTRIBUTES["pkg.Cls"] == ("a", "b")
+        assert EXCLUSIONS.attributes["pkg.Cls"] == ("a", "b")
     finally:
-        EXCLUDE_ATTRIBUTES.clear()
-        EXCLUDE_ATTRIBUTES.update(original)
+        EXCLUSIONS.attributes.clear()
+        EXCLUSIONS.attributes.update(original)
 
 
 def test_exclude_functions_function():
-    """exclude_functions updates EXCLUDE_FUNCTIONS."""
+    """exclude_functions updates EXCLUSIONS.functions."""
 
-    original = dict(EXCLUDE_FUNCTIONS)
+    original = dict(EXCLUSIONS.functions)
     try:
         exclude_functions({"pkg.Cls": "fn"})
-        assert EXCLUDE_FUNCTIONS["pkg.Cls"] == "fn"
+        assert EXCLUSIONS.functions["pkg.Cls"] == "fn"
     finally:
-        EXCLUDE_FUNCTIONS.clear()
-        EXCLUDE_FUNCTIONS.update(original)
+        EXCLUSIONS.functions.clear()
+        EXCLUSIONS.functions.update(original)
 
 
 def test_exclude_classes_function():
-    """exclude_classes updates EXCLUDE_CLASSES."""
+    """exclude_classes updates EXCLUSIONS.classes."""
 
-    original = dict(EXCLUDE_CLASSES)
+    original = dict(EXCLUSIONS.classes)
     try:
         exclude_classes({"pkg.Mod": "OldClass"})
-        assert EXCLUDE_CLASSES["pkg.Mod"] == "OldClass"
+        assert EXCLUSIONS.classes["pkg.Mod"] == "OldClass"
     finally:
-        EXCLUDE_CLASSES.clear()
-        EXCLUDE_CLASSES.update(original)
+        EXCLUSIONS.classes.clear()
+        EXCLUSIONS.classes.update(original)
 
 
 def test_render_reference_page_render_body():
     """RenderReferencePage.render_body() renders sections."""
 
     func_obj = gf.Function(name="my_func", lineno=1)
-    doc_func = layout.DocFunction(name="my_func", obj=func_obj, anchor="my_func")
+    doc_func = content.DocFunction(name="my_func", obj=func_obj, anchor="my_func")
 
-    section = layout.Section(title="Functions", contents=[doc_func])
-    lyt = layout.Layout(title="API", sections=[section])
+    section = content.Section(title="Functions", contents=[doc_func])
+    ref = _make_render_ref(title="API")
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
-        rp = RenderReferencePage(layout_obj=lyt, level=1)
+        rp = RenderReferencePage(ref, [section], level=1)
         body = rp.render_body()
 
     assert body is not None
@@ -34143,13 +33266,13 @@ def test_render_reference_section_body_with_contents():
     """RenderReferenceSection.render_body() renders Doc objects."""
 
     func_obj = gf.Function(name="some_func", lineno=1)
-    doc_func = layout.DocFunction(name="some_func", obj=func_obj, anchor="some_func")
+    doc_func = content.DocFunction(name="some_func", obj=func_obj, anchor="some_func")
 
-    section = layout.Section(title="Functions", contents=[doc_func])
+    section = content.Section(title="Functions", contents=[doc_func])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
-        rs = RenderReferenceSection(layout_obj=section, level=1)
+        rs = RenderReferenceSection(node=section, level=1)
         body = rs.render_body()
 
     assert body is not None
@@ -34162,9 +33285,9 @@ def test_render_reference_section_body_with_contents():
 def test_render_reference_section_post_init():
     """RenderReferenceSection.__post_init__() sets section."""
 
-    section = layout.Section(title="Test", contents=[layout.Auto(name="x")])
+    section = content.Section(title="Test", contents=[spec.SpecObject(name="x")])
 
-    rs = RenderReferenceSection(layout_obj=section, level=1)
+    rs = RenderReferenceSection(node=section, level=1)
 
     assert rs.section is section
 
@@ -34173,14 +33296,14 @@ def test_render_reference_section_title_and_subtitle():
     """RenderReferenceSection.render_title() for title vs subtitle."""
 
     # Title case
-    sec_t = layout.Section(title="Methods", contents=[layout.Auto(name="x")])
-    rs_t = RenderReferenceSection(layout_obj=sec_t, level=1)
+    sec_t = content.Section(title="Methods", contents=[spec.SpecObject(name="x")])
+    rs_t = RenderReferenceSection(node=sec_t, level=1)
 
     assert "Methods" in str(rs_t.render_title())
 
     # Subtitle case
-    sec_s = layout.Section(subtitle="Helpers", contents=[layout.Auto(name="x")])
-    rs_s = RenderReferenceSection(layout_obj=sec_s, level=1)
+    sec_s = content.Section(subtitle="Helpers", contents=[spec.SpecObject(name="x")])
+    rs_s = RenderReferenceSection(node=sec_s, level=1)
 
     assert "Helpers" in str(rs_s.render_title())
 
@@ -34190,13 +33313,13 @@ def test_render_api_page_full_lifecycle():
 
     func_obj = gf.Function(name="my_func", lineno=1)
     func_obj.endlineno = 10
-    doc_func = layout.DocFunction(name="my_func", obj=func_obj, anchor="my_func")
+    doc_func = content.DocFunction(name="my_func", obj=func_obj, anchor="my_func")
 
-    page = layout.Page(path="reference/my_func", contents=[doc_func])
+    page = content.Page(path="reference/my_func", contents=[doc_func])
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
-        ap = RenderAPIPage(layout_obj=page, level=1)
+        ap = RenderAPIPage(node=page, level=1)
 
         # Test __post_init__
         assert ap.page is page
@@ -34226,28 +33349,138 @@ def test_render_api_page_with_summary_details():
     """RenderAPIPage.render_summary() with explicit summary."""
 
     func_obj = gf.Function(name="fn", lineno=1)
-    doc_func = layout.DocFunction(name="fn", obj=func_obj, anchor="fn")
+    doc_func = content.DocFunction(name="fn", obj=func_obj, anchor="fn")
 
-    page = layout.Page(
+    page = content.Page(
         path="reference/fn",
         contents=[doc_func],
-        summary=layout.SummaryDetails(name="fn()", desc="Do something"),
+        summary=content.SummaryItem(name="fn()", desc="Do something"),
     )
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
-        ap = RenderAPIPage(layout_obj=page, level=1)
+        ap = RenderAPIPage(node=page, level=1)
         summary = ap.render_summary()
     assert len(summary) == 1
     assert "fn()" in str(summary[0][0])
     assert "Do something" in str(summary[0][1])
 
 
+def _make_function_page(name="my_func"):
+    """Build a single-function Page for RenderAPIPage duplication tests."""
+    obj = gf.Function(name=name, lineno=1)
+    obj.endlineno = 10
+    doc = content.DocFunction(name=name, obj=obj, anchor=name)
+    return content.Page(path=f"reference/{name}", contents=[doc])
+
+
+def _make_class_page_with_members(name="MyClass"):
+    """Build a Page containing a class with an attribute and a method.
+
+    Mirrors the original failure case (``config.BakeryConfig``), which
+    rendered Attributes and Methods sections in addition to the
+    duplicated class header.
+    """
+    cls_obj = gf.Class(name=name, lineno=1)
+    attr_obj = gf.Attribute(name="my_attr", lineno=2)
+    func_obj = gf.Function(name="method", lineno=3)
+    cls_obj.set_member("my_attr", attr_obj)
+    cls_obj.set_member("method", func_obj)
+    doc_attr = content.DocAttribute(name="my_attr", obj=attr_obj)
+    doc_func = content.DocFunction(name="method", obj=func_obj)
+    doc_cls = content.DocClass(name=name, obj=cls_obj, members=[doc_attr, doc_func])
+    return content.Page(path=f"reference/{name}", contents=[doc_cls])
+
+
+def test_render_api_page_suppresses_inner_title_at_level_1():
+    """At level=1, RenderAPIPage flips the inner object's show_title off."""
+    page = _make_function_page()
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GITHUB_REPO_URL", None)
+        ap = RenderAPIPage(node=page, level=1)
+        inner = ap.render_objs[0]
+
+    assert inner.show_title is False
+    assert ap.show_title is True
+
+
+def test_render_api_page_single_object_renders_title_once():
+    """Single-object pages emit exactly one heading for the object.
+
+    The front-matter title is preserved as ``title:`` in the YAML block.
+    The body retains the signature and other content, but does not add
+    a header that duplicates the front-matter title.
+    """
+    page = _make_function_page()
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GITHUB_REPO_URL", None)
+        rendered = str(RenderAPIPage(node=page, level=1))
+
+    assert 'title: "[my_func()]' in rendered
+    assert "\n# [my_func()]" not in rendered
+    # Body content survives despite the suppressed inner title.
+    assert "```python\nmy_func()" in rendered
+
+
+def test_render_api_page_class_with_members_renders_title_once():
+    """Class pages avoid the duplicate heading and keep member sections."""
+    page = _make_class_page_with_members()
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GITHUB_REPO_URL", None)
+        rendered = str(RenderAPIPage(node=page, level=1))
+
+    assert 'title: "[MyClass]' in rendered
+    assert "\n# [MyClass]" not in rendered
+    assert "## Attributes" in rendered
+    assert "## Methods" in rendered
+
+
+def test_render_api_page_renders_body_header_at_level_2():
+    """At level=2, the body header is H2 and coexists with the H1 title."""
+    page = _make_function_page()
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GITHUB_REPO_URL", None)
+        rendered = str(RenderAPIPage(node=page, level=2))
+
+    assert 'title: "[my_func()]' in rendered
+    assert "\n## [my_func()]" in rendered
+
+
+def test_render_api_page_multi_object_renders_all_inner_headers():
+    """Multi-object pages keep every inner header.
+
+    The front-matter title comes from the first object only. Body
+    headers render at level+1 for every object on the page.
+    """
+    f1 = gf.Function(name="func1", lineno=1)
+    f1.endlineno = 5
+    f2 = gf.Function(name="func2", lineno=10)
+    f2.endlineno = 15
+    doc_f1 = content.DocFunction(name="func1", obj=f1, anchor="func1")
+    doc_f2 = content.DocFunction(name="func2", obj=f2, anchor="func2")
+    page = content.Page(
+        path="reference/funcs",
+        contents=[doc_f1, doc_f2],
+        flatten=True,
+    )
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GITHUB_REPO_URL", None)
+        rendered = str(RenderAPIPage(node=page, level=1))
+
+    assert "\n## [func1()]" in rendered
+    assert "\n## [func2()]" in rendered
+
+
 def test_renderdoc_display_name_relative_level_gt1():
     """RenderDoc.display_name uses 'name' format when level > 1."""
 
     func_obj = gf.Function(name="my_func", lineno=1)
-    doc_func = layout.DocFunction(name="my_func", obj=func_obj)
+    doc_func = content.DocFunction(name="my_func", obj=func_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34261,7 +33494,7 @@ def test_renderdoc_render_annotation_non_attribute_raises():
     """RenderDoc.render_annotation() raises TypeError for non-attribute."""
 
     func_obj = gf.Function(name="fn", lineno=1)
-    doc_func = layout.DocFunction(name="fn", obj=func_obj)
+    doc_func = content.DocFunction(name="fn", obj=func_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34275,7 +33508,7 @@ def test_renderdoc_render_annotation_attribute():
 
     attr_obj = gf.Attribute(name="x", lineno=1)
     attr_obj.annotation = gf.ExprName("int")
-    doc_attr = layout.DocAttribute(name="x", obj=attr_obj)
+    doc_attr = content.DocAttribute(name="x", obj=attr_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34290,7 +33523,7 @@ def test_renderdoc_render_annotation_none():
 
     attr_obj = gf.Attribute(name="y", lineno=1)
     attr_obj.annotation = None
-    doc_attr = layout.DocAttribute(name="y", obj=attr_obj)
+    doc_attr = content.DocAttribute(name="y", obj=attr_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34308,7 +33541,7 @@ def test_renderdoc_docstring_section_deprecated():
         parent=func_obj,
         parser="numpy",
     )
-    doc_func = layout.DocFunction(name="old_fn", obj=func_obj)
+    doc_func = content.DocFunction(name="old_fn", obj=func_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34327,7 +33560,7 @@ def test_renderdoc_docstring_section_examples():
         parent=func_obj,
         parser="numpy",
     )
-    doc_func = layout.DocFunction(name="ex_fn", obj=func_obj)
+    doc_func = content.DocFunction(name="ex_fn", obj=func_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34346,7 +33579,7 @@ def test_renderdoc_docstring_section_text_in_div():
         parent=func_obj,
         parser="numpy",
     )
-    doc_func = layout.DocFunction(name="txt_fn", obj=func_obj)
+    doc_func = content.DocFunction(name="txt_fn", obj=func_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34362,11 +33595,11 @@ def test_renderdoc_source_link_with_github_url():
     func_obj = gf.Function(name="linked_fn", lineno=5)
     func_obj.endlineno = 15
     mod.set_member("linked_fn", func_obj)
-    doc_func = layout.DocFunction(name="linked_fn", obj=func_obj)
+    doc_func = content.DocFunction(name="linked_fn", obj=func_obj)
 
     # Patch package_info directly so we don't depend on os.environ ordering
     with patch(
-        "great_docs._renderer._render.doc.package_info",
+        "great_docs._apiref._render.doc.package_info",
         side_effect=lambda key: {
             "GITHUB_REPO_URL": "https://github.com/test/repo",
             "GIT_REF": "main",
@@ -34389,7 +33622,7 @@ def test_renderdoc_see_also_section():
         parent=func_obj,
         parser="numpy",
     )
-    doc_func = layout.DocFunction(name="sa_fn", obj=func_obj)
+    doc_func = content.DocFunction(name="sa_fn", obj=func_obj)
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("GITHUB_REPO_URL", None)
@@ -34829,9 +34062,7 @@ def test_type_sections_empty_lists():
         typealiases_items=[],
     )
 
-    assert ts.protocols_renders == []
-    assert ts.typevars_renders == []
-    assert ts.typealiases_renders == []
+    assert [category.renders for category in ts.categories] == [[], [], []]
     assert ts.items == []
     body = ts.render_body()
     assert str(body) == ""
@@ -34841,17 +34072,17 @@ def test_type_sections_empty_lists():
 def test_type_sections_items_combines_all():
     """TypeSections.items returns protocols + typevars + typealiases combined."""
 
-    p_item = layout.Item(name="P", obj=MagicMock(), uri="ref/P.html#P", dispname="P")
-    tv_item = layout.Item(name="TV", obj=MagicMock(), uri="ref/TV.html#TV", dispname="TV")
-    ta_item = layout.Item(name="TA", obj=MagicMock(), uri="ref/TA.html#TA", dispname="TA")
+    p_item = InventoryItem(name="P", obj=MagicMock(), uri="ref/P.html#P", dispname="P")
+    tv_item = InventoryItem(name="TV", obj=MagicMock(), uri="ref/TV.html#TV", dispname="TV")
+    ta_item = InventoryItem(name="TA", obj=MagicMock(), uri="ref/TA.html#TA", dispname="TA")
 
     mock_render = MagicMock()
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc") as mock_g2d,
+        patch("great_docs._apiref.typing_information.griffe_to_doc") as mock_g2d,
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         mock_g2d.return_value = MagicMock()
@@ -34862,23 +34093,21 @@ def test_type_sections_items_combines_all():
         )
 
     assert ts.items == [p_item, tv_item, ta_item]
-    assert len(ts.protocols_renders) == 1
-    assert len(ts.typevars_renders) == 1
-    assert len(ts.typealiases_renders) == 1
+    assert [len(category.renders) for category in ts.categories] == [1, 1, 1]
 
 
 def test_type_sections_post_init_protocols_no_summary():
     """TypeSections.__post_init__ sets show_members_summary=False on protocols."""
 
-    p_item = layout.Item(name="Proto", obj=MagicMock())
+    p_item = InventoryItem(name="Proto", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -34893,15 +34122,15 @@ def test_type_sections_post_init_protocols_no_summary():
 def test_type_sections_post_init_typevars_no_sig_name():
     """TypeSections.__post_init__ sets show_signature_name=False on typevars."""
 
-    tv_item = layout.Item(name="T", obj=MagicMock())
+    tv_item = InventoryItem(name="T", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -34914,17 +34143,17 @@ def test_type_sections_post_init_typevars_no_sig_name():
 
 
 def test_type_sections_post_init_typealiases_settings():
-    """TypeSections.__post_init__ sets show_signature_name=False and show_signature_annotation=False on typealiases."""
+    """TypeSections keeps alias names and hides redundant annotations."""
 
-    ta_item = layout.Item(name="MyAlias", obj=MagicMock())
+    ta_item = InventoryItem(name="MyAlias", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -34933,23 +34162,23 @@ def test_type_sections_post_init_typealiases_settings():
             typealiases_items=[ta_item],
         )
 
-    assert mock_render.show_signature_name is False
     assert mock_render.show_signature_annotation is False
+    assert "show_signature_name" not in ts.categories[2].render_flags
 
 
 def test_type_sections_render_body_protocols_section():
     """TypeSections.render_body includes 'Protocols' header when protocols exist."""
 
-    p_item = layout.Item(name="P", obj=MagicMock())
+    p_item = InventoryItem(name="P", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render.__str__ = MagicMock(return_value="<protocol-rendered>")
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -34968,16 +34197,16 @@ def test_type_sections_render_body_protocols_section():
 def test_type_sections_render_body_typevars_section():
     """TypeSections.render_body includes 'Type Variables' header when typevars exist."""
 
-    tv_item = layout.Item(name="T", obj=MagicMock())
+    tv_item = InventoryItem(name="T", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render.__str__ = MagicMock(return_value="<typevar-rendered>")
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -34994,16 +34223,16 @@ def test_type_sections_render_body_typevars_section():
 def test_type_sections_render_body_typealiases_section():
     """TypeSections.render_body includes 'Type Aliases' header when typealiases exist."""
 
-    ta_item = layout.Item(name="A", obj=MagicMock())
+    ta_item = InventoryItem(name="A", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render.__str__ = MagicMock(return_value="<alias-rendered>")
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -35020,18 +34249,18 @@ def test_type_sections_render_body_typealiases_section():
 def test_type_sections_render_body_all_sections():
     """TypeSections.render_body includes all three section headers when all types present."""
 
-    p_item = layout.Item(name="P", obj=MagicMock())
-    tv_item = layout.Item(name="T", obj=MagicMock())
-    ta_item = layout.Item(name="A", obj=MagicMock())
+    p_item = InventoryItem(name="P", obj=MagicMock())
+    tv_item = InventoryItem(name="T", obj=MagicMock())
+    ta_item = InventoryItem(name="A", obj=MagicMock())
 
     mock_render = MagicMock()
     mock_render.__str__ = MagicMock(return_value="<rendered>")
     mock_render_cls = MagicMock(return_value=mock_render)
 
     with (
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
         ts = TypeSections(
@@ -35051,9 +34280,9 @@ def test_type_information_post_init():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
-    ti = TypeInformation(module_path="mypkg.types", builder=mock_builder)
+    ti = TypeInformation(module_path="mypkg.types", api_ref=mock_builder)
 
     assert ti.package == "mypkg"
     assert ti.dir == "reference"
@@ -35064,9 +34293,9 @@ def test_type_information_base_uri_strips_package():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
-    ti = TypeInformation(module_path="mypkg.sub.types", builder=mock_builder)
+    ti = TypeInformation(module_path="mypkg.sub.types", api_ref=mock_builder)
     assert ti.base_uri == "reference/sub.types"
 
 
@@ -35075,9 +34304,9 @@ def test_type_information_base_uri_no_package_prefix():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
-    ti = TypeInformation(module_path="otherpkg.types", builder=mock_builder)
+    ti = TypeInformation(module_path="otherpkg.types", api_ref=mock_builder)
     assert ti.base_uri == "reference/otherpkg.types"
 
 
@@ -35086,7 +34315,7 @@ def test_type_information_sections_calls_get_object():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
     # Create mock members with canonical_path
     mock_proto = MagicMock()
@@ -35103,25 +34332,25 @@ def test_type_information_sections_calls_get_object():
     mock_render_cls = MagicMock(return_value=mock_render_obj)
 
     with (
-        patch("great_docs._renderer.typing_information.get_object", return_value=mock_module),
+        patch("great_docs._apiref.typing_information.get_object", return_value=mock_module),
         patch(
-            "great_docs._renderer.typing_information.is_protocol",
+            "great_docs._apiref.typing_information.is_protocol",
             side_effect=lambda m: m is mock_proto,
         ),
         patch(
-            "great_docs._renderer.typing_information.is_typevar",
+            "great_docs._apiref.typing_information.is_typevar",
             side_effect=lambda m: m is mock_tv,
         ),
         patch(
-            "great_docs._renderer.typing_information.is_typealias",
+            "great_docs._apiref.typing_information.is_typealias",
             side_effect=lambda m: m is mock_alias,
         ),
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
-        ti = TypeInformation(module_path="mypkg.types", builder=mock_builder)
+        ti = TypeInformation(module_path="mypkg.types", api_ref=mock_builder)
         sections = ti.sections
 
     assert len(sections.protocols_items) == 1
@@ -35137,7 +34366,7 @@ def test_type_information_sections_item_uris():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
     mock_attr = MagicMock()
     mock_attr.canonical_path = "mypkg.sub.MyAlias"
@@ -35149,16 +34378,16 @@ def test_type_information_sections_item_uris():
     mock_render_cls = MagicMock(return_value=mock_render_obj)
 
     with (
-        patch("great_docs._renderer.typing_information.get_object", return_value=mock_module),
-        patch("great_docs._renderer.typing_information.is_protocol", return_value=False),
-        patch("great_docs._renderer.typing_information.is_typevar", return_value=False),
-        patch("great_docs._renderer.typing_information.is_typealias", return_value=True),
-        patch("great_docs._renderer.typing_information.griffe_to_doc"),
+        patch("great_docs._apiref.typing_information.get_object", return_value=mock_module),
+        patch("great_docs._apiref.typing_information.is_protocol", return_value=False),
+        patch("great_docs._apiref.typing_information.is_typevar", return_value=False),
+        patch("great_docs._apiref.typing_information.is_typealias", return_value=True),
+        patch("great_docs._apiref.typing_information.griffe_to_doc"),
         patch(
-            "great_docs._renderer.typing_information.get_render_type", return_value=mock_render_cls
+            "great_docs._apiref.typing_information.get_render_type", return_value=mock_render_cls
         ),
     ):
-        ti = TypeInformation(module_path="mypkg.sub", builder=mock_builder)
+        ti = TypeInformation(module_path="mypkg.sub", api_ref=mock_builder)
         sections = ti.sections
 
     item = sections.typealiases_items[0]
@@ -35171,13 +34400,13 @@ def test_type_information_content_has_meta_and_sections():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
     mock_module = MagicMock()
     mock_module.members = {}
 
-    with patch("great_docs._renderer.typing_information.get_object", return_value=mock_module):
-        ti = TypeInformation(module_path="mypkg.types", builder=mock_builder)
+    with patch("great_docs._apiref.typing_information.get_object", return_value=mock_module):
+        ti = TypeInformation(module_path="mypkg.types", api_ref=mock_builder)
         content = ti.content
 
     content_str = str(content)
@@ -35189,13 +34418,13 @@ def test_type_information_str_delegates_to_content():
 
     mock_builder = MagicMock()
     mock_builder.package = "mypkg"
-    mock_builder.dir = "reference"
+    mock_builder.settings.dir = "reference"
 
     mock_module = MagicMock()
     mock_module.members = {}
 
-    with patch("great_docs._renderer.typing_information.get_object", return_value=mock_module):
-        ti = TypeInformation(module_path="mypkg.types", builder=mock_builder)
+    with patch("great_docs._apiref.typing_information.get_object", return_value=mock_module):
+        ti = TypeInformation(module_path="mypkg.types", api_ref=mock_builder)
         result = str(ti)
 
     assert "Typing Information" in result
@@ -35207,14 +34436,14 @@ def test_type_information_write_creates_file():
     with tempfile.TemporaryDirectory() as tmp_dir:
         mock_builder = MagicMock()
         mock_builder.package = "mypkg"
-        mock_builder.dir = str(Path(tmp_dir) / "reference")
+        mock_builder.settings.dir = str(Path(tmp_dir) / "reference")
         mock_builder.items = []
 
         mock_module = MagicMock()
         mock_module.members = {}
 
-        with patch("great_docs._renderer.typing_information.get_object", return_value=mock_module):
-            ti = TypeInformation(module_path="mypkg.types", builder=mock_builder)
+        with patch("great_docs._apiref.typing_information.get_object", return_value=mock_module):
+            ti = TypeInformation(module_path="mypkg.types", api_ref=mock_builder)
 
             # Ensure the output directory exists
             Path(ti.base_uri).parent.mkdir(parents=True, exist_ok=True)
@@ -35234,7 +34463,7 @@ def test_type_information_write_extends_builder_items():
 
         mock_builder = MagicMock()
         mock_builder.package = "mypkg"
-        mock_builder.dir = ref_dir
+        mock_builder.settings.dir = ref_dir
         mock_builder.items = []
 
         mock_member = MagicMock()
@@ -35247,17 +34476,17 @@ def test_type_information_write_extends_builder_items():
         mock_render_cls = MagicMock(return_value=mock_render_obj)
 
         with (
-            patch("great_docs._renderer.typing_information.get_object", return_value=mock_module),
-            patch("great_docs._renderer.typing_information.is_protocol", return_value=False),
-            patch("great_docs._renderer.typing_information.is_typevar", return_value=True),
-            patch("great_docs._renderer.typing_information.is_typealias", return_value=False),
-            patch("great_docs._renderer.typing_information.griffe_to_doc"),
+            patch("great_docs._apiref.typing_information.get_object", return_value=mock_module),
+            patch("great_docs._apiref.typing_information.is_protocol", return_value=False),
+            patch("great_docs._apiref.typing_information.is_typevar", return_value=True),
+            patch("great_docs._apiref.typing_information.is_typealias", return_value=False),
+            patch("great_docs._apiref.typing_information.griffe_to_doc"),
             patch(
-                "great_docs._renderer.typing_information.get_render_type",
+                "great_docs._apiref.typing_information.get_render_type",
                 return_value=mock_render_cls,
             ),
         ):
-            ti = TypeInformation(module_path="mypkg.types", builder=mock_builder)
+            ti = TypeInformation(module_path="mypkg.types", api_ref=mock_builder)
 
             Path(ref_dir).mkdir(parents=True, exist_ok=True)
             ti.write()
@@ -35551,6 +34780,23 @@ class TestDiscoverUserGuide:
             assert info is not None
             assert info["has_index"] is True
 
+    def test_auto_discover_has_index_false_for_subdir_only(self):
+        """Subdir index.qmd files do not set has_index; only a root-level one does."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            docs = self._make_project(
+                tmp_dir,
+                {
+                    "01-overview.qmd": "---\ntitle: Overview\n---\nContent\n",
+                    "02-setup/index.qmd": "---\ntitle: Setup\n---\nSection intro\n",
+                    "02-setup/install.qmd": "---\ntitle: Installation\n---\nContent\n",
+                },
+            )
+            info = docs._discover_user_guide()
+            assert info is not None
+            assert info["has_index"] is False, (
+                "has_index should be False when only subdir index.qmd files exist"
+            )
+
 
 class TestDiscoverUserGuideExplicit:
     """Tests for _discover_user_guide_explicit."""
@@ -35661,7 +34907,7 @@ class TestGenerateUserGuideSidebarAuto:
             sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
             assert sidebar["id"] == "user-guide"
             assert len(sidebar["contents"]) == 2
-            assert "user-guide/intro.qmd" in sidebar["contents"][0]
+            assert sidebar["contents"][0] == {"text": "Intro", "href": "user-guide/intro.qmd"}
 
     def test_with_sections(self):
         """Generates sectioned sidebar from frontmatter sections."""
@@ -35711,6 +34957,37 @@ class TestGenerateUserGuideSidebarAuto:
             assert len(sidebar["contents"]) == 2
             # Second item should be a section
             assert "section" in sidebar["contents"][1]
+
+    def test_mixed_files_and_subdirs_sorted_by_prefix(self):
+        """Numeric prefixes interleave root files and subdir sections in the correct order."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+            ug_dir = tmp / "user_guide"
+            ug_dir.mkdir()
+            (ug_dir / "02_concepts").mkdir()
+            docs = GreatDocs(project_path=tmp_dir)
+            file01 = {"path": ug_dir / "01_overview.qmd", "title": "Overview", "section": None}
+            file02 = {
+                "path": ug_dir / "02_concepts" / "details.qmd",
+                "title": "Details",
+                "section": None,
+            }
+            file03 = {"path": ug_dir / "03_quickstart.qmd", "title": "Quickstart", "section": None}
+            user_guide_info = {
+                "files": [file01, file02, file03],
+                "sections": {},
+                "has_index": False,
+                "source_dir": ug_dir,
+            }
+            sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
+            contents = sidebar["contents"]
+            # Expected order: 01_overview (plain link), 02_concepts (section), 03_quickstart (plain link)
+            assert len(contents) == 3
+            assert contents[0] == {"text": "Overview", "href": "user-guide/overview.qmd"}
+            assert "section" in contents[1]
+            assert contents[1]["section"] == "Concepts"
+            assert contents[2] == {"text": "Quickstart", "href": "user-guide/quickstart.qmd"}
 
 
 class TestCopyUserGuideToDocs:
@@ -36392,62 +35669,6 @@ class TestUpdateConfigWithUserGuide:
             assert "Old" not in str(ug_sidebars[0])
 
 
-class TestApplyNodocFilter:
-    """Tests for _apply_nodoc_filter."""
-
-    def test_filters_nodoc_items(self):
-        """Removes items marked with %nodoc."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
-            (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
-            docs = GreatDocs(project_path=tmp_dir)
-            sections = [
-                {"title": "Classes", "contents": ["MyClass", "InternalClass"]},
-            ]
-
-            with patch.object(
-                docs,
-                "_extract_all_directives",
-                return_value={
-                    "InternalClass": DocDirectives(nodoc=True),
-                },
-            ):
-                result = docs._apply_nodoc_filter("mypkg", sections)
-            assert result is not None
-            assert "InternalClass" not in result[0]["contents"]
-            assert "MyClass" in result[0]["contents"]
-
-    def test_filters_companion_method_section(self):
-        """Removes companion 'ClassName Methods' section when class is %nodoc."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
-            (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
-            docs = GreatDocs(project_path=tmp_dir)
-            sections = [
-                {"title": "Classes", "contents": [{"name": "MyClass", "members": []}]},
-                {"title": "MyClass Methods", "contents": ["MyClass.method_a"]},
-            ]
-
-            with patch.object(
-                docs,
-                "_extract_all_directives",
-                return_value={
-                    "MyClass": DocDirectives(nodoc=True),
-                },
-            ):
-                result = docs._apply_nodoc_filter("mypkg", sections)
-            assert result is None  # Both sections filtered out
-
-    def test_returns_sections_when_no_directives(self):
-        """Returns sections unchanged when no directives found."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            docs = GreatDocs(project_path=tmp_dir)
-            sections = [{"title": "Classes", "contents": ["MyClass"]}]
-            with patch.object(docs, "_extract_all_directives", return_value={}):
-                result = docs._apply_nodoc_filter("mypkg", sections)
-            assert result == sections
-
-
 class TestGetSourceLocation:
     """Tests for _get_source_location."""
 
@@ -36817,7 +36038,7 @@ class TestUpdateSidebarFromSections:
             contents = sidebar[0]["contents"]
             assert contents[0]["href"] == "reference/index.qmd"
             assert contents[1]["section"] == "Classes"
-            assert "reference/MyClass.qmd" in contents[1]["contents"]
+            assert {"text": "MyClass", "href": "reference/MyClass.qmd"} in contents[1]["contents"]
 
     def test_handles_dict_format_items(self):
         """Processes dict-format items with name key."""
@@ -36832,7 +36053,7 @@ class TestUpdateSidebarFromSections:
             with open(docs.project_path / "_quarto.yml") as f:
                 config = read_yaml(f)
             contents = config["website"]["sidebar"][0]["contents"]
-            assert "reference/Graph.qmd" in contents[1]["contents"]
+            assert {"text": "Graph", "href": "reference/Graph.qmd"} in contents[1]["contents"]
 
     def test_no_api_reference_returns_early(self):
         """Returns early when no api-reference in config."""
@@ -36893,10 +36114,12 @@ class TestUpdateReferenceIndexFrontmatter:
             finally:
                 os.chdir(old_cwd)
             content = index_path.read_text()
-            assert content.startswith("---\npage-navigation: false\n---\n")
+            assert content.startswith(
+                "---\npage-navigation: false\nhtml-table-processing: none\n---\n"
+            )
 
     def test_skips_if_already_has_page_navigation(self):
-        """Doesn't modify file if page-navigation already set."""
+        """Doesn't modify file if page-navigation and html-table-processing already set."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
@@ -36905,7 +36128,7 @@ class TestUpdateReferenceIndexFrontmatter:
             ref_dir = docs.project_path / "reference"
             ref_dir.mkdir()
             index_path = ref_dir / "index.qmd"
-            original = "---\ntitle: API\npage-navigation: false\n---\nContent.\n"
+            original = "---\ntitle: API\npage-navigation: false\nhtml-table-processing: none\n---\nContent.\n"
             index_path.write_text(original)
             docs._update_reference_index_frontmatter()
             assert index_path.read_text() == original
@@ -37102,10 +36325,10 @@ class TestProcessSectionsBatch9:
         tmp = Path(tmp_dir)
         (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
         (tmp / "great-docs.yml").write_text(gd_yml)
-        for rel_path, content in section_files.items():
+        for rel_path, file_content in section_files.items():
             p = tmp / rel_path
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content)
+            p.write_text(file_content)
         docs = GreatDocs(project_path=tmp_dir)
         docs.project_path.mkdir(parents=True, exist_ok=True)
         with open(docs.project_path / "_quarto.yml", "w") as f:
@@ -37395,8 +36618,9 @@ class TestGenerateUserGuideSidebarAutoBatch9:
             }
             sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
             # Subdirectory section should use the index.qmd title
+            # ("contents" key distinguishes a real section from a virtual-section page link)
             section_entry = next(
-                (c for c in sidebar["contents"] if isinstance(c, dict) and "section" in c),
+                (c for c in sidebar["contents"] if isinstance(c, dict) and "contents" in c),
                 None,
             )
             assert section_entry is not None
@@ -37461,8 +36685,10 @@ class TestGenerateUserGuideSidebarAutoBatch9:
             sidebar = docs._generate_user_guide_sidebar_auto(user_guide_info)
             # First entry is a section, second is the unsectioned file
             assert sidebar["contents"][0]["section"] == "Getting Started"
-            assert isinstance(sidebar["contents"][1], str)
-            assert "appendix.qmd" in sidebar["contents"][1]
+            assert sidebar["contents"][1] == {
+                "text": "Appendix",
+                "href": "user-guide/appendix.qmd",
+            }
 
 
 class TestGetUserGuideTextForLlms:
@@ -37570,7 +36796,9 @@ class TestUpdateReferenceIndexFrontmatterBatch9:
             finally:
                 docs.docs_dir = original_docs_dir
             content = index_qmd.read_text()
-            assert content.startswith("---\npage-navigation: false\n---\n")
+            assert content.startswith(
+                "---\npage-navigation: false\nhtml-table-processing: none\n---\n"
+            )
 
     def test_skips_when_already_has_page_navigation(self):
         """Does not duplicate page-navigation if already present."""
@@ -39175,6 +38403,48 @@ api-reference:
         assert "# Hyphenated" in content
 
 
+def test_generate_skill_md_install_uses_distribution_name():
+    """Install command uses pyproject.toml distribution name, not the importable module name.
+
+    Example: import name is 'toast', distribution name is 'toast-analytics'. The generated skill
+    must emit 'pip install toast-analytics', not 'pip install toast'.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            """
+[project]
+name = "toast-analytics"
+description = "Web analytics client"
+"""
+        )
+
+        great_docs_dir = Path(tmp_dir) / "great-docs"
+        great_docs_dir.mkdir()
+        quarto_yml = great_docs_dir / "_quarto.yml"
+
+        # api-reference.package is the *importable* module name
+        quarto_yml.write_text(
+            """
+api-reference:
+  package: toast
+  sections:
+    - title: Core
+      contents:
+        - track
+"""
+        )
+
+        docs._generate_skill_md()
+
+        content = (great_docs_dir / "skill.md").read_text()
+
+        assert "pip install toast-analytics" in content
+        assert "pip install toast\n" not in content
+
+
 def test_generate_skills_page_basic():
     """Test that skills.qmd is generated alongside skill.md."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -39447,7 +38717,7 @@ def test_homepage_sidebar_skills_link_position():
         margin = docs._build_metadata_margin()
 
         # Skills link should appear before llms.txt
-        skills_pos = margin.find("[Skills](skills.html)")
+        skills_pos = margin.find('href="skills.html"')
         llms_pos = margin.find("[llms.txt](llms.txt)")
 
         assert skills_pos != -1, "Skills link not found in sidebar"
@@ -39795,7 +39065,7 @@ def test_update_quarto_config_video_embed_not_duplicated():
 
 
 def test_update_quarto_config_video_embed_script_tag_format():
-    """video-embed.js is included as a proper script tag in include-after-body."""
+    """video-embed.js uses the quarto:offset loader so nested pages resolve it."""
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs, quarto_yml = _make_uqc_docs(tmp_dir)
@@ -39813,7 +39083,12 @@ def test_update_quarto_config_video_embed_script_tag_format():
         ]
 
         assert len(video_entries) == 1
-        assert video_entries[0]["text"] == '<script src="video-embed.js"></script>'
+        # Robust path resolution: derive the site root from quarto:offset rather
+        # than a bare relative src= that 404s on nested pages (issue #212).
+        text = video_entries[0]["text"]
+        assert "quarto:offset" in text
+        assert "video-embed.js" in text
+        assert 'src="video-embed.js"' not in text
 
 
 def test_prepare_build_directory_copies_video_embed_js():
@@ -40517,6 +39792,32 @@ def test_on_this_page_script_tag_uses_quarto_offset():
         assert "quarto:offset" in str(otp_entries[0])
 
 
+def test_color_swatch_script_tag_uses_quarto_offset():
+    """The color-swatch include-after-body entry uses the quarto:offset pattern.
+
+    The previous loader derived the path from canonical/location.href by stripping
+    two path segments, which produced wrong paths (404s) on nested pages such as
+    /docs/examples/foo.html (issue #212). quarto:offset resolves the site root
+    correctly at any depth.
+    """
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(tmp_dir)
+
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        after_body = result["format"]["html"]["include-after-body"]
+        swatch_entries = [item for item in after_body if "color-swatch.js" in str(item)]
+
+        assert len(swatch_entries) == 1
+        text = str(swatch_entries[0])
+        assert "quarto:offset" in text
+        assert "canonical" not in text
+
+
 def test_on_this_page_not_duplicated():
     """Running _update_quarto_config twice does not duplicate the script tag."""
 
@@ -40817,43 +40118,6 @@ def test_keyboard_nav_scss_styles_exist():
     # Reduced motion
     assert ".gd-keyboard-overlay," in content
     assert ".gd-menu-overlay," in content
-
-
-# Quarto executable cell preservation tests ------------------------------------
-
-
-def test_convert_rst_text_preserves_executable_cell_syntax():
-    """_convert_rst_text keeps ```{python} as executable Quarto cells."""
-    text = "```{python}\nprint('hi')\n```"
-    result = _convert_rst_text(text)
-    assert "```{python}" in result
-    assert "print('hi')" in result
-
-
-def test_convert_rst_text_preserves_hashpipe_directives():
-    """_convert_rst_text preserves #| cell options inside code blocks."""
-    text = "```{python}\n#| eval: false\nprint('hi')\n```"
-    result = _convert_rst_text(text)
-    assert "```{python}" in result
-    assert "#| eval: false" in result
-    assert "print('hi')" in result
-
-
-def test_convert_rst_text_preserves_static_code_blocks():
-    """_convert_rst_text keeps ```python (no braces) as static blocks."""
-    text = "```python\nx = 1\n```"
-    result = _convert_rst_text(text)
-    assert "```python" in result
-    assert "```{python}" not in result
-    assert "x = 1" in result
-
-
-def test_convert_rst_text_preserves_multiple_hashpipe_options():
-    """_convert_rst_text preserves multiple #| directives in executable cells."""
-    text = "```{python}\n#| eval: false\n#| echo: true\nprint('hi')\n```"
-    result = _convert_rst_text(text)
-    assert "#| eval: false" in result
-    assert "#| echo: true" in result
 
 
 # ── _tag_slug ──────────────────────────────────────────────────────────
@@ -42281,3 +41545,391 @@ def test_create_api_sections_from_config_inline_methods_custom_threshold():
             assert "MediumClass" in classes_section["contents"]
         finally:
             sys.path.remove(tmp_dir)
+
+
+# ── Package Info Page ──────────────────────────────────────────────────────
+
+
+def test_generate_package_info_page_basic():
+    """_generate_package_info_page creates package-info.qmd with runtime deps."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            textwrap.dedent("""\
+                [project]
+                name = "mypkg"
+                requires-python = ">=3.11"
+                dependencies = [
+                    "numpy>=1.24",
+                    "pandas>=2.0,<3.0",
+                ]
+            """),
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        docs = GreatDocs(project_path=tmp_dir)
+        with patch.object(
+            GreatDocs,
+            "_fetch_pypi_dates",
+            return_value={"numpy": "2026-05-01", "pandas": "2026-06-15"},
+        ):
+            result = docs._generate_package_info_page()
+
+        assert result == "package-info.qmd"
+
+        pkg_info = gd_dir / "package-info.qmd"
+        assert pkg_info.exists()
+
+        content = pkg_info.read_text(encoding="utf-8")
+        assert "Package Info" in content
+        assert "`numpy`{.gd-no-link}" in content
+        assert "`>=1.24`" in content
+        assert "`pandas`{.gd-no-link}" in content
+        assert "pypi.org/project/numpy" in content
+        assert "pypi.org/project/pandas" in content
+        assert "Runtime Dependencies" in content
+        assert "Summary" in content
+        assert ">=3.11" in content
+        assert "Total unique dependencies" in content
+        # Icon should be an SVG, not a Quarto shortcode
+        assert "iconify" not in content
+        assert "<svg" in content
+        # Last Published dates
+        assert "Last Published" in content
+        assert "2026-05-01" in content
+        assert "2026-06-15" in content
+
+
+def test_generate_package_info_page_with_optional_deps():
+    """_generate_package_info_page shows optional dependency groups with contents."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            textwrap.dedent("""\
+                [project]
+                name = "mypkg"
+                dependencies = ["click>=8.0"]
+
+                [project.optional-dependencies]
+                dev = ["pytest>=7.0", "coverage"]
+                docs = ["quartodoc>=0.9"]
+            """),
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        docs = GreatDocs(project_path=tmp_dir)
+        with patch.object(GreatDocs, "_fetch_pypi_dates", return_value={}):
+            result = docs._generate_package_info_page()
+
+        assert result == "package-info.qmd"
+
+        content = (gd_dir / "package-info.qmd").read_text(encoding="utf-8")
+        assert "Optional Dependencies" in content
+        assert "### `dev`" in content
+        assert "### `docs`" in content
+        assert "`pytest`{.gd-no-link}" in content or "`pytest`" in content
+        assert "`coverage`{.gd-no-link}" in content or "`coverage`" in content
+        assert "`quartodoc`{.gd-no-link}" in content or "`quartodoc`" in content
+        # Summary counts
+        assert "3 groups" in content or "2 groups" in content
+
+
+def test_generate_package_info_page_with_markers():
+    """_generate_package_info_page shows environment markers when present."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            textwrap.dedent("""\
+                [project]
+                name = "mypkg"
+                dependencies = [
+                    "typing_extensions>=4.0; python_version<'3.12'",
+                    "numpy>=1.24",
+                ]
+            """),
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        docs = GreatDocs(project_path=tmp_dir)
+        with patch.object(GreatDocs, "_fetch_pypi_dates", return_value={}):
+            docs._generate_package_info_page()
+
+        content = (gd_dir / "package-info.qmd").read_text(encoding="utf-8")
+        assert "Environment Marker" in content
+        assert "python_version" in content
+        assert "`typing-extensions`" in content or "`typing_extensions`" in content
+
+
+def test_generate_package_info_page_disabled():
+    """_generate_package_info_page returns None when disabled in config."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "mypkg"\ndependencies = ["numpy"]\n',
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+        # Write config to disable the page
+        config_path = Path(tmp_dir) / "great-docs.yml"
+        config_path.write_text("package_info_page: false\n", encoding="utf-8")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._generate_package_info_page()
+
+        assert result is None
+        assert not (gd_dir / "package-info.qmd").exists()
+
+
+def test_generate_package_info_page_no_deps():
+    """_generate_package_info_page returns None when no deps exist."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._generate_package_info_page()
+
+        assert result is None
+
+
+def test_get_package_metadata_parses_dependencies():
+    """_get_package_metadata extracts parsed dependencies from pyproject.toml."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            textwrap.dedent("""\
+                [project]
+                name = "mypkg"
+                dependencies = [
+                    "numpy>=1.24",
+                    "click>=8.0,<9.0",
+                    "typing_extensions>=4.0; python_version<'3.12'",
+                ]
+
+                [project.optional-dependencies]
+                dev = ["pytest>=7.0"]
+            """),
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+
+        docs = GreatDocs(project_path=tmp_dir)
+        metadata = docs._get_package_metadata()
+
+        # Runtime deps
+        deps = metadata["dependencies"]
+        assert len(deps) == 3
+        assert deps[0]["name"] == "numpy"
+        assert ">=1.24" in deps[0]["specifier"]
+        assert deps[1]["name"] == "click"
+        assert deps[2]["name"] == "typing-extensions" or deps[2]["name"] == "typing_extensions"
+        assert "marker" in deps[2]
+
+        # Optional deps full
+        opt_full = metadata["optional_dependencies_full"]
+        assert "dev" in opt_full
+        assert len(opt_full["dev"]) == 1
+        assert opt_full["dev"][0]["name"] == "pytest"
+
+
+def test_build_metadata_margin_includes_package_info_link():
+    """_build_metadata_margin includes Package Info link when page exists."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "pkg"\nrequires-python = ">=3.11"\n',
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+
+        # Create package-info.qmd to simulate it having been generated
+        (gd_dir / "package-info.qmd").write_text(
+            "---\ntitle: Package Info\n---\n", encoding="utf-8"
+        )
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._build_metadata_margin()
+
+        assert "Package Info" in result
+        assert "package-info.html" in result
+
+
+def test_generate_package_info_page_pypi_date_fallback():
+    """_generate_package_info_page shows dash when PyPI date fetch fails."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "mypkg"\ndependencies = ["numpy"]\n',
+            encoding="utf-8",
+        )
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+
+        docs = GreatDocs(project_path=tmp_dir)
+        # Simulate network failure — empty dict returned
+        with patch.object(GreatDocs, "_fetch_pypi_dates", return_value={}):
+            docs._generate_package_info_page()
+
+        content = (gd_dir / "package-info.qmd").read_text(encoding="utf-8")
+        # Date column header present, value is dash
+        assert "Last Published" in content
+
+
+def test_fetch_pypi_dates_success():
+    """_fetch_pypi_dates returns dates for successful API responses."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "info": {"version": "1.26.0"},
+        "releases": {"1.26.0": [{"upload_time_iso_8601": "2026-06-15T12:00:00Z"}]},
+    }
+    with patch("requests.get", return_value=mock_response):
+        result = GreatDocs._fetch_pypi_dates({"numpy"})
+
+    assert result == {"numpy": "2026-06-15"}
+
+
+def test_fetch_pypi_dates_failure():
+    """_fetch_pypi_dates returns empty dict on network failure."""
+    with patch("requests.get", side_effect=Exception("timeout")):
+        result = GreatDocs._fetch_pypi_dates({"nonexistent-pkg"})
+
+    assert result == {}
+
+
+def test_fetch_pypi_dates_empty():
+    """_fetch_pypi_dates returns empty dict for empty input."""
+    result = GreatDocs._fetch_pypi_dates(set())
+    assert result == {}
+
+
+def test_build_metadata_margin_no_package_info_link_when_missing():
+    """_build_metadata_margin omits Package Info link when page doesn't exist."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pyproject = Path(tmp_dir) / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "pkg"\n', encoding="utf-8")
+        gd_dir = Path(tmp_dir) / "great-docs"
+        gd_dir.mkdir()
+
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._build_metadata_margin()
+
+        assert "package-info.html" not in result
+
+
+def test_announcement_position_in_meta_tag():
+    """_update_quarto_config emits data-position on the gd-announcement meta tag"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.1.0"'
+        )
+        (project_path / "great-docs.yml").write_text(
+            "announcement:\n  content: Hi\n  position: below-navbar\n",
+            encoding="utf-8",
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._update_quarto_config()
+
+        with open(docs.project_path / "_quarto.yml", "r") as f:
+            config = read_yaml(f)
+
+        header = config["format"]["html"]["include-in-header"]
+        meta_texts = [item.get("text", "") for item in header if isinstance(item, dict)]
+        ann = next((t for t in meta_texts if "gd-announcement" in t), None)
+        assert ann is not None, "gd-announcement meta tag not found"
+        assert 'data-position="below-navbar"' in ann
+
+
+def test_announcement_position_defaults_above_in_meta_tag():
+    """Default announcement position is above-navbar in the meta tag"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.1.0"'
+        )
+        (project_path / "great-docs.yml").write_text(
+            "announcement: Hi\n", encoding="utf-8"
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+        docs._update_quarto_config()
+
+        with open(docs.project_path / "_quarto.yml", "r") as f:
+            config = read_yaml(f)
+
+        header = config["format"]["html"]["include-in-header"]
+        meta_texts = [item.get("text", "") for item in header if isinstance(item, dict)]
+        ann = next((t for t in meta_texts if "gd-announcement" in t), None)
+        assert ann is not None, "gd-announcement meta tag not found"
+        assert 'data-position="above-navbar"' in ann
+
+
+def test_build_reference_yaml_classes_and_functions():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        categories = {
+            "classes": ["Beta", "Alpha"],
+            "functions": ["helper"],
+            "class_methods": {"Alpha": 0, "Beta": 0},
+            "class_method_names": {},
+        }
+        result = docs._build_reference_yaml(categories)
+        assert result.startswith("reference:")
+        assert "  - title: Classes" in result
+        assert "      - Alpha" in result  # sorted
+        assert "  - title: Functions" in result
+        assert "      - helper" in result
+
+
+def test_build_reference_yaml_large_class_split():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        categories = {
+            "classes": ["Big"],
+            "class_methods": {"Big": 42},
+            "class_method_names": {"Big": ["a", "b"]},
+        }
+        result = docs._build_reference_yaml(categories)
+        assert "members: false" in result
+        assert "  - title: Big Methods" in result
+        assert "      - Big.a" in result
+
+
+def test_build_reference_yaml_empty():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        assert docs._build_reference_yaml({}) == "reference:"
+
+
+class TestInspectRepoGitNeeds:
+    def test_top_level_show_dates_requires_full_history(self, tmp_path: Path):
+        """Regression: top-level `show_dates: true` must trigger a full clone.
+
+        roborev #801 finding 5: only the legacy `site.show_dates` was checked,
+        so the new top-level key left remote builds shallow.
+        """
+        (tmp_path / "great-docs.yml").write_text("show_dates: true\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_legacy_nested_show_dates_still_requires_full_history(self, tmp_path: Path):
+        """The legacy `site.show_dates` location keeps working."""
+        (tmp_path / "great-docs.yml").write_text(
+            "site:\n  show_dates: true\n", encoding="utf-8"
+        )
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_no_show_dates_does_not_require_full_history(self, tmp_path: Path):
+        """No `show_dates` anywhere resolves to `tags` (no `source.branch` set)."""
+        (tmp_path / "great-docs.yml").write_text("package: test\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "tags"

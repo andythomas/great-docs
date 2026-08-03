@@ -2,7 +2,7 @@
 
 import pytest
 
-from great_docs._renderer._format import render_formatted_expr
+from great_docs._apiref._format import render_formatted_expr
 
 
 class TestRenderFormattedExpr:
@@ -37,9 +37,32 @@ class TestRenderFormattedExpr:
         assert "int" in result
         assert "None" in result
 
+    def test_no_trailing_break_in_short_annotation(self):
+        """A short annotation must not pick up a trailing <br>."""
+        expr = self._make_expr("dict[str, int]")
+        result = render_formatted_expr(expr)
+
+        assert not result.endswith("<br>")
+
+    def test_no_trailing_break_in_wrapped_annotation(self):
+        """A wrapped annotation keeps its internal <br>s but gains no trailing one."""
+        from great_docs._apiref._format import HAS_RUFF
+
+        if not HAS_RUFF:
+            pytest.skip("ruff is required to wrap the annotation")
+
+        # Long enough to exceed any plausible ruff line-length, so that ruff
+        # puts one member per line
+        members = ", ".join(f'"{c * 10}"' for c in "abcdefghijklmnop")
+        expr = self._make_expr(f"Literal[{members}]")
+        result = render_formatted_expr(expr)
+
+        assert "<br>" in result
+        assert not result.endswith("<br>")
+
     def test_whitespace_encoded(self):
         """Spaces and newlines should be encoded for HTML inline display."""
-        from great_docs._renderer._format import pretty_code
+        from great_docs._apiref._format import pretty_code
 
         # pretty_code converts 4-space indents to &nbsp; and newlines to <br>
         result = pretty_code("(\n    Foo\n    | Bar\n)")

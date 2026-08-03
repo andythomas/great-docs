@@ -20,6 +20,7 @@ SPEC = {
             "build-backend": "setuptools.build_meta",
         },
     },
+    "config": {"parser": "sphinx"},
     "files": {
         "gdtest_rst_danger/__init__.py": '''\
             """Package testing danger RST directives."""
@@ -73,6 +74,6 @@ SPEC = {
         "detected_parser": "numpy",
         "export_names": ["drop_database", "purge_cache"],
         "num_exports": 2,
-        "coverage_exclude": ['nodoc', 'bigcl', 'ug', 'supp', 'sechdg', 'sbsec', 'hdg'],
-},
+        "coverage_exclude": ["nodoc", "bigcl", "ug", "supp", "sechdg", "sbsec", "hdg"],
+    },
 }

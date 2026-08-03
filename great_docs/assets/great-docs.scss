@@ -21,10 +21,10 @@ $label-constant-color: mix($primary, $orange-500, 20%);
 $label-typealias-color: mix($primary, $yellow-500, 20%);
 $label-cli-color: mix($primary, $green-600, 20%);
 $label-cli-group-color: mix($primary, $green-600, 20%);
-$label-mcp-tool-color: mix($primary, $purple-600, 20%);
-$label-mcp-resource-color: mix($primary, $teal-500, 20%);
-$label-mcp-resource-template-color: mix($primary, $teal-500, 20%);
-$label-mcp-prompt-color: mix($primary, $orange-400, 20%);
+$label-mcp-tool-color: #e6194B;
+$label-mcp-resource-color: #3cb44b;
+$label-mcp-resource-template-color: #f032e6;
+$label-mcp-prompt-color: #4363d8;
 $label-mcp-color: mix($primary, $purple-600, 20%);
 
 $signature-background-color: shade-color(tint-color($primary, 96%), 2%);
@@ -223,6 +223,7 @@ h2.doc-attributes,
 h2.doc-functions,
 h2.doc-methods,
 h2.doc-classes,
+h2.doc-type-aliases,
 h2.doc-group {
   font-size: 22px;
   border-bottom: none;
@@ -601,8 +602,8 @@ $method-like-labels: (method, classmethod, staticmethod);
 }
 
 // MCP capability tiles
-$label-mcp-completions-color: mix($primary, $indigo-400, 20%);
-$label-mcp-instructions-color: mix($primary, $pink-500, 20%);
+$label-mcp-completions-color: #911eb4;
+$label-mcp-instructions-color: #f58231;
 
 .mcp-capability-tiles {
   max-width: 28rem;
@@ -613,6 +614,7 @@ $label-mcp-instructions-color: mix($primary, $pink-500, 20%);
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
     margin: 0;
+    padding-top: 10px;
   }
 }
 
@@ -638,39 +640,39 @@ $label-mcp-instructions-color: mix($primary, $pink-500, 20%);
 }
 
 .mcp-tile-tools {
-  color: $label-mcp-tool-color;
-  border-color: $label-mcp-tool-color;
-  background-color: tint-color($label-mcp-tool-color, 92%);
+  color: #e6194B;
+  border-color: #e6194B;
+  background-color: tint-color(#e6194B, 92%);
 }
 
 .mcp-tile-resources {
-  color: $label-mcp-resource-color;
-  border-color: $label-mcp-resource-color;
-  background-color: tint-color($label-mcp-resource-color, 92%);
+  color: #3cb44b;
+  border-color: #3cb44b;
+  background-color: tint-color(#3cb44b, 92%);
 }
 
 .mcp-tile-templates {
-  color: $label-mcp-resource-template-color;
-  border-color: $label-mcp-resource-template-color;
-  background-color: tint-color($label-mcp-resource-template-color, 92%);
+  color: #f032e6;
+  border-color: #f032e6;
+  background-color: tint-color(#f032e6, 92%);
 }
 
 .mcp-tile-prompts {
-  color: $label-mcp-prompt-color;
-  border-color: $label-mcp-prompt-color;
-  background-color: tint-color($label-mcp-prompt-color, 92%);
-}
-
-.mcp-tile-completions {
-  color: $label-mcp-completions-color;
-  border-color: $label-mcp-completions-color;
-  background-color: tint-color($label-mcp-completions-color, 92%);
+  color: #4363d8;
+  border-color: #4363d8;
+  background-color: tint-color(#4363d8, 92%);
 }
 
 .mcp-tile-instructions {
-  color: $label-mcp-instructions-color;
-  border-color: $label-mcp-instructions-color;
-  background-color: tint-color($label-mcp-instructions-color, 92%);
+  color: #f58231;
+  border-color: #f58231;
+  background-color: tint-color(#f58231, 92%);
+}
+
+.mcp-tile-completions {
+  color: #911eb4;
+  border-color: #911eb4;
+  background-color: tint-color(#911eb4, 92%);
 }
 
 // Adorn callables with ()
@@ -725,7 +727,7 @@ dt a.doc-method-name::after {
   }
 
   // Attribute signature (uses <p><code> rather than div.sourceCode)
-  .doc-signature.doc-attribute {
+  .doc-signature:is(.doc-attribute, .doc-type-alias) {
     code {
       background-color: #2d3748 !important;
       color: #e2e8f0 !important;
@@ -890,6 +892,108 @@ li a {
     color: black;
     text-decoration: underline;
     text-underline-offset: 4px;
+}
+
+/* ==========================================================================
+   Citations & Bibliography (Quarto citeproc output)
+   Theme-aware via --gd-* tokens, so light/dark stay consistent. Without these
+   rules, inline citations fall through to the generic link color (black in
+   light mode, so they don't read as links) and the reference list inherits
+   Bootstrap defaults with no spacing between entries.
+   ========================================================================== */
+
+/* Inline citations, e.g. (Knuth 1984): distinct accent color with a dotted
+   underline in both modes so they're clearly navigable cross-references. */
+.citation a[role="doc-biblioref"] {
+    color: var(--gd-citation-color);
+    text-decoration: underline dotted;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.citation a[role="doc-biblioref"]:hover {
+    color: var(--gd-citation-color);
+    text-decoration-style: solid;
+}
+
+/* Separate a manually-placed reference list from the body. When an author puts
+   `::: {#refs}` under their own heading, #refs sits in a content section
+   (.level1); border that section so the rule lands above the heading. Scoped to
+   .level1 so it does NOT double up with the appendix border below. The metrics
+   mirror Quarto's #quarto-appendix (2rem above the rule, 1.5rem below) so the
+   manual and auto-generated paths look identical. */
+section.level1:has(> #refs) {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--gd-border-color);
+}
+
+/* Zero the heading's own top margin so the gap below the rule equals the
+   section padding (otherwise the heading's default margin makes the whitespace
+   above and below the rule uneven). Matches the appendix heading (margin-top:0). */
+section.level1:has(> #refs) > :first-child {
+    margin-top: 0;
+}
+
+/* Fallback when citeproc appends a bare #refs with no section wrapper. */
+#refs:not(section > #refs) {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--gd-border-color);
+}
+
+/* Auto-generated bibliographies render in Quarto's #quarto-appendix block,
+   which already supplies a top border for separation. Quarto's default theme
+   gives it a light background and border that don't adapt to dark mode, so the
+   reference list shows up as a white card with low-contrast text. Re-theme it. */
+html.quarto-dark #quarto-appendix.default,
+body.quarto-dark #quarto-appendix.default {
+    background-color: transparent;
+    border-top-color: var(--gd-border-color);
+}
+
+/* Quarto renders the appendix bibliography title at body-text size, which looks
+   inconsistent next to a manually-authored "## References" section heading (a
+   full-size section heading). Promote it to the section-heading scale so the
+   References section looks the same whether the heading is auto-generated or
+   authored by hand. Two ids + !important override Quarto's own
+   `.quarto-appendix-heading { font-size: 1em !important }`. */
+#quarto-appendix #quarto-bibliography > .quarto-appendix-heading {
+    font-size: 1.85rem !important;
+    font-weight: 500;
+    margin-bottom: 1rem;
+}
+
+/* Reference list: slightly smaller and softened for hierarchy, with breathing
+   room between entries (Bootstrap leaves them flush against each other). Use
+   0.9em to match Quarto's own appendix rule
+   (`#quarto-appendix .quarto-appendix-contents > *:not(h2) { font-size: .9em }`)
+   so a manually-placed #refs is the same size as the auto-generated one. */
+#refs {
+    font-size: 0.9em;
+    color: var(--gd-text-secondary);
+}
+
+#refs .csl-entry {
+    margin-bottom: 0.6rem;
+}
+
+#refs .csl-entry:last-child {
+    margin-bottom: 0;
+}
+
+/* Unify the hanging indent across both paths. Quarto's appendix applies the
+   hanging indent per-entry (body flush left, wrapped lines indented 1em), but a
+   manually-placed #refs gets the default `div.hanging-indent` rule that shifts
+   the whole list by 1.5em. Force the per-entry form everywhere so every citation
+   starts hard left with consistent wrap indentation. */
+#refs.hanging-indent {
+    margin-left: 0;
+}
+
+#refs.hanging-indent .csl-entry {
+    margin-left: 1em;
+    text-indent: -1em;
 }
 
 /* Author/funder icon links in the landing page margin sidebar */
@@ -1057,6 +1161,20 @@ p,h1,h2,h3,#toc-title,#toc-function-reference,.nav-link,.table {
     font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+/* Great Tables (gt) ship their own font as a self-contained component. The
+   `p { font-family }` rule above targets bare <p> elements, so it overrides
+   gt's font on the report title — which gt wraps in a <p> — while non-<p>
+   cells like the subtitle keep gt's font, producing a mismatched header.
+   Let gt's own content inherit gt's font instead. This is mode-independent
+   (the rule above is not dark-mode specific). Mirrors `table:not(.gt_table)`
+   above and the dark-mode gt exemption in the dark-mode section. */
+.gt_table p,
+.gt_table li,
+.gt_table dd,
+.gt_table dt {
+    font-family: inherit;
+}
+
 .cell-output.cell-output-stdout {
     border-style: solid;
     border-width: 1px;
@@ -1146,6 +1264,20 @@ div.sidebar-item-container {
     cursor: default !important;
 }
 
+/* In mixed sidebar layouts (root-level pages interleaved with section headers),
+   add top breathing room at transitions between plain page links and section headers.
+   Both rules are scoped to #quarto-sidebar to beat the high-specificity gd-sidebar-float
+   rule that otherwise collapses all sidebar-item margins to 0.1rem.
+   The plain→section direction uses more space so section headers feel anchored;
+   the section→plain direction uses less since the section's indented children
+   already provide visual separation. */
+#quarto-sidebar li.sidebar-item:not(.sidebar-item-section) + li.sidebar-item-section {
+    margin-top: 0.5rem;
+}
+#quarto-sidebar li.sidebar-item-section + li.sidebar-item:not(.sidebar-item-section) {
+    margin-top: 0.3rem;
+}
+
 /* Hover effect for clickable sidebar links (not section headers).
    Uses a ::before pseudo-element so hover never shifts layout. */
 #quarto-sidebar .sidebar-link[href] {
@@ -1191,6 +1323,16 @@ div.sidebar-item-container {
     padding-right: 10px;
     padding-top: 3px;
     padding-bottom: 4px;
+}
+
+/* logo in the navbar title */
+.navbar-logo {
+    height: 24px;
+    width: auto;
+    max-width: 100%;
+    padding-right: 4px;
+    display: block;
+    flex-shrink: 0;
 }
 
 /* Version badge in navbar title */
@@ -1300,6 +1442,41 @@ a.sidebar-item-text.sidebar-link.text-start > span {
 
 .sidebar-item-section {
     padding-bottom: 8px;
+}
+
+/* CLI reference: present command groups (e.g. SKILL, TERMSHOW) as small uppercase
+   pills so they read as command groups, distinct from leaf commands. Scoped to the
+   CLI reference pages via the doc-cli-reference body class. */
+body.doc-cli-reference #quarto-sidebar .sidebar-item-section
+    > .sidebar-item-container
+    > .sidebar-item-text
+    .menu-text {
+    display: inline-block;
+    text-transform: uppercase;
+    font-family: $font-family-monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.25rem;
+    border: 1px solid $label-cli-group-color;
+    color: $label-cli-group-color;
+    background-color: tint-color($label-cli-group-color, 90%);
+}
+
+/* Give each CLI command group a little breathing room above its pill. */
+body.doc-cli-reference #quarto-sidebar .sidebar-item-section {
+    margin-top: 0.4rem;
+}
+
+/* The first command group follows a plain leaf command (no section
+   padding-bottom above it), so it needs extra top margin to match the gap that
+   later groups (e.g. TERMSHOW) get from the preceding group's padding-bottom. */
+body.doc-cli-reference
+    #quarto-sidebar
+    li.sidebar-item:not(.sidebar-item-section)
+    + li.sidebar-item-section {
+    margin-top: 0.9rem;
 }
 
 /* ==========================================================================
@@ -1558,23 +1735,116 @@ body.quarto-light .navbar .navbar-toggler-icon {
     flex-wrap: nowrap;
 }
 
-/* Compact widget tray on narrow phones (iPhone portrait) */
-@media (max-width: 430px) {
+/* ----------------------------------------------------------------------
+   Mobile navbar: two centered rows
+   ----------------------------------------------------------------------
+   Below the lg breakpoint Quarto lays the navbar out as a single flex row
+   in which the hamburger toggle pushes the brand around, making it
+   impossible to truly center the logo/title. We force a deliberate
+   two-row layout instead:
+
+     Row 1 — the brand/logo, horizontally centered. The hamburger toggle is
+             taken out of flow (absolutely pinned to the left) so its width
+             never shifts the brand off-center.
+     Row 2 — the widget tray (#gd-navbar-widgets: theme toggle, search,
+             GitHub, version) centered as a group.
+   -------------------------------------------------------------------- */
+@media (max-width: 991.98px) {
+    /* Drop the navbar's own vertical padding (Bootstrap defaults to a tall
+       ~17px top/bottom) so the two rows sit snug against the header edges
+       and page content rides higher on load. */
+    .navbar {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+
     .navbar .container-fluid {
+        display: flex;
         flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        row-gap: 6px;
+        padding-top: 6px;
+        padding-bottom: 6px;
     }
-    .navbar-brand.navbar-brand-logo {
-        padding-right: 100%;
+
+    /* Hamburger pinned left and removed from flow so it can't shift the
+       brand off-center. `top` is the midpoint between a short text title
+       (~44px row) and a max-height logo (~56px row) so it stays vertically
+       centered against the brand in both cases. */
+    .navbar .navbar-toggler {
+        position: absolute;
+        left: 10px;
+        top: 15px;
+        margin: 0;
+        z-index: 3;
     }
-    .quarto-navbar-tools {
+
+    /* Row 1: centered brand/logo */
+    .navbar .navbar-brand-container.mx-auto {
+        order: 1;
         flex: 0 0 100%;
+        margin: 0;
+        display: flex;
         justify-content: center;
-        order: 99;
-        padding-top: 4px;
-        padding-bottom: 4px;
+        /* Quarto reserves `calc(100% - 115px)` here for the toggler/tools in
+           its single-row layout. Our brand has its own full-width row, so
+           reclaim that space (the title's own max-width below still keeps it
+           clear of the absolutely-positioned hamburger). */
+        max-width: 100%;
     }
-    #gd-navbar-widgets {
+    .navbar .navbar-brand-container.mx-auto .navbar-brand {
+        margin: 0;
+        /* Drop the brand link's own vertical padding: with the title set to
+           `display: block` below its pill padding now counts toward layout
+           height, so this keeps the header as tight as the logo/short-name
+           cases (no extra ~11px). */
+        padding-top: 0;
+        padding-bottom: 0;
+        padding-right: 0;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    /* Long text display names: navbar-widgets.js first steps the font size
+       down to fit; this is the width cap it fits against and the final
+       ellipsis fallback when even the smallest step overflows. `display:
+       block` keeps the truncation inside the title pill (clipping at the
+       brand link instead would slice the pill's border). The 132px cap
+       reserves ~66px each side so the (centered) title clears the
+       absolutely-positioned hamburger button (~59px wide incl. padding).
+       The "…" is a visible nudge that a shorter `display_name` belongs in
+       great-docs.yml. Logo brands have no .navbar-title, so they are
+       unaffected. */
+    .navbar .navbar-title {
+        display: block;
+        max-width: calc(100vw - 132px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Row 2: centered widget tray */
+    .navbar .quarto-navbar-tools {
+        order: 2;
+        flex: 0 0 100%;
+        display: flex;
         justify-content: center;
+        margin: 0;
+        padding: 0;
+    }
+    .navbar #gd-navbar-widgets {
+        justify-content: center;
+        flex: 0 1 auto;
+        width: auto;
+        margin: 0;
+    }
+
+    /* If the collapse menu is ever expanded it drops to its own row */
+    .navbar #navbarCollapse {
+        order: 3;
+        flex: 0 0 100%;
     }
 }
 
@@ -1710,6 +1980,14 @@ body.quarto-light .navbar .gd-navbar-icon:hover {
 .shrink-example .cell-output table {
     zoom: 60%;
 }
+
+// Prevent Quarto/Bootstrap from striping computational output tables
+// (Pandas DataFrames, etc.). Quarto injects .table-striped on cell outputs
+// but GT tables already opt out via data-quarto-bootstrap="false".
+.cell-output table.table-striped > tbody > tr:nth-of-type(odd) > * {
+    --bs-table-striped-bg: transparent;
+}
+
 
 // Scale-to-fit: shrinks wide content (tables, GT output) to fill the
 // container width.  Apply in .qmd via  :::{.scale-to-fit} ... :::
@@ -1947,7 +2225,7 @@ div.sourceCode:hover > .gd-code-nav .gd-code-copy,
         gap: 0;
         padding-top: 0;
         padding-left: 0.5rem;
-        color: #6c757d;
+        color: #212529;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -2654,7 +2932,7 @@ html.quarto-dark .gd-badge-deprecated,
     margin-left: 0;
     margin-right: 0.6rem;
     margin-bottom: 0.2rem;
-    padding-top: 1.25rem;
+    padding-top: 0.5rem;
     padding-bottom: 0.6rem;
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     background: transparent;
@@ -3267,6 +3545,7 @@ body.quarto-dark .gd-keyboard-btn {
     --gd-highlight-color: rgba(255, 243, 205, 0.5);
     --gd-active-link: rgb(244, 121, 0);
     --gd-accent-blue: rgba(101, 180, 237, 0.75);
+    --gd-citation-color: #1a6cae;
 
     /* Syntax highlighting - light mode */
     --gd-syn-class: #0e84b5;
@@ -3304,6 +3583,7 @@ body.quarto-dark {
     --gd-highlight-color: rgba(255, 193, 7, 0.2);
     --gd-active-link: #ff9f43;
     --gd-accent-blue: rgba(101, 180, 237, 0.6);
+    --gd-citation-color: #7cb8e8;
 
     /* Syntax highlighting - dark mode (optimized for contrast) */
     --gd-syn-class: #56c8ff;
@@ -3468,6 +3748,35 @@ body.quarto-dark div.sourceCode[data-language="sh"] span {
 body.quarto-dark :not(pre) > code {
     color: #f0a0a0;
     background-color: var(--gd-code-bg);
+}
+
+/* ==========================================================================
+   Dark Mode - Great Tables (gt) exemption
+
+   Great Tables output (e.g. pointblank validation reports, gt tables) is a
+   self-contained, light-themed component that ships its own scoped styles for
+   background, text color, and inline code. The global dark-mode rules above
+   target bare `p`/`li`/`code` elements, so they bleed into gt tables and
+   recolor brief text, source notes, and inline code against gt's own white
+   background — leaving light-gray text and amber-on-dark code islands.
+
+   These selectors are scoped under `.gt_table`, so they outrank the global
+   dark-mode rules and hand styling back to gt's own cascade. `inherit` lets
+   text and code pick up gt's intended colors (including status colors) rather
+   than forcing a fixed value, and `transparent` matches gt's light-mode code
+   background. The cosmetic effect is that gt tables render identically in
+   light and dark mode, as designed. See also `table:not(.gt_table)` above. */
+body.quarto-dark .gt_table p,
+body.quarto-dark .gt_table li,
+body.quarto-dark .gt_table dd,
+body.quarto-dark .gt_table dt {
+    color: inherit;
+}
+
+body.quarto-dark .gt_table code,
+body.quarto-dark .gt_table :not(pre) > code {
+    color: inherit;
+    background-color: transparent;
 }
 
 /* Signature highlighting - dark mode */
@@ -4507,11 +4816,11 @@ html:not(.theme-loaded) *::after {
     -webkit-mask-image: linear-gradient(to bottom, black 35%, transparent 85%);
 }
 
-/* Re-enable pointer events only on the homepage hero area so the
-   dark-mode starfield can track the cursor there. */
-.gd-hero #gd-starfield {
-    pointer-events: auto;
-}
+/* The starfield canvas is purely decorative and fully autonomous (it does
+   not track the cursor), so it must never capture pointer events. It is
+   position: fixed across the whole viewport, so leaving pointer-events on
+   would block clicks for the entire page — not just the hero. The base
+   #gd-starfield rule already sets pointer-events: none; keep it that way. */
 
 /* Everything in the hero except the canvas must sit above it */
 .gd-hero > *:not(#gd-starfield) {
@@ -4586,7 +4895,7 @@ main.content.page-columns.page-full > * {
    Scope to html[...] so Quarto's nav[data-bs-theme="dark"] (dark navbar
    background in the flatly theme) doesn't trigger these rules in light mode. */
 html[data-bs-theme="dark"] .navbar-logo.light-content { display: none !important; }
-html[data-bs-theme="dark"] .navbar-logo.dark-content  { display: inline !important; }
+html[data-bs-theme="dark"] .navbar-logo.dark-content  { display: block !important; }
 
 /* Reduce top margin on first heading after hero */
 .gd-hero + section.level1 > h1:first-child,
@@ -6186,6 +6495,47 @@ html[data-bs-theme="dark"] .gd-page-metadata {
     }
 }
 
+/* Citation / cross-reference hover popovers.
+   Quarto shows the full reference on hover using a tippy box with
+   theme="quarto", whose default surface is light. In dark mode that flashes a
+   white panel over the page, so give it a dark surface, border, and arrow that
+   track the GD theme tokens. */
+html.quarto-dark .tippy-box[data-theme~="quarto"],
+body.quarto-dark .tippy-box[data-theme~="quarto"] {
+    background-color: var(--gd-bg-secondary);
+    color: var(--gd-text-primary);
+    border: 1px solid var(--gd-border-color);
+
+    .csl-entry {
+        color: var(--gd-text-primary);
+    }
+
+    a {
+        color: var(--gd-citation-color);
+    }
+
+    /* Arrow fill + per-placement borders (tippy colors the arrow via borders) */
+    > .tippy-arrow {
+        color: var(--gd-bg-secondary);
+    }
+
+    &[data-placement^="top"] > .tippy-arrow::before {
+        border-top-color: var(--gd-bg-secondary);
+    }
+
+    &[data-placement^="bottom"] > .tippy-arrow::before {
+        border-bottom-color: var(--gd-bg-secondary);
+    }
+
+    &[data-placement^="left"] > .tippy-arrow::before {
+        border-left-color: var(--gd-bg-secondary);
+    }
+
+    &[data-placement^="right"] > .tippy-arrow::before {
+        border-right-color: var(--gd-bg-secondary);
+    }
+}
+
 /* Animation: shift-away (included with Tippy but customized) */
 .tippy-box[data-animation="shift-away"][data-state="hidden"] {
     opacity: 0;
@@ -7400,7 +7750,8 @@ body.gd-menu-open {
     z-index: 1042;
     width: min(280px, calc(100vw - 2.5rem));
     max-height: min(360px, 60vh);
-    overflow-y: auto;
+    overflow-y: scroll;
+    overscroll-behavior: contain;
     background: #fff;
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 12px;
@@ -9109,6 +9460,48 @@ html[data-bs-theme="dark"] {
     }
 }
 
+// ── Sparkle icon animation (Skills link in sidebar) ─────────────────────────
+@keyframes gd-sparkle-color {
+    0%   { color: #e74c3c; }
+    33%  { color: #f39c12; }
+    67%  { color: #3498db; }
+    100% { color: #e74c3c; }
+}
+
+@keyframes gd-sparkle-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50%      { transform: scale(1.3); opacity: 1; }
+}
+
+@keyframes gd-sparkle-curated-pulse {
+    0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.9; }
+    25%      { transform: scale(1.5) rotate(10deg); opacity: 1; }
+    50%      { transform: scale(1.1) rotate(-5deg); opacity: 0.95; }
+    75%      { transform: scale(1.6) rotate(8deg); opacity: 1; }
+}
+
+.gd-sparkle {
+    display: inline-block;
+    animation:
+        gd-sparkle-color 3s ease-in-out infinite,
+        gd-sparkle-pulse 2s ease-in-out infinite;
+}
+
+.gd-sparkle-curated {
+    display: inline-block;
+    animation:
+        gd-sparkle-color 1.8s ease-in-out infinite,
+        gd-sparkle-curated-pulse 1.4s ease-in-out infinite;
+    filter: drop-shadow(0 0 2px currentColor);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gd-sparkle,
+    .gd-sparkle-curated {
+        animation: gd-sparkle-color 6s ease-in-out infinite;
+        filter: none;
+    }
+}
 
 /*-- scss:functions --*/
 

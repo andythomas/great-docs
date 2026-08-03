@@ -199,6 +199,97 @@ great-docs preview --site-dir /tmp/my-site
 This starts the same local HTTP server and opens your browser, just like the regular
 `great-docs preview` command.
 
+## Previewing a PR or CI Build [version-badge new 0.16] {#pr-preview}
+
+When someone opens a pull request, reviewing the rendered docs usually means checking out the
+branch and rebuilding locally, or setting up a preview host (Netlify, Cloudflare Pages,
+per-PR GitHub Pages). But if your CI already builds and uploads the site as an artifact
+(as the [recommended workflow](14-deployment.qmd) does) you can fetch that exact build and
+view it locally (with no hosting setup):
+
+```{.bash filename="Terminal"}
+great-docs preview --pr 302             # newest CI docs build for PR #302
+great-docs preview --run 18273645521    # a specific workflow run
+great-docs preview --branch fix-mcp     # newest build for a branch
+```
+
+Great Docs resolves the pull request to its most recent successful docs run, downloads the
+`docs-html` artifact, caches it locally, and serves it with the usual preview server.
+
+### Authentication
+
+Downloading a workflow artifact requires a GitHub token with **Actions: read** (this is
+true even for public repositories). Great Docs looks for credentials in this order, so pick
+whichever is convenient:
+
+- `GITHUB_TOKEN` or `GH_TOKEN` in your environment
+- a `.env` file with `GITHUB_TOKEN=...` (auto-detected, or point at one with `--env-file`)
+- the [`gh`](https://cli.github.com/) CLI: run `gh auth login`, then add `--use-gh` to let
+  `gh` perform the download end-to-end
+
+```{.bash filename="Terminal"}
+gh auth login
+great-docs preview --pr 302 --use-gh
+```
+
+::: {.callout-note}
+Great Docs never accepts a token as a command-line argument (it would leak into your shell
+history). Use an environment variable, a `.env` file, or `gh` instead.
+:::
+
+### Jumping to a specific page
+
+Use `--path` to open the browser directly at a page within the site instead of the home
+page, useful when a review comment is about one specific reference or guide:
+
+```{.bash filename="Terminal"}
+great-docs preview --pr 302 --path reference/index.html
+```
+
+### Other options
+
+| Option | Purpose |
+| --- | --- |
+| `--repo owner/repo` | Target a repo explicitly (default: detected from `git remote origin`). |
+| `--artifact <name>` | Fetch a differently-named artifact (default: `docs-html`). |
+| `--no-open` | Serve without launching a browser. |
+| `--refresh` | Ignore the local cache and re-download. |
+| `--port <n>` | Serve on a specific port. |
+
+::: {.callout-warning}
+## Fork pull requests
+
+A site built from a fork contains contributor-authored HTML and JavaScript, which your
+browser will execute when you preview it locally (the same trust level as reviewing their
+diff). Great Docs warns you when a build comes from a fork.
+:::
+
+::: {.callout-tip}
+## Advertise it in CI
+
+If you scaffolded your CI with [`great-docs setup-github-pages`](14-deployment.qmd), this is
+already wired up: on every pull request the workflow prints a log notice **and** posts a
+sticky PR comment with the exact `great-docs preview` command, pinned to that run.
+
+To add it to a hand-maintained workflow, use the `great-docs ci` helpers. `ci notice` prints
+a log annotation; `ci pr-comment` posts (and keeps updated) a sticky comment on the pull
+request. Both pin the command to the run that produced the build with `--run`, so a reviewer
+reproduces exactly the build they're looking at:
+
+```{.yaml filename=".github/workflows/docs.yml"}
+      # In the build job (great-docs is already installed):
+      - name: How to preview this build locally
+        if: github.event_name == 'pull_request'
+        run: great-docs ci notice --run ${{ github.run_id }} --pr ${{ github.event.number }}
+
+      # In a separate job with 'permissions: pull-requests: write':
+      - name: Post preview instructions to the PR
+        run: pipx run great-docs ci pr-comment --run ${{ github.run_id }} --pr ${{ github.event.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+:::
+
 ## Using the Python API
 
 In addition to the CLI, you can drive the build programmatically:

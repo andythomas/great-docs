@@ -365,7 +365,9 @@ pypi: false
 pypi: "https://packages.example.com/simple/my-package"
 ```
 
-When `pypi` is `true` (the default), the link is auto-generated as
+By default (`pypi: null`) the link is generated for Python projects and omitted for everything
+else, so a Go-only project gets no PyPI link without your having to say so. Setting `pypi: true`
+forces the link on regardless of `project_type`; it is auto-generated as
 `https://pypi.org/project/{package_name}/`.
 
 ## Site URL
@@ -469,6 +471,26 @@ variants, automatic favicon generation, and hero sections on the landing page. T
 covered in their own dedicated page.
 
 See [Theming & Appearance](theming.qmd) for full details on all visual customization options.
+
+## HTML Math Renderer
+
+Great Docs forwards `site.html-math-method` to Quarto's HTML configuration. It defaults to
+KaTeX, which renders mathematical notation without a browser-side MathJax dependency:
+
+```{.yaml filename="great-docs.yml"}
+site:
+  html-math-method: katex
+```
+
+To use MathJax instead, set the method explicitly:
+
+```{.yaml filename="great-docs.yml"}
+site:
+  html-math-method: mathjax
+```
+
+Other Quarto-supported HTML math methods can also be selected with this setting. Configure it in
+`great-docs.yml`; Great Docs writes the corresponding value into its generated `_quarto.yml`.
 
 ## User Guide Directory
 
@@ -915,7 +937,7 @@ source:
   placement: usage
 
 # PyPI Link
-pypi: true  # true (default), false to disable, or a custom URL string
+pypi: null  # null (default) links for Python projects; true forces, false disables, or a URL string
 
 # Sidebar
 sidebar_filter:

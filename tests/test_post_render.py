@@ -21,7 +21,7 @@ def _load_post_render():
 
 
 def _get_functions():
-    """Extract translate_sphinx_roles and translate_rst_directives via exec."""
+    """Post-render helpers available to focused unit tests"""
     import html as _html
     import os as _os
     import re as _re  # noqa: F811
@@ -58,8 +58,6 @@ def _get_functions():
     # Extract function definitions by finding their source blocks
     funcs_to_extract = [
         "translate_sphinx_roles",
-        "translate_rst_directives",
-        "translate_rst_math",
         "fix_plain_doctest_code_blocks",
         "_postprocess_markdown_content",
     ]
@@ -89,8 +87,6 @@ def _get_functions():
 
     return (
         ns["translate_sphinx_roles"],
-        ns["translate_rst_directives"],
-        ns["translate_rst_math"],
         ns["fix_plain_doctest_code_blocks"],
         ns["_postprocess_markdown_content"],
     )
@@ -98,8 +94,6 @@ def _get_functions():
 
 (
     translate_sphinx_roles,
-    translate_rst_directives,
-    translate_rst_math,
     fix_plain_doctest_code_blocks,
     postprocess_markdown_content,
 ) = _get_functions()
@@ -185,75 +179,6 @@ class TestPostprocessMarkdownContent:
         assert "Let's get started!" in out
         assert "’" not in out
         assert "–" not in out
-
-
-def _get_seealso_functions():
-    """Extract See Also and interlinks functions from post-render.py."""
-    import re as _re
-
-    source = _SCRIPT.read_text()
-
-    # Stub _t so translated labels fall back to English
-    def _t(key: str, fallback: str | None = None) -> str:
-        return fallback if fallback is not None else key
-
-    ns = {
-        "re": _re,
-        "__builtins__": __builtins__,
-        # Provide empty inventory for resolve_interlinks
-        "_interlinks_inventory": {},
-        "_CALLABLE_ROLES": {"function", "method"},
-        "_t": _t,
-    }
-
-    funcs_to_extract = [
-        "extract_seealso_from_html",
-        "extract_seealso_from_doc_section",
-        "generate_seealso_html",
-        "_make_relative_uri",
-        "_resolve_interlink_name",
-        "resolve_interlinks",
-        "autolink_code_references",
-    ]
-
-    for func_name in funcs_to_extract:
-        start = source.find(f"def {func_name}(")
-        if start == -1:
-            raise RuntimeError(f"Could not find {func_name} in {_SCRIPT}")
-
-        rest = source[start:]
-        lines = rest.split("\n")
-        func_lines = [lines[0]]
-        for line in lines[1:]:
-            if (
-                line
-                and not line[0].isspace()
-                and (line.startswith("def ") or line.startswith("class "))
-            ):
-                break
-            func_lines.append(line)
-
-        func_source = "\n".join(func_lines)
-        exec(func_source, ns)
-
-    return (
-        ns["extract_seealso_from_html"],
-        ns["extract_seealso_from_doc_section"],
-        ns["generate_seealso_html"],
-        ns["_resolve_interlink_name"],
-        ns["resolve_interlinks"],
-        ns["autolink_code_references"],
-    )
-
-
-(
-    extract_seealso_from_html,
-    extract_seealso_from_doc_section,
-    generate_seealso_html,
-    _resolve_interlink_name,
-    resolve_interlinks,
-    autolink_code_references,
-) = _get_seealso_functions()
 
 
 class TestTranslateSphinxRoles:
@@ -352,221 +277,6 @@ class TestTranslateSphinxRoles:
         assert result == "<p>Is <code>int</code>.</p>"
 
 
-class TestTranslateRstDirectives:
-    """Tests for RST directive translation."""
-
-    def test_versionadded_simple(self):
-        html = "<p>.. versionadded:: 2.8.1</p>"
-        result = translate_rst_directives(html)
-        assert "Added in version 2.8.1" in result
-        assert "<p>.." not in result
-        assert "059669" in result  # green border color
-
-    def test_versionchanged_with_description(self):
-        html = "<p>.. versionchanged:: 2.7.0 Now returns a singleton.</p>"
-        result = translate_rst_directives(html)
-        assert "Changed in version 2.7.0" in result
-        assert "Now returns a singleton." in result
-        assert "3B82F6" in result  # blue border color
-
-    def test_deprecated_with_description(self):
-        html = "<p>.. deprecated:: 2.6 Use X instead.</p>"
-        result = translate_rst_directives(html)
-        assert "Deprecated since version 2.6" in result
-        assert "Use X instead." in result
-        assert "DC2626" in result  # red border color
-
-    def test_note_directive(self):
-        html = "<p>.. note:: Something important to know.</p>"
-        result = translate_rst_directives(html)
-        assert "Note" in result
-        assert "Something important to know." in result
-
-    def test_warning_directive(self):
-        html = "<p>.. warning:: Be careful with this.</p>"
-        result = translate_rst_directives(html)
-        assert "Warning" in result
-        assert "Be careful with this." in result
-        assert "D97706" in result  # amber border color
-
-    def test_caution_directive(self):
-        html = "<p>.. caution:: Handle with care.</p>"
-        result = translate_rst_directives(html)
-        assert "Caution" in result
-        assert "Handle with care." in result
-
-    def test_tip_directive(self):
-        html = "<p>.. tip:: Use this shortcut.</p>"
-        result = translate_rst_directives(html)
-        assert "Tip" in result
-        assert "Use this shortcut." in result
-
-    def test_hint_directive(self):
-        html = "<p>.. hint:: Try this approach.</p>"
-        result = translate_rst_directives(html)
-        assert "Hint" in result
-        assert "Try this approach." in result
-
-    def test_danger_directive(self):
-        html = "<p>.. danger:: This will delete data.</p>"
-        result = translate_rst_directives(html)
-        assert "Danger" in result
-        assert "This will delete data." in result
-
-    def test_important_directive(self):
-        html = "<p>.. important:: Read this first.</p>"
-        result = translate_rst_directives(html)
-        assert "Important" in result
-        assert "Read this first." in result
-
-    def test_versionadded_no_description(self):
-        html = "<p>.. versionadded:: 2.8.1</p>"
-        result = translate_rst_directives(html)
-        assert "Added in version 2.8.1" in result
-        # Should not have an empty content paragraph
-        assert '<p style="margin: 0;"></p>' not in result
-
-    def test_deprecated_no_description(self):
-        html = "<p>.. deprecated:: 3.0</p>"
-        result = translate_rst_directives(html)
-        assert "Deprecated since version 3.0" in result
-
-    def test_no_change_for_non_directive(self):
-        html = "<p>This is a regular paragraph.</p>"
-        result = translate_rst_directives(html)
-        assert result == html
-
-    def test_directive_in_pre_not_matched(self):
-        """Directives inside <pre> blocks should NOT be translated
-        (they are code examples)."""
-        html = "<pre><code>.. note:: This is in a code block</code></pre>"
-        result = translate_rst_directives(html)
-        # The regex only matches <p>.. directive::</p>, not <pre><code>
-        assert result == html
-
-    def test_multiple_directives(self):
-        html = (
-            "<p>Some text.</p>\n"
-            "<p>.. versionadded:: 1.0</p>\n"
-            "<p>.. deprecated:: 2.0 Use new_func instead.</p>\n"
-            "<p>More text.</p>"
-        )
-        result = translate_rst_directives(html)
-        assert "Added in version 1.0" in result
-        assert "Deprecated since version 2.0" in result
-        assert "Use new_func instead." in result
-        assert "<p>Some text.</p>" in result
-        assert "<p>More text.</p>" in result
-
-    def test_output_is_styled_div(self):
-        html = "<p>.. warning:: Watch out!</p>"
-        result = translate_rst_directives(html)
-        assert result.startswith("<div style=")
-        assert "border-left: 4px solid" in result
-        assert "border-radius: 4px" in result
-        assert "</div>" in result
-
-    def test_deprecated_with_code_tags_in_body(self):
-        """Directive body can contain <code> tags (from Sphinx role translation)."""
-        html = (
-            "<p>.. deprecated:: 2.6 Use <code>ZoneInfoFile</code> "
-            "and call <code>ZoneInfoFile.get(name)()</code> instead.</p>"
-        )
-        result = translate_rst_directives(html)
-        assert "Deprecated since version 2.6" in result
-        assert "<code>ZoneInfoFile</code>" in result
-        assert "<code>ZoneInfoFile.get(name)()</code>" in result
-        assert "DC2626" in result  # red border color
-
-    def test_note_with_code_tags_in_body(self):
-        """Note directive body with inline code should also be translated."""
-        html = "<p>.. note:: Use <code>foo()</code> instead of <code>bar()</code>.</p>"
-        result = translate_rst_directives(html)
-        assert "Note" in result
-        assert "<code>foo()</code>" in result
-        assert "<code>bar()</code>" in result
-
-
-class TestTranslateRstMath:
-    """Tests for translate_rst_math (post-render HTML math conversion)."""
-
-    def test_double_colon_pre_code(self):
-        """Original pattern: <p>.. math::</p><pre><code>...</code></pre>."""
-        html = (
-            "<html><head></head><body>"
-            "<p>.. math::</p>"
-            "<pre><code>E = mc^2</code></pre>"
-            "</body></html>"
-        )
-        result = translate_rst_math(html)
-        assert 'class="math display"' in result
-        assert "E = mc^2" in result
-        assert ".. math::" not in result
-        # KaTeX CDN should be injected
-        assert "katex" in result
-
-    def test_single_colon_sourcecode_div(self):
-        """Pandoc-mangled pattern: <p>.. math:</p> + sourceCode div."""
-        html = (
-            "<html><head></head><body>"
-            "<p>.. math:</p>"
-            '<div class="sourceCode"><pre class="sourceCode python">'
-            '<code class="sourceCode python">'
-            "<span>\\|x\\|</span>"
-            "</code></pre></div>"
-            "</body></html>"
-        )
-        result = translate_rst_math(html)
-        assert 'class="math display"' in result
-        assert ".. math:" not in result
-
-    def test_single_colon_plain_pre(self):
-        """Pandoc-mangled pattern: <p>.. math:</p> + plain <pre><code>."""
-        html = (
-            "<html><head></head><body>"
-            "<p>.. math:</p>"
-            "<pre><code>a^2 + b^2 = c^2</code></pre>"
-            "</body></html>"
-        )
-        result = translate_rst_math(html)
-        assert 'class="math display"' in result
-        assert "a^2 + b^2 = c^2" in result
-
-    def test_no_math_no_katex(self):
-        """KaTeX CDN is NOT injected when no math blocks are found."""
-        html = "<html><head></head><body><p>Hello</p></body></html>"
-        result = translate_rst_math(html)
-        assert "katex" not in result
-        assert result == html
-
-    def test_multiple_math_blocks(self):
-        """Multiple math blocks are all converted."""
-        html = (
-            "<html><head></head><body>"
-            "<p>.. math::</p><pre><code>a = b</code></pre>"
-            "<p>.. math::</p><pre><code>c = d</code></pre>"
-            "</body></html>"
-        )
-        result = translate_rst_math(html)
-        assert result.count('class="math display"') == 2
-
-    def test_span_tags_stripped_from_sourcecode(self):
-        """Syntax-highlighting <span> tags inside code are removed for math."""
-        html = (
-            "<html><head></head><body>"
-            "<p>.. math:</p>"
-            '<div class="sourceCode"><pre class="sourceCode python">'
-            '<code class="sourceCode python">'
-            '<span class="op">\\</span>frac{1}{2}'
-            "</code></pre></div>"
-            "</body></html>"
-        )
-        result = translate_rst_math(html)
-        assert 'class="math display"' in result
-        # span tags should be stripped, leaving just the LaTeX
-        assert "<span" not in result.split('class="math display"')[1].split("</p>")[0]
-
-
 class TestFixPlainDoctestCodeBlocks:
     """Tests for fix_plain_doctest_code_blocks (site 137 regression)."""
 
@@ -628,124 +338,6 @@ class TestFixPlainDoctestCodeBlocks:
         assert 'class="sourceCode python' in result
         # The original plain block should be gone
         assert "<pre><code>" not in result
-
-
-class TestExtractSeeAlsoFromHtml:
-    """Tests for extracting %seealso items from rendered HTML."""
-
-    def test_basic_seealso(self):
-        html = "<p>%seealso func_a, func_b</p>"
-        result = extract_seealso_from_html(html)
-        assert result == [("func_a", ""), ("func_b", "")]
-
-    def test_seealso_with_descriptions(self):
-        html = "<p>%seealso DuckDBStore : Local storage, ChromaDBStore : ChromaDB</p>"
-        result = extract_seealso_from_html(html)
-        assert result == [
-            ("DuckDBStore", "Local storage"),
-            ("ChromaDBStore", "ChromaDB"),
-        ]
-
-    def test_mixed_descriptions(self):
-        html = "<p>%seealso func_a : Does stuff, func_b</p>"
-        result = extract_seealso_from_html(html)
-        assert result == [("func_a", "Does stuff"), ("func_b", "")]
-
-    def test_no_seealso(self):
-        html = "<p>Just a normal paragraph.</p>"
-        result = extract_seealso_from_html(html)
-        assert result == []
-
-
-class TestExtractSeeAlsoFromDocSection:
-    """Tests for extracting See Also from rendered doc-section blocks."""
-
-    def test_classic_with_descriptions(self):
-        html = (
-            '<section id="see-also" class="level1 doc-section">'
-            "<h1>See Also</h1>"
-            "<p>transform : Transform data before analysis.</p>"
-            "</section>"
-        )
-        result = extract_seealso_from_doc_section(html)
-        assert result == [("transform", "Transform data before analysis.")]
-
-    def test_classic_without_descriptions(self):
-        html = (
-            '<section id="see-also" class="level1 doc-section">'
-            "<h1>See Also</h1>"
-            "<p>func_a, func_b</p>"
-            "</section>"
-        )
-        result = extract_seealso_from_doc_section(html)
-        assert result == [("func_a", ""), ("func_b", "")]
-
-    def test_interlink_names(self):
-        html = (
-            '<section id="see-also" class="level1 doc-section">'
-            "<h1>See Also</h1>"
-            '<dt><a href="`~MyClass`">MyClass</a></dt><dd>A class.</dd>'
-            "</section>"
-        )
-        result = extract_seealso_from_doc_section(html)
-        assert result == [("MyClass", "A class.")]
-
-    def test_interlink_without_dd(self):
-        html = (
-            '<section id="see-also" class="level1 doc-section">'
-            "<h1>See Also</h1>"
-            '<a href="`~MyClass`">MyClass</a>'
-            "</section>"
-        )
-        result = extract_seealso_from_doc_section(html)
-        assert result == [("MyClass", "")]
-
-    def test_no_section(self):
-        html = "<p>No see also here.</p>"
-        result = extract_seealso_from_doc_section(html)
-        assert result == []
-
-
-class TestGenerateSeeAlsoHtml:
-    """Tests for generating the See Also HTML block."""
-
-    def test_empty_items(self):
-        result = generate_seealso_html([])
-        assert result == ""
-
-    def test_names_only(self):
-        result = generate_seealso_html([("func_a", ""), ("func_b", "")])
-        assert "func_a" in result
-        assert "func_b" in result
-        assert "See Also" in result
-        # No descriptions → comma-separated links
-        assert "<ul" not in result
-
-    def test_with_descriptions(self):
-        result = generate_seealso_html(
-            [
-                ("DuckDBStore", "Local storage"),
-                ("ChromaDBStore", "ChromaDB storage"),
-            ]
-        )
-        assert "DuckDBStore" in result
-        assert "Local storage" in result
-        assert "ChromaDBStore" in result
-        assert "ChromaDB storage" in result
-        # Descriptions present → list layout
-        assert "<ul" in result
-
-    def test_mixed_descriptions(self):
-        result = generate_seealso_html(
-            [
-                ("func_a", "Does stuff"),
-                ("func_b", ""),
-            ]
-        )
-        assert "func_a" in result
-        assert "Does stuff" in result
-        assert "func_b" in result
-        assert "<ul" in result
 
 
 def _make_autolink(inventory):

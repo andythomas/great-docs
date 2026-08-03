@@ -2,8 +2,15 @@
 gdtest_dataclasses — @dataclass objects.
 
 Dimensions: A1, B1, C5, D1, E6, F6, G1, H7
-Focus: 2 dataclasses — one with default_factory, one frozen.
-       Tests dataclass field documentation and __init__ generation.
+Focus: 3 dataclasses: one with default_factory, one frozen (documented with an
+       `Attributes` section), one that also defines methods. Tests dataclass
+       field documentation, __init__ generation, that fields documented under
+       either a `Parameters` or an `Attributes` section render once (no
+       duplicated "Parameter Attributes"), and that a dataclass which defines
+       methods still renders its constructor signature (regression:
+       `Class.overloads` is a dict keyed by member name, so any class with
+       methods was rendered through the overload path and lost its constructor
+       parameters).
 """
 
 SPEC = {
@@ -26,7 +33,7 @@ SPEC = {
             """A test package with dataclass objects."""
 
             __version__ = "0.1.0"
-            __all__ = ["Config", "Record"]
+            __all__ = ["Config", "Record", "Mutable"]
 
             from dataclasses import dataclass, field
 
@@ -58,7 +65,10 @@ SPEC = {
                 """
                 An immutable data record.
 
-                Parameters
+                Documented with an ``Attributes`` section (rather than
+                ``Parameters``) to exercise that rendering path.
+
+                Attributes
                 ----------
                 id
                     Unique record identifier.
@@ -70,6 +80,31 @@ SPEC = {
                 id: int
                 value: str
                 timestamp: float = 0.0
+
+
+            @dataclass
+            class Mutable:
+                """
+                A mutable record that also defines methods.
+
+                Parameters
+                ----------
+                label
+                    Human-readable label.
+                count
+                    Current count.
+                """
+                label: str
+                count: int = 0
+
+                def increment(self, by: int = 1) -> None:
+                    """Increase the count."""
+                    self.count += by
+
+                @classmethod
+                def empty(cls) -> "Mutable":
+                    """Create an empty record."""
+                    return cls(label="")
         ''',
         "README.md": """\
             # gdtest-dataclasses
@@ -81,10 +116,10 @@ SPEC = {
         "detected_name": "gdtest-dataclasses",
         "detected_module": "gdtest_dataclasses",
         "detected_parser": "numpy",
-        "export_names": ["Config", "Record"],
-        "num_exports": 2,
+        "export_names": ["Config", "Record", "Mutable"],
+        "num_exports": 3,
         "section_titles": ["Dataclasses"],
         "has_user_guide": False,
-        "coverage_exclude": ['nodoc', 'bigcl', 'ug', 'supp'],
-},
+        "coverage_exclude": ["nodoc", "bigcl", "ug", "supp"],
+    },
 }

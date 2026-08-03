@@ -20,6 +20,7 @@ SPEC = {
             "build-backend": "setuptools.build_meta",
         },
     },
+    "config": {"parser": "sphinx"},
     "files": {
         "gdtest_rst_deprecated/__init__.py": '''\
             """Package testing deprecated RST directives."""
@@ -79,6 +80,6 @@ SPEC = {
         "detected_parser": "numpy",
         "export_names": ["legacy_parse", "old_connect"],
         "num_exports": 2,
-        "coverage_exclude": ['nodoc', 'bigcl', 'ug', 'supp', 'sechdg', 'sbsec', 'hdg'],
-},
+        "coverage_exclude": ["nodoc", "bigcl", "ug", "supp", "sechdg", "sbsec", "hdg"],
+    },
 }

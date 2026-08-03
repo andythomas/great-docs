@@ -38,9 +38,13 @@ SPEC = {
                 Each color maps to a CSS-compatible color name.
                 """
                 RED = "red"
+                """A warm primary color."""
                 GREEN = "green"
+                """A cool secondary color."""
                 BLUE = "blue"
+                """A cool primary color."""
                 YELLOW = "yellow"
+                """A warm secondary color."""
 
 
             class Priority(IntEnum):
@@ -68,6 +72,6 @@ SPEC = {
         "num_exports": 2,
         "section_titles": ["Enumerations"],
         "has_user_guide": False,
-        "coverage_exclude": ['nodoc', 'bigcl', 'ug', 'supp', 'hdg'],
-},
+        "coverage_exclude": ["nodoc", "bigcl", "ug", "supp", "hdg"],
+    },
 }

@@ -64,7 +64,7 @@ type-check: ## Run type checking with mypy
 
 .PHONY: type-check-renderer
 type-check-renderer: ## Run type checking with pyright on the renderer
-	@$(PYTHON) -m pyright great_docs/_renderer/_render
+	@$(PYTHON) -m pyright great_docs/_apiref/_render
 
 .PHONY: check
 check: lint test ## Run all checks (lint and test)
@@ -161,6 +161,10 @@ docs-install: ## Install documentation dependencies
 site-build: ## Build the great-docs site
 	@great-docs build
 
+.PHONY: adopters
+adopters: ## Regenerate ADOPTERS.md from a GitHub code search (requires gh CLI)
+	@$(PYTHON) scripts/update_adopters.py
+
 .PHONY: hub-build
 hub-build: ## Full build of the Great Docs Gauntlet (200 packages, port 3333)
 	@$(PYTHON) test-packages/render_all.py --build
@@ -211,6 +215,6 @@ hub-state: ## Show GDG build state summary
 
 .PHONY: hub-deploy
 hub-deploy: ## Trigger GDG hub deployment to GitHub Pages (requires gh CLI)
-	@gh workflow run deploy.yml --repo rich-iannone/gdg \
+	@gh workflow run deploy.yml --repo posit-dev/gdg \
 	  -f great_docs_ref=$$(git rev-parse --abbrev-ref HEAD) && \
-	 echo "Deployment triggered. Watch at: https://github.com/rich-iannone/gdg/actions"
+	 echo "Deployment triggered. Watch at: https://github.com/posit-dev/gdg/actions"

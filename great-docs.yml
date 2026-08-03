@@ -1,16 +1,37 @@
 # Great Docs Configuration
 # See https://posit-dev.github.io/great-docs/user-guide/configuration.html
 
-# Announcement Banner
-# -------------------
-# Site-wide banner above the navbar.
-# Simple form: announcement: "Your message here"
-# Dict form with options:
-announcement:
-  content: "🎉 New post: [Ten Great Things We Added to Great Docs](https://opensource.posit.co/blog/2026-05-13_great-docs-ten-things/)"
-  type: info
-  style: mint
-  dismissable: true
+# Author Information
+# ------------------
+# Rich author metadata for display in the landing page sidebar
+authors:
+  - name: Rich Iannone
+    role: Maintainer
+    affiliation: Posit, PBC
+    email: riannone@me.com
+    github: rich-iannone
+    orcid: 0000-0003-3925-190X
+  - name: Hassan Kibirige
+    role: Author
+    affiliation: Posit, PBC
+    email: hassan.kibirige@posit.co
+    github: has2k1
+  - name: Tomasz Kalinowski
+    role: Contributor
+    affiliation: Posit, PBC
+    email: tomasz@posit.co
+    github: t-kalinowski
+
+# Funding / Copyright Holder
+# --------------------------
+# Credit the organization that funds or holds copyright for this package.
+funding:
+  name: Posit Software, PBC
+  roles:
+    - Copyright holder
+    - funder
+  homepage: https://posit.co
+  ror: https://ror.org/03wc8by49
 
 # Navbar Style
 # ------------
@@ -23,14 +44,6 @@ navbar_style: sky
 # Use a string for all pages, or dict with pages: "homepage" to limit scope.
 content_style: lilac
 
-# Exclusions
-# ----------
-# Items to exclude from auto-documentation (affects 'init' and 'scan')
-exclude:
-  - Config
-  - create_default_config
-  - load_config
-
 # Logo & Favicon
 # ---------------
 logo:
@@ -38,6 +51,28 @@ logo:
   dark: assets/logo-dark.svg
 
 favicon: assets/favicon.svg
+
+# Sidebar Filter
+# --------------
+sidebar_filter:
+  enabled: true
+  min_items: 1 # default: 20
+
+# Site Settings
+# -------------
+# Configure page metadata timestamps and other site-wide options
+site:
+  show_dates: true # Display creation/modification dates on pages
+
+# Marimo Notebooks
+# ----------------
+# Enable interactive WASM notebooks via marimo islands
+marimo: true
+
+# Dark Mode Toggle
+# ----------------
+# Enable/disable the dark mode toggle in navbar (default: true)
+dark_mode_toggle: true
 
 # Hero Section
 # ------------
@@ -51,71 +86,33 @@ hero:
 # -----------------------
 # Publish multiple versions of the site from a single source tree.
 versions:
-  - label: "0.13.0 (dev)"
+  - label: "0.17.0 (dev)"
     tag: dev
-    version: "0.13.0"
+    version: "0.17.0"
     prerelease: true
-  - label: "0.12.0"
-    tag: "0.12.0"
-    version: "0.12.0"
-    git_ref: v0.12.0
+  - label: "0.16.0"
+    tag: "0.16.0"
+    version: "0.16.0"
     latest: true
-  - label: "0.11.0"
-    tag: "0.11.0"
-    git_ref: v0.11.0
-  - label: "0.10.0"
-    tag: "0.10.0"
-    git_ref: v0.10.0
-  - label: "0.9"
-    tag: "0.9"
-    git_ref: v0.9
-  - label: "0.8"
-    tag: "0.8"
-    git_ref: v0.8
-  - label: "0.7"
-    tag: "0.7"
-    git_ref: v0.7
+  - label: "0.15.0"
+    tag: "0.15.0"
+    version: "0.15.0"
+  - label: "0.14.1"
+    tag: "0.14.1"
+    version: "0.14.1"
+  - label: "0.14.0"
+    tag: "0.14.0"
+    version: "0.14.0"
+  - label: "0.13.1"
+    tag: "0.13.1"
+    version: "0.13.1"
+  - label: "0.13.0"
+    tag: "0.13.0"
+    version: "0.13.0"
     eol: true
-  - label: "0.6"
-    tag: "0.6"
-    git_ref: v0.6
-    eol: true
-  - label: "0.5"
-    tag: "0.5"
-    git_ref: v0.5
-    eol: true
-  - label: "0.4"
-    tag: "0.4"
-    git_ref: v0.4
-    eol: true
-  - label: "0.3"
-    tag: "0.3"
-    git_ref: v0.3
-    eol: true
-  - label: "0.2"
-    tag: "0.2"
-    git_ref: v0.2
-    eol: true
-  - label: "0.1"
-    tag: "0.1"
-    git_ref: v0.1
-    eol: true
-
-# GitHub Integration
-# ------------------
-# Repository URL override (auto-detected from pyproject.toml [project.urls] by default)
-# repo: https://github.com/your-org/your-package
 
 # GitHub link style: "widget" (shows stars count) or "icon" (simple icon)
 github_style: widget
-
-# Source Link Configuration
-# -------------------------
-# source:
-#   enabled: true              # Enable/disable source links (default: true)
-#   branch: main               # Git branch/tag to link to (default: auto-detect)
-#   path: src/package          # Custom source path for monorepos (default: auto-detect)
-#   placement: usage           # Where to place the link: "usage" (default) or "title"
 
 # Analytics
 # ---------
@@ -131,93 +128,6 @@ include_in_header:
 # If not provided, uses the actual package name (e.g., 'my_package' or 'my-package').
 # Use this to provide a marketing/presentation name (e.g., 'My Package').
 display_name: Great Docs
-
-# Custom Sections
-# ---------------
-sections:
-  - title: Recipes
-    dir: recipes
-    navbar_after: User Guide
-    sidebar_groups:
-      - section: Content & API
-        contents:
-          - hide-internal-symbols.qmd
-          - customize-api-organization.qmd
-          - document-a-cli.qmd
-          - cross-reference-items.qmd
-          - write-effective-docstrings.qmd
-          - add-images-diagrams.qmd
-          - embed-videos.qmd
-      - section: Theming & Appearance
-        contents:
-          - add-custom-css.qmd
-          - choose-gradient-theme.qmd
-          - add-logo-favicon.qmd
-          - customize-announcement-banner.qmd
-      - section: Publishing
-        contents:
-          - create-changelog.qmd
-          - github-pages-ci.qmd
-          - add-custom-domain.qmd
-          - enable-multi-version-docs.qmd
-          - use-version-fences-and-badges.qmd
-          - use-freeze-cache.qmd
-      - section: AI & LLMs
-        contents:
-          - install-great-docs-skill.qmd
-          - build-site-with-llm.qmd
-          - customize-site-with-llm.qmd
-          - understand-llms-txt.qmd
-      - section: Build & Quality
-        contents:
-          - fix-common-build-errors.qmd
-          - proofread-documentation.qmd
-          - freeze-demo.qmd
-
-# Sidebar Filter
-# --------------
-sidebar_filter:
-  enabled: true
-  min_items: 1 # Set low for testing (default: 20)
-
-# Marimo Notebooks
-# ----------------
-# Enable interactive WASM notebooks via marimo islands
-marimo: true
-
-# Site Settings
-# -------------
-# Configure page metadata timestamps and other site-wide options
-site:
-  show_dates: true # Display creation/modification dates on pages
-
-# CLI Documentation
-# -----------------
-cli:
-  enabled: true
-  module: great_docs.cli
-  name: cli
-
-# MCP Server Documentation
-# ------------------------
-# Auto-generate reference pages from the MCP server's tool definitions.
-mcp:
-  enabled: true
-  module: great_docs.mcp
-  name: Great Docs
-  categories:
-    "Build & Deploy":
-      - gd_build
-      - gd_preview
-    "Discovery & Analysis":
-      - gd_scan
-      - gd_lint
-      - gd_api_diff
-    "Configuration":
-      - gd_config
-      - gd_status
-    "Content":
-      - gd_add_page
 
 # Page Tags
 # ---------
@@ -248,11 +158,6 @@ tags:
     Extensions: puzzle
     Data: database
     Versioning: git-compare
-
-# Dark Mode Toggle
-# ----------------
-# Enable/disable the dark mode toggle in navbar (default: true)
-dark_mode_toggle: true
 
 # Page Status Badges
 # ------------------
@@ -316,75 +221,7 @@ nav_icons:
     Keyboard Keys: keyboard
     Collapsible Details: panel-top-close
     Terminal Recordings: clapperboard
-
-# Author Information
-# ------------------
-# Rich author metadata for display in the landing page sidebar
-authors:
-  - name: Rich Iannone
-    role: Maintainer
-    affiliation: Posit, PBC
-    email: riannone@me.com
-    github: rich-iannone
-    orcid: 0000-0003-3925-190X
-  - name: Tomasz Kalinowski
-    role: Contributor
-    affiliation: Posit, PBC
-    email: tomasz@posit.co
-    github: t-kalinowski
-
-# Funding / Copyright Holder
-# --------------------------
-# Credit the organization that funds or holds copyright for this package.
-funding:
-  name: Posit Software, PBC
-  roles:
-    - Copyright holder
-    - funder
-  homepage: https://posit.co
-  ror: https://ror.org/03wc8by49
-
-# API Reference Structure
-# -----------------------
-# Explicit control over API reference organization
-reference:
-  desc: >-
-    The API reference for Great Docs is organized around the `GreatDocs` class,
-    which provides all of the methods needed to initialize, build, and deploy
-    documentation sites.
-  sections:
-    - title: Classes
-      desc: Core classes and types.
-      contents:
-        - name: GreatDocs
-          members: false
-
-    - title: GreatDocs Methods
-      desc: Methods for the GreatDocs class.
-      contents:
-        - GreatDocs.install
-        - GreatDocs.uninstall
-        - GreatDocs.build
-        - GreatDocs.preview
-        - GreatDocs.check_links
-
-    - title: Table Preview/Explorer
-      desc: >-
-        Generate styled HTML table previews from any tabular data source with
-        `tbl_preview()`, and explore tables interactively with `tbl_explorer()`.
-      contents:
-        - tbl_preview
-        - enable_tbl_preview
-        - disable_tbl_preview
-        - tbl_explorer
-
-    - title: Agent Skills
-      desc: >-
-        Install, check, and list Agent Skills from the Python API.
-      contents:
-        - install_skill
-        - check_skill
-        - list_skills
+    Lightbox: images
 
 # Agent Skills
 # ------------
@@ -404,3 +241,145 @@ skill:
       file: skills/configure-site/SKILL.md
     - name: author-skills
       file: skills/author-skills/SKILL.md
+
+# Custom Sections
+# ---------------
+sections:
+  - title: Recipes
+    dir: recipes
+    navbar_after: User Guide
+    sidebar_groups:
+      - section: Content & API
+        contents:
+          - hide-internal-symbols.qmd
+          - customize-api-organization.qmd
+          - document-a-cli.qmd
+          - cross-reference-items.qmd
+          - write-effective-docstrings.qmd
+          - add-images-diagrams.qmd
+          - embed-videos.qmd
+      - section: Theming & Appearance
+        contents:
+          - add-custom-css.qmd
+          - choose-gradient-theme.qmd
+          - add-logo-favicon.qmd
+          - customize-announcement-banner.qmd
+      - section: Publishing
+        contents:
+          - create-changelog.qmd
+          - github-pages-ci.qmd
+          - add-custom-domain.qmd
+          - enable-multi-version-docs.qmd
+          - use-version-fences-and-badges.qmd
+          - use-freeze-cache.qmd
+      - section: AI & LLMs
+        contents:
+          - install-great-docs-skill.qmd
+          - build-site-with-llm.qmd
+          - customize-site-with-llm.qmd
+          - understand-llms-txt.qmd
+      - section: Build & Quality
+        contents:
+          - fix-common-build-errors.qmd
+          - proofread-documentation.qmd
+          - freeze-demo.qmd
+
+# Exclusions
+# ----------
+# Items to exclude from auto-documentation (affects 'great-docs scan')
+exclude:
+  - Config
+  - create_default_config
+  - load_config
+
+# API Reference Structure
+# -----------------------
+# Explicit control over API reference organization
+reference:
+  desc: >-
+    The API reference for Great Docs is organized around the `GreatDocs` class, which provides all
+    of the methods needed to initialize, build, and deploy documentation sites.
+  sections:
+    - title: The GreatDocs Class
+      desc: >-
+        The central class that orchestrates site initialization, building, and deployment for your
+        Python package documentation.
+      contents:
+        - name: GreatDocs
+          members: false
+    - title: GreatDocs Methods
+      desc: >-
+        Methods for installing dependencies, building the documentation site, launching a live
+        preview, and validating links across all pages.
+      contents:
+        - GreatDocs.install
+        - GreatDocs.uninstall
+        - GreatDocs.build
+        - GreatDocs.preview
+        - GreatDocs.check_links
+    - title: Table Preview/Explorer
+      desc: >-
+        Generate styled HTML table previews from any tabular data source with `tbl_preview()`, and
+        explore tables interactively with `tbl_explorer()`.
+      contents:
+        - tbl_preview
+        - enable_tbl_preview
+        - disable_tbl_preview
+        - tbl_explorer
+    - title: Skills
+      desc: Install, check, and list Agent Skills from the Python API.
+      contents:
+        - install_skill
+        - check_skill
+        - list_skills
+
+# CLI Documentation
+# -----------------
+cli:
+  enabled: true
+  module: great_docs.cli
+  name: cli
+  desc: >-
+    The `great-docs` command-line interface drives the full documentation
+    workflow: from initializing a project and building the site to checking
+    links, recording terminal sessions, and publishing to GitHub Pages.
+  sections:
+    - title: Project setup
+      desc: Initialize a project, manage its configuration, and remove Great Docs.
+      contents: [init, config, uninstall]
+    - title: Building & previewing
+      desc: Build the documentation site, preview it locally, and freeze executable content.
+      contents: [build, preview, freeze]
+    - title: Analysis & quality
+      desc: Inspect the project, validate links, and check SEO, prose, and style.
+      contents: [scan, timings, check-links, seo, lint, proofread]
+    - title: API tracking
+      desc: Snapshot the public API and diff it across versions.
+      contents: [api-snapshot, api-diff]
+    - title: Publishing & versions
+      desc: Set up GitHub Pages, manage versioned builds, and generate the changelog.
+      contents: [setup-github-pages, versions, changelog]
+    - title: Command groups
+      desc: Grouped commands for Agent Skills and terminal session recordings.
+      contents: [skill, termshow]
+
+# MCP Server Documentation
+# ------------------------
+# Auto-generate reference pages from the MCP server's tool definitions.
+mcp:
+  enabled: true
+  module: great_docs.mcp
+  name: Great Docs
+  categories:
+    "Build & Deploy":
+      - gd_build
+      - gd_preview
+    "Discovery & Analysis":
+      - gd_scan
+      - gd_lint
+      - gd_api_diff
+    "Configuration":
+      - gd_config
+      - gd_status
+    "Content":
+      - gd_add_page
