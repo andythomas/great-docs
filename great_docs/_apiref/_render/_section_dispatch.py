@@ -29,7 +29,9 @@ SECTION_METHOD: dict[type, str] = {
     DocstringSectionNotes: "render_notes_section",
     DocstringSectionSeeAlso: "render_see_also_section",
     DocstringSectionWarnings: "render_warnings_section",
+    # Objects with members (classes and modules)
     gf.DocstringSectionAttributes: "render_attributes_section",
+    # Generic objects (classes, functions, and type aliases)
     gf.DocstringSectionTypeParameters: "render_type_parameters_section",
     # Callables only
     gf.DocstringSectionParameters: "render_parameters_section",
