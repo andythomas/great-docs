@@ -234,7 +234,7 @@ great-docs preview --pr 302 --use-gh
 
 ::: {.callout-note}
 Great Docs never accepts a token as a command-line argument (it would leak into your shell
-history). Yse an environment variable, a `.env` file, or `gh` instead.
+history). Use an environment variable, a `.env` file, or `gh` instead.
 :::
 
 ### Jumping to a specific page
