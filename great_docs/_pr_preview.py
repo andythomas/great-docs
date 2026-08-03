@@ -392,6 +392,35 @@ class GitHubClient:
         zip_path.unlink(missing_ok=True)
 
 
+def _stream_to_file(resp: Any, zip_path: Path, total: int) -> None:
+    """Stream a response body to disk, showing a progress bar on an interactive terminal.
+
+    Progress is rendered to stderr only when it's a TTY and the size is known. Otherwise the
+    download runs quietly (e.g. in CI logs or when piped).
+    """
+    chunk_size = 1 << 16
+    show_bar = total > 0 and sys.stderr.isatty()
+
+    if show_bar:
+        import click
+
+        with (
+            open(zip_path, "wb") as handle,
+            click.progressbar(
+                length=total,
+                label="→ Downloading",
+                file=sys.stderr,
+            ) as bar,
+        ):
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                handle.write(chunk)
+                bar.update(len(chunk))
+    else:
+        with open(zip_path, "wb") as handle:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                handle.write(chunk)
+
+
 # ---------------------------------------------------------------------------
 # Resolution steps
 # ---------------------------------------------------------------------------
