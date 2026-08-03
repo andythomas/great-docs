@@ -514,11 +514,6 @@ class __RenderDoc(RenderBase):
         [](`~functools.singledispatchmethod`) method for that type
         of section.
         """
-        new_el = transform(el)
-        if isinstance(new_el, ExampleCode):
-            return CodeBlock(el.value, Attr(classes=["python"]))
-        if isinstance(new_el, ExampleText):
-            return el.value
         return str(el.value)
 
     @render_docstring_section.register
@@ -527,7 +522,21 @@ class __RenderDoc(RenderBase):
 
     @render_docstring_section.register
     def _(self, el: gf.DocstringSectionExamples):
-        return Blocks([self.render_docstring_section(transform(c)) for c in el.value])
+        """
+        Render an `Examples` section
+        """
+        return Blocks([self._render_example_fragment(c) for c in el.value])
+
+    def _render_example_fragment(self, fragment: object) -> BlockContent:
+        """
+        Render one code or prose fragment of an `Examples` section
+        """
+        el = transform(fragment)
+        if isinstance(el, ExampleCode):
+            return CodeBlock(el.value, Attr(classes=["python"]))
+        if isinstance(el, ExampleText):
+            return el.value
+        return ""
 
     @render_docstring_section.register
     def _(self, el: gf.DocstringSectionDeprecated):
