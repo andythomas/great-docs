@@ -205,7 +205,7 @@ When someone opens a pull request, reviewing the rendered docs usually means che
 branch and rebuilding locally, or setting up a preview host (Netlify, Cloudflare Pages,
 per-PR GitHub Pages). But if your CI already builds and uploads the site as an artifact
 (as the [recommended workflow](14-deployment.qmd) does) you can fetch that exact build and
-view it locally with no hosting setup:
+view it locally (with no hosting setup):
 
 ```{.bash filename="Terminal"}
 great-docs preview --pr 302             # newest CI docs build for PR #302
