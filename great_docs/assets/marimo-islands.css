@@ -53,19 +53,6 @@ marimo-cell-output {
   min-height: 1.5rem;
 }
 
-/* Loading placeholder */
-.gd-marimo-loading {
-  color: var(--bs-secondary-color, #6c757d);
-  font-size: 0.85rem;
-  font-style: italic;
-  padding: 0.25rem 0;
-}
-
-/* Active state (after Pyodide boots) */
-.gd-marimo-island-group.gd-marimo-active .gd-marimo-loading {
-  display: none;
-}
-
 /* Copy notebook button area */
 .gd-marimo-copy {
   display: flex;
@@ -163,4 +150,105 @@ marimo-cell-output {
   background: var(--bs-body-bg);
   border-color: var(--bs-border-color);
   color: var(--bs-body-color);
+}
+
+/* Loading state ----------------------------------------------------------- */
+/* While the kernel boots and widgets mount, hide the assembling cells so
+   readers don't watch them shuffle and collapse. Space is reserved (cells are
+   only made invisible, not removed) and the loader is centered over it; the
+   whole notebook reveals together once settled. The `gd-marimo-booting` class
+   is added by JS, so with no JS (or a failed boot) the static output still
+   shows. */
+.gd-marimo-island-group.gd-marimo-booting:not(.gd-marimo-ready) {
+  position: relative;
+  min-height: 8rem;
+}
+
+.gd-marimo-island-group.gd-marimo-booting:not(.gd-marimo-ready)
+  marimo-island:not(.gd-marimo-loader) {
+  visibility: hidden;
+}
+
+/* The captured loader island, centered over the reserved space. */
+.gd-marimo-loader {
+  position: absolute !important;
+  inset: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  border-bottom: none !important;
+}
+
+.gd-marimo-island-group.gd-marimo-ready .gd-marimo-loader {
+  display: none !important;
+}
+
+/* No-code mode: hide marimo's per-cell action toolbar (copy/run icons). In an
+   outputs-only presentation the code-oriented controls don't belong. */
+.gd-marimo-nocode marimo-island .absolute.top-0.right-0.z-50 {
+  display: none !important;
+}
+
+/* Trim the leading/trailing block margins inside a cell's rendered output.
+   marimo's prose gives the first heading a large top margin, which as the first
+   element in a cell reads as excess space above the output. */
+.gd-marimo-island-group marimo-island .prose > :first-child,
+.gd-marimo-island-group marimo-island .markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.gd-marimo-island-group marimo-island .prose > :last-child,
+.gd-marimo-island-group marimo-island .markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Collapsible setup block --------------------------------------------------- */
+/* Leading import/utility cells that render no output are collapsed behind a
+   disclosure toggle (added by JS) so boilerplate doesn't clutter the notebook.
+   The toggle mirrors the gray "Copy Notebook" footer. */
+/* Setup cells are tagged `data-gd-setup` at build time and hidden by default.
+   Higher specificity than `.gd-marimo-island-group marimo-island` so they
+   actually stay hidden. */
+.gd-marimo-island-group marimo-island[data-gd-setup] {
+  display: none;
+}
+
+.gd-marimo-island-group.gd-marimo-setup-open marimo-island[data-gd-setup] {
+  display: block;
+}
+
+.gd-marimo-setup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.4rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color, #6c757d);
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  border: none;
+  border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+  cursor: pointer;
+  text-align: left;
+}
+
+.gd-marimo-setup-toggle:hover {
+  background: var(--bs-secondary-bg, #e9ecef);
+  color: var(--bs-body-color, #212529);
+}
+
+.gd-marimo-setup-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.gd-marimo-island-group.gd-marimo-setup-open .gd-marimo-setup-chevron {
+  transform: rotate(90deg);
+}
+
+/* Tint the revealed setup cell so it reads as distinct boilerplate. */
+.gd-marimo-island-group.gd-marimo-setup-open marimo-island[data-gd-setup] {
+  background: var(--bs-tertiary-bg, #f8f9fa);
 }
