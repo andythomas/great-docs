@@ -2,7 +2,10 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #     "marimo",
-#     "great-tables",
+#     # great-tables >= 0.22 depends on multimark, a compiled package with no
+#     # pure-Python / WASM wheel, so it can't install under Pyodide. Pin to the
+#     # last pure-Python release (0.21.x) so the notebook runs in the browser.
+#     "great-tables<0.22",
 #     "polars",
 # ]
 # ///
@@ -24,7 +27,7 @@ async def __():
     if "pyodide" in sys.modules:
         import micropip
 
-        await micropip.install(["great-tables", "polars"])
+        await micropip.install(["great-tables<0.22", "polars"])
 
     import great_tables as _gt
     import polars as _pl
