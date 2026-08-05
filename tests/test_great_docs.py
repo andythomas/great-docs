@@ -30681,7 +30681,7 @@ def test_render_example_text_fences_doctests():
 
     doc_fn = content.DocFunction(name="f", obj=func)
     render = RenderDocFunction(doc_fn, level=1)
-    out = str(render.render_docstring_section(ExampleText(func.docstring.value)))
+    out = str(render._render_example_fragment(ExampleText(func.docstring.value)))
     assert "```" in out
 
 

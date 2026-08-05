@@ -4,7 +4,11 @@ from typing import Literal, TypeAlias
 
 import griffe as gf
 
-from ._docstring_sections import DCDocstringSection
+from ._docstring_sections import (
+    DCDocstringSection,
+    DCDocstringSectionInitParameters,
+    DCDocstringSectionParameterAttributes,
+)
 from ._render.api_page import RenderAPIPage
 from ._render.doc import RenderDoc
 from ._render.docattribute import RenderDocAttribute
@@ -41,8 +45,23 @@ DocObjectKind: TypeAlias = Literal[
     "type alias",
 ]
 
+DocstringSectionWithDefinitions: TypeAlias = (
+    gf.DocstringSectionParameters
+    | gf.DocstringSectionOtherParameters
+    | gf.DocstringSectionTypeParameters
+    | gf.DocstringSectionReturns
+    | gf.DocstringSectionYields
+    | gf.DocstringSectionReceives
+    | gf.DocstringSectionRaises
+    | gf.DocstringSectionWarns
+    | gf.DocstringSectionAttributes
+    | DCDocstringSectionParameterAttributes
+    | DCDocstringSectionInitParameters
+)
+
 DocstringDefinitionType: TypeAlias = (
     gf.DocstringParameter
+    | gf.DocstringTypeParameter
     | gf.DocstringAttribute
     | gf.DocstringReturn
     | gf.DocstringYield
