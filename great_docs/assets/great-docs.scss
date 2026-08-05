@@ -32,7 +32,7 @@ $signature-background-color: shade-color(tint-color($primary, 96%), 2%);
 $font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
 // Selectors for similar groups of elements that are created by the renderer
-$docstring-sections: ":is(.doc-parameters, .doc-other-parameters, .doc-returns, .doc-yields, .doc-receives, .doc-raises, .doc-warns, .doc-attributes, .doc-parameter-attributes, .doc-init-parameters, .doc-see-also, .doc-examples)";
+$docstring-sections: ":is(.doc-parameters, .doc-other-parameters, .doc-type-parameters, .doc-returns, .doc-yields, .doc-receives, .doc-raises, .doc-warns, .doc-attributes, .doc-parameter-attributes, .doc-init-parameters, .doc-see-also, .doc-examples)";
 $doc-object-names: "span.doc-object-name:is(.doc-class-name, .doc-method-name, .doc-module-name, .doc-function-name, .doc-alias-name, .doc-attribute-name, .doc-type-name, .doc-typevar)";
 
 a {
@@ -218,6 +218,7 @@ body.quarto-dark table.gd-summary-table td:last-child {
 // Remove h2 underlines on API reference pages (Quarto/Bootstrap adds border-bottom
 // to all h2 elements; we suppress it for doc section headings and group headings)
 h2.doc-parameters,
+h2.doc-type-parameters,
 h2.doc-returns,
 h2.doc-attributes,
 h2.doc-functions,

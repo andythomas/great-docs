@@ -1275,6 +1275,17 @@ class Config:
         return None
 
     @property
+    def navbar_order(self) -> list[str] | None:
+        """Explicit ordering of navbar items by their display text."""
+        try:
+            raw = self["navbar_order"]
+        except KeyError:
+            return None
+        if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+            return raw
+        return None
+
+    @property
     def content_style(self) -> dict[str, str] | None:
         """The content-area gradient config, or None when no preset is set"""
         preset = self["content_style.preset"]

@@ -91,6 +91,7 @@ FROZEN_DEFAULT_CONFIG: dict[str, Any] = {
     "accent_color": None,
     "navbar_style": None,
     "navbar_color": None,
+    "navbar_order": None,
     "content_style": {"preset": None, "pages": "all"},
     "scale_to_fit": None,
     "scale_to_fit_min_scale": None,
