@@ -5058,6 +5058,99 @@ def test_add_changelog_to_navbar_idempotent_double_call():
         assert len(changelog_items) == 1
 
 
+def test_reorder_navbar_applies_configured_order():
+    """Test that _reorder_navbar reorders items to match navbar_order config."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "great-docs.yml").write_text(
+            "navbar_order:\n"
+            "  - User Guide\n"
+            "  - Reference\n"
+            "  - Demos\n"
+            "  - Changelog\n"
+        )
+        build_dir = project_path / "great-docs"
+        build_dir.mkdir()
+        (build_dir / "_quarto.yml").write_text("")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        config = {
+            "website": {
+                "navbar": {
+                    "left": [
+                        {"text": "Reference", "href": "reference/index.qmd"},
+                        {"text": "Changelog", "href": "changelog.qmd"},
+                        {"text": "User Guide", "href": "user-guide/index.qmd"},
+                        {"text": "Demos", "href": "examples/index.qmd"},
+                    ]
+                }
+            }
+        }
+
+        docs._reorder_navbar(config)
+
+        labels = [item["text"] for item in config["website"]["navbar"]["left"]]
+        assert labels == ["User Guide", "Reference", "Demos", "Changelog"]
+
+
+def test_reorder_navbar_preserves_unlisted_items():
+    """Items not in navbar_order are appended at the end."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "great-docs.yml").write_text(
+            "navbar_order:\n  - User Guide\n  - Reference\n"
+        )
+        build_dir = project_path / "great-docs"
+        build_dir.mkdir()
+        (build_dir / "_quarto.yml").write_text("")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        config = {
+            "website": {
+                "navbar": {
+                    "left": [
+                        {"text": "Reference", "href": "reference/index.qmd"},
+                        {"text": "Changelog", "href": "changelog.qmd"},
+                        {"text": "User Guide", "href": "user-guide/index.qmd"},
+                        {"text": "Demos", "href": "examples/index.qmd"},
+                    ]
+                }
+            }
+        }
+
+        docs._reorder_navbar(config)
+
+        labels = [item["text"] for item in config["website"]["navbar"]["left"]]
+        assert labels == ["User Guide", "Reference", "Changelog", "Demos"]
+
+
+def test_reorder_navbar_noop_without_config():
+    """Without navbar_order, items stay in their original order."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "great-docs.yml").write_text("")
+        build_dir = project_path / "great-docs"
+        build_dir.mkdir()
+        (build_dir / "_quarto.yml").write_text("")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        config = {
+            "website": {
+                "navbar": {
+                    "left": [
+                        {"text": "Reference", "href": "reference/index.qmd"},
+                        {"text": "Changelog", "href": "changelog.qmd"},
+                    ]
+                }
+            }
+        }
+
+        docs._reorder_navbar(config)
+
+        labels = [item["text"] for item in config["website"]["navbar"]["left"]]
+        assert labels == ["Reference", "Changelog"]
+
+
 def test_changelog_config_defaults():
     """Test default changelog configuration values."""
     with tempfile.TemporaryDirectory() as tmp_dir:

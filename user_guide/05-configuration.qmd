@@ -639,6 +639,23 @@ descriptions.
 
 See [Custom Sections](custom-sections.qmd) and [Blog](blog.qmd) for full details.
 
+## Navbar Order
+
+By default, navbar items appear in the order they are added during the build (Reference, Changelog,
+User Guide, custom sections). Use `navbar_order` to set an explicit ordering:
+
+```{.yaml filename="great-docs.yml"}
+navbar_order:
+  - User Guide
+  - Reference
+  - Demos
+  - Changelog
+```
+
+Items are matched by their display text. Any navbar items not listed are appended at the end in
+their original order. This is useful when you want a specific item (like the User Guide) to appear
+first.
+
 ## Author Information
 
 Customize author display in the landing page sidebar:
@@ -977,6 +994,14 @@ sections:
   - title: Blog
     dir: blog
     type: blog
+
+# Navbar Order
+navbar_order:
+  - User Guide
+  - Reference
+  - Examples
+  - Tutorials
+  - Changelog
 
 # API Reference Structure
 reference:

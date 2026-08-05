@@ -3587,6 +3587,34 @@ class GreatDocs:
 
         self._write_quarto_yml(quarto_yml, config)
 
+    def _reorder_navbar(self, config: dict) -> None:
+        """Reorder navbar items according to `navbar_order` in config."""
+        order = self._config.navbar_order
+        if not order:
+            return
+
+        navbar = config.get("website", {}).get("navbar", {})
+        left = navbar.get("left", [])
+        if not left:
+            return
+
+        by_text: dict[str, dict] = {}
+        for item in left:
+            if isinstance(item, dict) and "text" in item:
+                by_text[item["text"]] = item
+
+        ordered: list[dict] = []
+        for label in order:
+            if label in by_text:
+                ordered.append(by_text.pop(label))
+
+        for item in left:
+            if isinstance(item, dict) and item.get("text") in by_text:
+                ordered.append(item)
+                by_text.pop(item["text"], None)
+
+        navbar["left"] = ordered
+
     def _insert_before_reference(self, navbar_items: list, link: dict) -> None:
         """Insert a link before the 'Reference' navbar item, or append."""
         for i, item in enumerate(navbar_items):
@@ -4892,7 +4920,11 @@ class GreatDocs:
         navbar = config.get("website", {}).get("navbar", {})
         left = navbar.get("left", [])
         has_ref = any(
-            isinstance(item, dict) and item.get("text") in ("Reference", "CLI Reference")
+            isinstance(item, dict)
+            and (
+                item.get("text") in ("Reference", "CLI Reference")
+                or (item.get("href") or "").startswith("reference/")
+            )
             for item in left
         )
         if not has_ref:
@@ -13069,6 +13101,9 @@ anchor-sections: true
             config["filters"].append("details")
         if "gd-lightbox" not in config["filters"]:
             config["filters"].append("gd-lightbox")
+
+        # Apply explicit navbar ordering from config (if set)
+        self._reorder_navbar(config)
 
         # Write back to file
         self._write_quarto_yml(quarto_yml, config)

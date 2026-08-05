@@ -1028,6 +1028,27 @@ class TestNavbarColor:
         assert cfg.navbar_color is None
 
 
+class TestNavbarOrder:
+    def test_default_none(self, tmp_project: Path):
+        assert Config(tmp_project).navbar_order is None
+
+    def test_list(self, tmp_project: Path):
+        cfg = _make_config(
+            tmp_project,
+            "navbar_order:\n  - User Guide\n  - Reference\n  - Demos\n",
+        )
+        assert cfg.navbar_order == ["User Guide", "Reference", "Demos"]
+
+    def test_non_list_returns_none(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "navbar_order: User Guide\n")
+        assert cfg.navbar_order is None
+
+    def test_non_string_items_returns_none(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        cfg._config["navbar_order"] = [1, 2, 3]
+        assert cfg.navbar_order is None
+
+
 class TestContentStyle:
     def test_default_none(self, tmp_project: Path):
         assert Config(tmp_project).content_style is None
