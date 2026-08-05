@@ -564,9 +564,13 @@ def dynamic_alias(
 
     documented = _load_documenting_object(located, loader)
     replace_docstring(documented.obj, located.value)
-    if documented.override is not None:
-        documented.obj.docstring = documented.override
     obj = _member_now_at(documented.obj)
+    if documented.override is not None:
+        obj.docstring = _clone_docstring(
+            documented.override,
+            documented.override.value,
+            cast("gf.Object", obj),
+        )
 
     if _same_path(documented.path, located.access_path):
         return obj

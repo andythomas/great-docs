@@ -528,6 +528,7 @@ def test_documented_class_reexport_documents_the_class(monkeypatch, tmp_path):
         assert "press" in resolved.members
         assert resolved.docstring is not None
         assert resolved.docstring.value == "Our widget."
+        assert resolved.docstring.parent is resolved
 
 
 def test_module_level_value_that_owns_its_docstring_is_used(monkeypatch, tmp_path):
