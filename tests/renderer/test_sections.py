@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import sys
 import textwrap
+
+import pytest
+
+requires_pep695 = pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 `type` statement and type-parameter syntax require Python 3.12+",
+)
 
 
 def _render(source: str, name: str | None) -> str:
@@ -629,6 +637,7 @@ def test_every_table_entry_names_a_real_method():
     assert not orphans, f"SECTION_METHOD names methods that do not exist: {orphans}"
 
 
+@requires_pep695
 def test_attributes_section_on_a_type_alias_is_unhandled(caplog):
     """
     A type alias has no attributes, so the section has no renderer
@@ -732,6 +741,7 @@ def test_type_parameters_section_on_a_plain_attribute_is_unhandled(caplog):
     assert any("no renderer" in r.message for r in caplog.records)
 
 
+@requires_pep695
 def test_type_parameters_section_on_a_generic_class_still_renders():
     source = '''
         class Repo[T]:
@@ -747,6 +757,7 @@ def test_type_parameters_section_on_a_generic_class_still_renders():
     assert "The entity type." in _render(source, "Repo")
 
 
+@requires_pep695
 def test_type_parameters_section_on_a_generic_function_still_renders():
     source = '''
         def first[T](items: list[T]) -> T:
@@ -763,6 +774,7 @@ def test_type_parameters_section_on_a_generic_function_still_renders():
     assert "The element type." in _render(source, "first")
 
 
+@requires_pep695
 def test_type_parameters_section_on_a_generic_type_alias_still_renders():
     source = '''
         type Pair[T] = tuple[T, T]
