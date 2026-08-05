@@ -335,7 +335,7 @@ def test_documented_callable_alias_is_one_consistent_node(monkeypatch, tmp_path)
     the author wrote under the assignment outranks `f`'s own, and the parent's
     member is the promoted function rather than the attribute it replaced.
     """
-    from great_docs._apiref.introspect import get_object
+    from great_docs._apiref.introspect import get_object, make_loader
 
     root = _write_package(
         tmp_path,
@@ -356,12 +356,15 @@ def test_documented_callable_alias_is_one_consistent_node(monkeypatch, tmp_path)
     )
     _install(monkeypatch, root)
 
-    obj = get_object("gdta_callable_alias:g", dynamic=True)
+    loader = make_loader()
+    obj = get_object("gdta_callable_alias:g", dynamic=True, loader=loader)
+    again = get_object("gdta_callable_alias:g", dynamic=True, loader=loader)
 
-    assert obj.kind.value == "function"
-    assert obj.docstring is not None
-    assert obj.docstring.value == "The g alias."
-    assert [p.name for p in obj.parameters] == ["x", "y"]
+    for resolved in (obj, again):
+        assert resolved.kind.value == "function"
+        assert resolved.docstring is not None
+        assert resolved.docstring.value == "The g alias."
+        assert [p.name for p in resolved.parameters] == ["x", "y"]
 
     # The promotion re-registers the member on the parent; returning the
     # attribute it replaced would leave the module listing disagreeing with the
@@ -491,7 +494,7 @@ def test_documented_class_reexport_documents_the_class(monkeypatch, tmp_path):
     the docstring written under the assignment is the newer of the two and wins,
     and the name it documents is the one the reader reaches the class by.
     """
-    from great_docs._apiref.introspect import get_object
+    from great_docs._apiref.introspect import get_object, make_loader
 
     root = _write_package(
         tmp_path,
@@ -515,13 +518,16 @@ def test_documented_class_reexport_documents_the_class(monkeypatch, tmp_path):
     )
     _install(monkeypatch, root)
 
-    obj = get_object("gdta_documented_reexport:Widget", dynamic=True)
+    loader = make_loader()
+    obj = get_object("gdta_documented_reexport:Widget", dynamic=True, loader=loader)
+    again = get_object("gdta_documented_reexport:Widget", dynamic=True, loader=loader)
 
-    assert obj.kind.value == "class"
-    assert obj.canonical_path == "gdta_documented_reexport.Widget"
-    assert "press" in obj.members
-    assert obj.docstring is not None
-    assert obj.docstring.value == "Our widget."
+    for resolved in (obj, again):
+        assert resolved.kind.value == "class"
+        assert resolved.canonical_path == "gdta_documented_reexport.Widget"
+        assert "press" in resolved.members
+        assert resolved.docstring is not None
+        assert resolved.docstring.value == "Our widget."
 
 
 def test_module_level_value_that_owns_its_docstring_is_used(monkeypatch, tmp_path):

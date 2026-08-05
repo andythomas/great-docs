@@ -16,6 +16,7 @@ from copy import copy
 from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
+from weakref import WeakKeyDictionary
 
 import griffe as gf
 
@@ -25,6 +26,10 @@ if TYPE_CHECKING:
 # Parser defaults ==============================================================
 
 DEFAULT_OPTIONS: dict[str, dict[str, object]] = {}
+
+_AUTHORED_DOCSTRINGS: WeakKeyDictionary[gf.GriffeLoader, dict[str, gf.Docstring]] = (
+    WeakKeyDictionary()
+)
 
 
 def get_parser_defaults(name: str) -> dict[str, object]:
@@ -717,7 +722,9 @@ def _load_documenting_object(
             own = _reexpose_class(home.obj, located, loader)
             return _Documented(own, located.access_path, authored)
 
-    return _Documented(get_object(located.access_path, loader=loader), located.access_path)
+    obj = get_object(located.access_path, loader=loader)
+    override = authored if inspect.isroutine(located.value) else None
+    return _Documented(obj, located.access_path, override)
 
 
 def _reexpose_class(
@@ -801,6 +808,10 @@ def _authored_docstring(
     """
     Read the docstring the author wrote under the assignment at `access_path`
 
+    The first read is remembered per loader, so the docstring outlives the
+    attribute it was read from: documenting the name replaces that attribute
+    with a function or class node, which no longer carries it.
+
     Parameters
     ----------
     access_path :
@@ -815,6 +826,11 @@ def _authored_docstring(
         attribute, carries a bare assignment, or is absent from the static
         model.
     """
+    if loader is not None:
+        authored = _AUTHORED_DOCSTRINGS.get(loader, {}).get(access_path)
+        if authored is not None:
+            return authored
+
     try:
         obj = get_object(access_path, loader=loader)
     except (KeyError, ModuleNotFoundError, ImportError):
@@ -823,7 +839,10 @@ def _authored_docstring(
     if not isinstance(obj, (gf.Attribute, gf.TypeAlias)):
         return None
 
-    return obj.docstring
+    authored = obj.docstring
+    if authored is not None and loader is not None:
+        _AUTHORED_DOCSTRINGS.setdefault(loader, {})[access_path] = authored
+    return authored
 
 
 def _alias_into_parent(
