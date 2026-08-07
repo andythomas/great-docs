@@ -17,7 +17,8 @@ Before installing Great Docs, ensure you have:
 
 ### Installing Quarto
 
-Great Docs uses Quarto to render documentation. Install it from [quarto.org](https://quarto.org/docs/get-started/):
+Great Docs uses Quarto to render documentation. Install it from
+[quarto.org](https://quarto.org/docs/get-started/):
 
 ::: {.panel-tabset}
 
@@ -126,6 +127,56 @@ quarto --version
 ```
 
 You should see the Great Docs help message and the Quarto version number.
+
+## Upgrading Great Docs
+
+When a new version of Great Docs is released, upgrade using the same tool you used to install it:
+
+::: {.panel-tabset}
+
+## pip
+
+```{.bash filename="Terminal"}
+pip install --upgrade great-docs
+```
+
+## uv
+
+```{.bash filename="Terminal"}
+uv pip install --upgrade great-docs
+```
+
+If Great Docs is declared in your `pyproject.toml` dependencies, update the version constraint there
+and run `uv sync` instead.
+
+## pipx
+
+```{.bash filename="Terminal"}
+pipx upgrade great-docs
+```
+
+:::
+
+### After upgrading
+
+1. **Verify the new version**
+
+   ```{.bash filename="Terminal"}
+   great-docs --version
+   ```
+
+2. **Review the changelog** — Check the
+   [release notes](https://github.com/posit-dev/great-docs/releases) for breaking changes,
+   new configuration options, or deprecated features that may affect your site.
+
+3. **Rebuild your site** — Run `great-docs build` to pick up any changes in the build pipeline,
+   templates, or default configuration.
+
+::: {.callout-tip}
+You do **not** need to re-execute user guide notebooks after upgrading. A plain `great-docs build`
+is sufficient as it regenerates reference pages and templates without re-running notebook code
+(which can be time-consuming).
+:::
 
 ## Next Steps
 
