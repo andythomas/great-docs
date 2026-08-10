@@ -420,6 +420,170 @@ qualified name. Great Docs also auto-links inline code: if you write `` `col_val
 docstring and that name is a documented symbol, it automatically becomes a clickable link. See
 [Cross-Referencing](cross-referencing.qmd) for the full details.
 
+## Beyond Functions and Classes
+
+Most docstring guidance focuses on functions, methods, and classes. But Python has other objects
+that appear in your public API and benefit just as much from documentation: constants, module-level
+variables, type aliases, `TypeVar` declarations, properties, and modules themselves. These objects
+often go undocumented simply because developers don't think of them as "documentable", yet they show
+up in your API reference and can leave readers guessing if they lack context.
+
+Great Docs can render docstrings for all of these. The pattern is the same everywhere: a summary
+line, an optional extended description, and whichever sections make sense. Here's some guidance on
+what to write for each.
+
+### Constants
+
+A constant (typically uppercase, optionally annotated with `Final`) should explain what the value
+controls and why it has the value it does. If the constant is part of a set of related constants,
+mention the others:
+
+```python
+from typing import Final
+
+MAX_CONNECTIONS: Final[int] = 128
+"""Upper bound on simultaneous database connections.
+
+Exceeding this limit raises `ConnectionPoolExhausted`. The default
+of 128 matches the PostgreSQL `max_connections` default so that a
+single application instance can saturate one server without
+over-provisioning.
+
+Notes
+-----
+Deployments behind a connection pooler (PgBouncer, Odyssey) can
+safely raise this to 500 or more, since the pooler manages the
+actual backend connection count.
+
+%seealso MIN_CONNECTIONS, ConnectionPoolExhausted
+"""
+```
+
+### Module-Level Variables
+
+A mutable module-level variable is documented the same way as a constant, but its docstring should
+emphasize valid values, defaults, and what happens when a user changes it:
+
+```python
+timeout: int = 30
+"""Seconds to wait before abandoning a request.
+
+Set this before calling any request functions. Values below 1 are
+treated as "no timeout" (the request blocks indefinitely). The
+default of 30 seconds suits most interactive use. Batch pipelines
+may want 120 or more.
+
+Examples
+--------
+```{python}
+#| eval: false
+import mypackage
+
+mypackage.timeout = 60  # generous timeout for batch jobs
+"""
+```
+
+### Type Aliases
+
+Type aliases name complex types so that signatures stay readable. The docstring should explain the
+*intent* behind the alias (i.e., what it represents in the domain) not just restate the underlying
+type:
+
+```python
+type Key[K: (str, bytes)] = dict[K, ContractId]
+"""A lookup keyed by either `str` or `bytes`, but not a mix of the two.
+
+`Key` appears in every registry function that needs to look up a
+contract. The constraint to `str | bytes` reflects the fact that
+contract identifiers arrive as strings from the API and as raw bytes
+from the binary ledger format. Callers pick one and stick with it.
+
+%seealso ContractId, Ledger
+"""
+```
+
+For the pre-PEP 695 `TypeAlias` spelling, the same guidance applies:
+
+```python
+from typing import TypeAlias
+
+Signature: TypeAlias = Literal["ed25519", "rsa"]
+"""Which signing scheme produced a signature.
+
+Only `ed25519` and `rsa` are currently supported. The literal type
+ensures invalid schemes are caught by type checkers before runtime.
+"""
+```
+
+### TypeVar, ParamSpec, and TypeVarTuple
+
+These declarations constrain generic signatures. Their docstrings should explain *why* the
+constraint exists and what it means for callers:
+
+```python
+from typing import TypeVar
+
+Sortable = TypeVar("Sortable", bound="SupportsLessThan")
+"""A type that can be compared with `<`.
+
+Any type passed where `Sortable` is expected must implement
+`__lt__`. This is the minimum needed for `sorted()` and
+`heapq` to work, and it's deliberately narrower than
+`SupportsRichComparison` to avoid requiring `__eq__`.
+"""
+```
+
+### Properties
+
+A property looks like an attribute to the caller but may involve computation, caching, or
+validation. The docstring should make this behavior visible:
+
+```python
+class Connection:
+    @property
+    def is_idle(self) -> bool:
+        """Whether the connection has no in-flight queries.
+
+        Computed from the internal transaction counter, so this is
+        always consistent even if queries are being submitted from
+        another thread. An idle connection can be safely returned
+        to the pool or closed.
+
+        %seealso close, release
+        """
+        return self._in_flight == 0
+```
+
+### Modules
+
+The module docstring (the first string literal in a `.py` file) sets context for everything the
+module contains. It should orient readers who land on the module's page in the API reference:
+
+```python
+"""Connection pooling and lifecycle management.
+
+This module owns the connection pool, the health-check loop, and the
+retry logic that wraps individual queries. Most users interact with it
+through `get_connection()` and the `Connection` context manager; the
+pool configuration constants are exposed for tuning.
+
+%seealso config, query
+"""
+```
+
+### General Tips
+
+A few guidelines apply across all of these:
+
+- **Lead with intent, not structure.** "A lookup keyed by either `str` or `bytes`" tells the reader
+more than "`dict[K, ContractId]` where `K` is constrained to `str` or `bytes`."
+- **Use `%seealso` liberally.** Constants, type aliases, and TypeVars rarely stand alone. Link to
+the functions and classes that use them.
+- **Keep the summary line short.** Even for a complex type alias, the first line should fit
+comfortably in an API index table.
+- **Don't repeat the type annotation.** The rendered page already shows the type, so the docstring
+should add what the type alone can't express.
+
 ## Docstrings and Sphinx Compatibility
 
 Great Docs uses `%` directives for callouts and API-reference behavior. For example,
@@ -435,9 +599,13 @@ supported directives and syntax.
 
 ## Next Steps
 
-Well-structured docstrings are the foundation of a useful API reference. By choosing a consistent format, using the right sections, and embedding executable examples, you give Great Docs the raw material it needs to produce polished reference pages with minimal extra effort.
+Well-structured docstrings are the foundation of a useful API reference. By choosing a consistent
+format, using the right sections, and embedding executable examples, you give Great Docs the raw
+material it needs to produce polished reference pages with minimal extra effort.
 
-- [API Documentation](api-documentation.qmd) explains how Great Docs discovers exports, classifies them, and organizes the reference
-- [Cross-Referencing](cross-referencing.qmd) covers `%seealso`, inline interlinks, and code autolinks in depth
+- [API Documentation](api-documentation.qmd) explains how Great Docs discovers exports, classifies
+them, and organizes the reference
+- [Cross-Referencing](cross-referencing.qmd) covers `%seealso`, inline interlinks, and code
+autolinks in depth
 - [Linting](linting.qmd) checks for missing docstrings, malformed directives, and other issues
 - [Configuration](configuration.qmd) covers the `parser` setting and other `great-docs.yml` options
