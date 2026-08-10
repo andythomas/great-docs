@@ -279,14 +279,14 @@ _CLAP_BUILTIN_COMMANDS = frozenset({"help"})
 #   -n, --name <NAME>        Name to greet [default: World]
 #       --config <PATH>      Config file path
 #   -v, --verbose...         Enable verbose output
+#       --check              (no description)
 _CLAP_FLAG_RE = re.compile(
     r"^\s*"
     r"(?:(-\w),\s*)?"  # optional short flag
     r"(--[\w-]+)"  # long flag (required)
     r"(\.{3})?"  # optional "..." for repeatable flags
     r"(?:\s+<([^>]+)>)?"  # optional <VALUE_NAME>
-    r"\s{2,}"  # separator (≥2 spaces)
-    r"(.*)"  # description
+    r"(?:\s{2,}(.*)|$)"  # separator + description, OR end of line (no description)
 )
 
 # Clap default value pattern: [default: value]
@@ -318,7 +318,7 @@ def _parse_clap_flag(raw: str) -> dict | None:
         m.group(2),
         m.group(3),
         m.group(4),
-        m.group(5),
+        m.group(5) or "",
     )
 
     is_flag = value_name is None
@@ -492,14 +492,23 @@ def _parse_clap_help(
                     options.append(parsed)
 
         elif current_section in _ARGUMENT_SECTIONS:
-            m = re.match(r"^\s*<([^>]+)>\s{2,}(.*)$", line)
+            # clap prints positional args as:
+            #   <REQUIRED>     Description
+            #   [OPTIONAL]...  Description
+            #   [OPTIONAL]     (no description)
+            m = re.match(
+                r"^\s*(?:<([^>]+)>|\[([^\]]+)\])(\.{3})?"
+                r"(?:\s{2,}(.*)|$)",
+                line,
+            )
             if m:
-                arg_name = m.group(1)
-                arg_help = m.group(2).strip()
+                arg_name = m.group(1) or m.group(2)
+                is_required = m.group(1) is not None
+                arg_help = (m.group(4) or "").strip()
                 arguments.append({
                     "name": arg_name,
                     "help": arg_help,
-                    "required": True,
+                    "required": is_required,
                     "default": None,
                 })
 
