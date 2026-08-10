@@ -1288,6 +1288,7 @@ class GreatDocs:
                 (current / "pyproject.toml").exists()
                 or (current / "setup.py").exists()
                 or (current / "go.mod").exists()
+                or (current / "Cargo.toml").exists()
             ):
                 self._package_root_cache = current
                 return current
@@ -1316,6 +1317,23 @@ class GreatDocs:
         from great_docs._go_cli import detect_go_cli_project
 
         return detect_go_cli_project(self._find_package_root())
+
+    def _detect_rust_cli_project(self):
+        """Detect whether the project is a Rust CLI project.
+
+        Delegates to `great_docs._rust_cli.detect_rust_cli_project` with the resolved project root.
+        The check is purely file-system based (reads ``Cargo.toml`` and looks for binary targets) and
+        never invokes the Rust compiler.
+
+        Returns
+        -------
+        RustCliProject | None
+            A `~great_docs._rust_cli.RustCliProject` instance when the project root contains a
+            ``Cargo.toml`` and at least one binary target, or ``None`` otherwise.
+        """
+        from great_docs._rust_cli import detect_rust_cli_project
+
+        return detect_rust_cli_project(self._find_package_root())
 
     def _griffe_search_paths(self) -> list[str | Path]:
         """Return search paths for griffe so it can find src/python/lib layouts.
@@ -1620,6 +1638,9 @@ class GreatDocs:
 
         # Go CLI documentation configuration
         metadata["go_cli_enabled"] = self._config.go_cli_enabled
+
+        # Rust CLI documentation configuration
+        metadata["rust_cli_enabled"] = self._config.rust_cli_enabled
 
         # MCP documentation configuration
         metadata["mcp_enabled"] = self._config.mcp_enabled
@@ -11869,11 +11890,13 @@ anchor-sections: true
             else:
                 package_name = self._detect_package_name()
                 if not package_name and self._config.go_cli_enabled:
-                    # For Go CLI-only projects there is no Python package name; fall
-                    # back to the Go binary name so the navbar shows a home link.
                     go_project = self._detect_go_cli_project()
                     if go_project:
                         package_name = go_project.binary_name
+                if not package_name and self._config.rust_cli_enabled:
+                    rust_project = self._detect_rust_cli_project()
+                    if rust_project:
+                        package_name = rust_project.binary_names[0]
                 if package_name:
                     config["website"]["title"] = package_name
 
@@ -12392,6 +12415,7 @@ anchor-sections: true
         # Add reference switcher script (if CLI, Go CLI, or MCP is enabled)
         cli_enabled = metadata.get("cli_enabled", False)
         go_cli_enabled = metadata.get("go_cli_enabled", False)
+        rust_cli_enabled = metadata.get("rust_cli_enabled", False)
         # Use the runtime flag if MCP discovery has already run; otherwise fall
         # back to the config value (optimistic, will be patched later if needed)
         mcp_enabled = (
@@ -12399,7 +12423,7 @@ anchor-sections: true
             if self._mcp_pages_generated is not None
             else metadata.get("mcp_enabled", False)
         )
-        if cli_enabled or go_cli_enabled or mcp_enabled:
+        if cli_enabled or go_cli_enabled or rust_cli_enabled or mcp_enabled:
             if "include-after-body" not in config["format"]["html"]:
                 config["format"]["html"]["include-after-body"] = []  # pragma: no cover
             elif isinstance(config["format"]["html"]["include-after-body"], str):
@@ -12412,7 +12436,7 @@ anchor-sections: true
             ref_sections = []
             if self._has_api_reference:
                 ref_sections.append("api")
-            if cli_enabled or go_cli_enabled:
+            if cli_enabled or go_cli_enabled or rust_cli_enabled:
                 ref_sections.append("cli")
             if mcp_enabled:
                 ref_sections.append("mcp")
@@ -15805,7 +15829,44 @@ anchor-sections: true
             else:
                 log.step_skip(step, "Go CLI not enabled")
 
-            # ── Step 7b: Generate MCP server reference ─────────────────
+            # ── Step 7b: Generate Rust CLI reference ──────────────────
+            step += 1
+            log.step_start(step, "Generate Rust CLI reference")
+            if self._config.rust_cli_enabled:
+                try:
+                    from great_docs._rust_cli import introspect_rust_cli
+
+                    with _quiet_prints():
+                        rust_project = self._detect_rust_cli_project()
+                    if rust_project:
+                        with _quiet_prints():
+                            cli_info = introspect_rust_cli(rust_project)
+                        if cli_info:
+                            with _quiet_prints():
+                                cli_files = self._generate_cli_reference_pages(cli_info)
+                            if cli_files:
+                                with _quiet_prints():
+                                    self._update_sidebar_with_cli(cli_files)
+                                n_pages = self._count_cli_sidebar_items(cli_files)
+                                bin_name = rust_project.binary_names[0]
+                                log.step_done(
+                                    f"{n_pages} Rust CLI reference page(s) ({bin_name})"
+                                )
+                            else:
+                                log.step_done("No Rust CLI pages generated")  # pragma: no cover
+                        else:
+                            log.step_skip(
+                                step, "Rust CLI introspection failed (is 'cargo' on PATH?)"
+                            )
+                    else:
+                        log.step_skip(step, "no Rust CLI project detected")
+                except Exception as e:
+                    log.warn(f"Error generating Rust CLI docs: {e}")
+                    log.step_done("Rust CLI generation had issues")
+            else:
+                log.step_skip(step, "Rust CLI not enabled")
+
+            # ── Step 7c: Generate MCP server reference ─────────────────
             step += 1
             log.step_start(step, "Generate MCP server reference")
             if self._config.mcp_enabled:

@@ -523,6 +523,16 @@ class Config:
         return self["go_cli.enabled"]
 
     @property
+    def rust_cli_enabled(self) -> bool:
+        """Check if Rust CLI documentation is enabled.
+
+        When `True`, great-docs will detect the Rust CLI project at the package root, compile it
+        via ``cargo build``, and extract the command tree via ``--help`` to generate a CLI reference
+        section.
+        """
+        return self["rust_cli.enabled"]
+
+    @property
     def mcp_enabled(self) -> bool:
         """Check if MCP server documentation is enabled."""
         return self["mcp.enabled"]

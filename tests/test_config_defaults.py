@@ -39,6 +39,7 @@ FROZEN_DEFAULT_CONFIG: dict[str, Any] = {
         "sections": [],
     },
     "go_cli": {"enabled": False},
+    "rust_cli": {"enabled": False},
     "mcp": {"enabled": True, "module": None, "server_var": None, "name": None, "categories": {}},
     "dark_mode_toggle": True,
     "authors": [],

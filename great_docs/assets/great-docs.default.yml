@@ -27,6 +27,7 @@ display_name: null
 # ecosystem-specific links and features are active by default.
 # : python - (default) Python package; enables the PyPI link
 # : go - Go CLI/library; disables the PyPI link by default
+# : rust - Rust CLI/library; disables the PyPI link by default
 # : type(list) - mixed project, e.g. [python, go]
 project_type: python
 
@@ -132,6 +133,14 @@ cli:
 # Go CLI (Cobra, urfave/cli, ...) whose subcommands support --help.
 go_cli:
   enabled: false   # Enable Go CLI documentation (default: false)
+
+# Rust CLI Documentation
+# ----------------------
+# Builds the Rust binary via cargo and extracts its command tree via --help.
+# Works with any Rust CLI (clap, structopt, argh, ...) whose subcommands
+# support --help.
+rust_cli:
+  enabled: false   # Enable Rust CLI documentation (default: false)
 
 # MCP Server Documentation
 # ------------------------
