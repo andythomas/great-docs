@@ -4750,7 +4750,7 @@ class GreatDocs:
 
                 lines.append(f"<code>{''.join(code_parts)}</code>")
 
-                # Description line
+                # Description line — suppress entirely when there is nothing to show
                 help_str = opt.get("help", "")
                 if opt.get("required"):
                     help_str = f"**Required.** {help_str}" if help_str else "**Required.**"
@@ -4761,7 +4761,7 @@ class GreatDocs:
                     help_str += f" Environment variable: `{envvar}`."
                 help_str = self._backtick_cli_prose(help_str.strip(), option_names)
 
-                lines.append(f":   {help_str}")
+                lines.append(f":   {help_str}" if help_str else ":   &nbsp;")
                 lines.append("")
 
             lines.append(":::")
@@ -4786,7 +4786,11 @@ class GreatDocs:
                     parent_safe = cmd_info["name"].replace("-", "_")
                     href = f"{parent_safe}/{safe_name}.qmd"
                 lines.append(f"<code>[{subcmd_name}]{{.doc-parameter-name}}</code>")
-                link_text = f"[{short_help}]({href})" if short_help else f"[Details]({href})"
+                link_text = (
+                    f"[{short_help}]({href})"
+                    if short_help
+                    else f"[{subcmd_name}]({href})"
+                )
                 lines.append(f":   {link_text}")
                 lines.append("")
             lines.append(":::")
