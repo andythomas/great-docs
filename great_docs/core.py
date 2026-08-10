@@ -10378,11 +10378,11 @@ title: "Security Policy"
 
         # ── 5. Meta ──────────────────────────────────────────────────────
         meta_items: list[str] = []
-        if metadata.get("requires_python"):
+        if self._config.is_python_project and metadata.get("requires_python"):
             _requires = get_translation("requires_python", lang)
             meta_items.append(f"**{_requires}:** Python `{metadata['requires_python']}`")
 
-        if metadata.get("optional_dependencies"):
+        if self._config.is_python_project and metadata.get("optional_dependencies"):
             extras = list(metadata["optional_dependencies"].keys())
             if extras:
                 extras_formatted = ", ".join(f"`{extra}`" for extra in extras)
@@ -10961,6 +10961,9 @@ body-classes: "gd-homepage"
             generation is skipped (disabled or no deps found).
         """
         if not self._config.package_info_page:
+            return None
+
+        if not self._config.is_python_project:
             return None
 
         from ._icons import get_icon_svg
