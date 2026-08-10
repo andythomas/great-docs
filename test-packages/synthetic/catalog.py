@@ -410,6 +410,8 @@ ALL_PACKAGES: list[str] = [
     # 203: Mixed root files and subdirectories with numeric prefix interleaving
     "gdtest_ug_mixed_subdir_order",  # 203
     "gdtest_type_aliases",  # 204
+    # 205: Complete docstrings for non-class/function objects
+    "gdtest_complete_docstrings",  # 205
 ]
 
 
@@ -2295,6 +2297,18 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "override (lang='text'). The module exports Widget (class) and "
         "run_widget (function). Key test: code-include shortcode renders "
         "embedded source files correctly in user guide pages."
+    ),
+    "gdtest_complete_docstrings": (
+        "A connection-pool package whose public API is built from objects that "
+        "typically get minimal docstrings: Final constants (MAX_CONNECTIONS, "
+        "MIN_CONNECTIONS, SUPPORTED_BACKENDS), mutable module-level variables "
+        "(timeout, retry_delay), TypeAlias declarations (ConnectionId, BackendName, "
+        "PoolKey), TypeVar declarations (Sortable, Handler), properties (is_idle, "
+        "is_closed, backend, connection_id), and the module docstring itself. "
+        "Every object carries a complete docstring with summary, extended "
+        "description, and relevant sections (Notes, Examples, Returns, %seealso). "
+        "On the Reference page you should see Constants, Classes, and Functions "
+        "sections with rich rendered docstrings throughout."
     ),
 }
 
