@@ -295,6 +295,28 @@ class TestParseClapFlag:
         assert opt is not None
         assert "--version" in opt["names"]
 
+    def test_flag_without_description(self):
+        """clap flags with no description (just trailing whitespace)."""
+        opt = _parse_clap_flag("      --check                        ")
+        assert opt is not None
+        assert opt["names"] == ["--check"]
+        assert opt["is_flag"] is True
+        assert opt["help"] == ""
+
+    def test_flag_without_description_no_trailing_space(self):
+        opt = _parse_clap_flag("      --diff")
+        assert opt is not None
+        assert opt["names"] == ["--diff"]
+        assert opt["is_flag"] is True
+
+    def test_value_flag_without_description(self):
+        opt = _parse_clap_flag("      --stdin-file-path <PATH>       ")
+        assert opt is not None
+        assert opt["names"] == ["--stdin-file-path"]
+        assert opt["type"] == "path"
+        assert opt["is_flag"] is False
+        assert opt["help"] == ""
+
     def test_unparseable_returns_none(self):
         assert _parse_clap_flag("not a flag line") is None
         assert _parse_clap_flag("") is None
@@ -422,6 +444,72 @@ class TestParseClapHelp:
         names = [c["name"] for c in result["commands"]]
         assert "run" in names
         assert "install" in names
+
+    def test_flags_without_descriptions(self):
+        """yamark-style help with many description-less flags."""
+        help_text = textwrap.dedent("""\
+            Format YAML/Markdown files
+
+            Usage: yamark format [OPTIONS] [PATHS]...
+
+            Arguments:
+              [PATHS]...
+
+            Options:
+                  --check
+                  --diff
+                  --diagnostics
+                  --stdin-file-path <PATH>
+                  --config <PATH>
+                  --wrap <WRAP>                  [default: 72]
+                  --canonical
+                  --preserve-footnotes
+                  --line-width <LINE_WIDTH>      [default: 80]
+                  --prose-width <PROSE_WIDTH>    [default: 72]
+                  --indent-width <INDENT_WIDTH>  [default: 2]
+                  --compact
+                  --skip-embedded-formatters
+              -h, --help                         Print help
+        """)
+        result = _parse_clap_help(help_text, "format", Path("/tmp/bin"), ["format"])
+        opt_names = [n for opt in result["options"] for n in opt["names"]]
+        assert "--check" in opt_names
+        assert "--diff" in opt_names
+        assert "--diagnostics" in opt_names
+        assert "--stdin-file-path" in opt_names
+        assert "--config" in opt_names
+        assert "--wrap" in opt_names
+        assert "--canonical" in opt_names
+        assert "--compact" in opt_names
+        assert "--skip-embedded-formatters" in opt_names
+        assert len(result["options"]) == 14
+
+        # Default values extracted
+        wrap_opt = next(o for o in result["options"] if "--wrap" in o["names"])
+        assert wrap_opt["default"] == "72"
+
+        # Positional argument captured
+        assert len(result["arguments"]) == 1
+        assert result["arguments"][0]["name"] == "PATHS"
+        assert result["arguments"][0]["required"] is False
+
+    def test_required_positional_argument(self):
+        help_text = textwrap.dedent("""\
+            Run a command
+
+            Usage: app run <SCRIPT>
+
+            Arguments:
+              <SCRIPT>  Path to the script to run
+
+            Options:
+              -h, --help  Print help
+        """)
+        result = _parse_clap_help(help_text, "run", Path("/tmp/bin"), ["run"])
+        assert len(result["arguments"]) == 1
+        assert result["arguments"][0]["name"] == "SCRIPT"
+        assert result["arguments"][0]["required"] is True
+        assert result["arguments"][0]["help"] == "Path to the script to run"
 
 
 # ---------------------------------------------------------------------------
