@@ -598,7 +598,7 @@ def _generate_mcp_index_page(
     # Front matter
     lines.append("---")
     lines.append(f'title: "{get_translation("mcp_reference", language)}"')
-    lines.append("body-classes: doc-api-page doc-reference")
+    lines.append("body-classes: doc-reference doc-mcp-reference doc-reference-index")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")

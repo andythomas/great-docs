@@ -11768,7 +11768,7 @@ def test_generate_cli_index_page_auto_layout():
         page = docs._generate_cli_index_page(cli_info, "tool")
 
         # Front matter mirrors the API reference index, plus the CLI scoping class.
-        assert "body-classes: doc-reference doc-cli-reference" in page
+        assert "body-classes: doc-reference doc-cli-reference doc-reference-index" in page
         assert "sidebar: cli-reference" in page
         # Root command link is present with the group pill.
         assert "[tool](tool.qmd){.doc-function .doc-label .doc-label-cli-group}" in page
