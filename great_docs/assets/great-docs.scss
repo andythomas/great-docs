@@ -1441,6 +1441,12 @@ a.sidebar-item-text.sidebar-link.text-start > span {
     font-size: 12px;
 }
 
+/* Reference index links (API Index, CLI Index, MCP Index) use sans-serif */
+.gd-ref-sidebar #quarto-sidebar a.sidebar-item-text[href$="/"] {
+    font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+}
+
 .sidebar-item-section {
     padding-bottom: 8px;
 }
