@@ -55,6 +55,45 @@ def __(mo, n):
     return
 
 
+@app.cell
+def __(mo):
+    factor = mo.ui.slider(1, 5, value=2, label="Multiplier")
+    factor
+    return (factor,)
+
+
+@app.cell
+def __(factor, mo, n):
+    mo.md(f"**{n.value}** × **{factor.value}** = **{n.value * factor.value}**")
+    return
+
+
+@app.cell
+def __(mo):
+    mo.md(
+        """
+        ## Notes
+
+        This notebook is intentionally longer to show that the iframe grows to
+        fit however many cells you add:
+
+        - Cells run in the browser via WebAssembly (Pyodide)
+        - Edit any cell and press Ctrl+Enter to re-run
+        - Dependent cells update reactively
+        """
+    )
+    return
+
+
+@app.cell
+def __(mo, n):
+    mo.ui.table(
+        [{"i": i, "i_squared": i * i} for i in range(1, n.value + 1)],
+        selection=None,
+    )
+    return
+
+
 if __name__ == "__main__":
     app.run()
 '''
@@ -134,10 +173,11 @@ SPEC = {
             "\n"
             "# Full Notebook (Iframe Mode)\n"
             "\n"
-            "The same notebook embedded as a full Marimo app in a sandboxed iframe,\n"
-            "served from a self-hosted WASM export.\n"
+            "The same notebook embedded as a **fully editable, reactive** Marimo\n"
+            "notebook in a sandboxed iframe (self-hosted WASM, full editor chrome).\n"
+            "Edit any cell and press Ctrl+Enter — dependent cells re-run live.\n"
             "\n"
-            '{{< marimo file="notebooks/demo.py" mode="iframe" height="600px" >}}\n'
+            '{{< marimo file="notebooks/demo.py" mode="iframe" height="760px" >}}\n'
         ),
     },
     "config": {
