@@ -281,12 +281,124 @@
     });
   }
 
+  // --- Iframe auto-height ---
+  // Grow each iframe-mode notebook to fit its content so a tall notebook isn't
+  // stuck scrolling inside a fixed-height frame. Works because the WASM export is
+  // same-origin and marimo's editor flows naturally (its document height reflects
+  // the cell count + outputs). Cross-origin embeds silently keep the fixed height.
+  function initIframeAutosize() {
+    document.querySelectorAll("iframe.gd-marimo-iframe").forEach(function (iframe) {
+      // The shortcode `height` becomes the minimum (a placeholder while Pyodide
+      // boots); auto-sizing grows from there.
+      if (!iframe.style.minHeight && iframe.getAttribute("height")) {
+        iframe.style.minHeight = iframe.getAttribute("height");
+      }
+
+      // Neutralize marimo's viewport-based layout so the document ends right
+      // after the last cell (otherwise there's residual scroll inside the frame):
+      //   - `#App [class*="pb-["]` is a `pb-[40vh]` scroll-past-end gutter that
+      //     adds ~40% of the viewport below the last cell.
+      //   - `#root` has `min-height: 100vh`, which also inflates the document.
+      // Injected into the same-origin iframe document.
+      function injectFitCss(doc) {
+        if (doc.getElementById("gd-marimo-fit")) return;
+        var st = doc.createElement("style");
+        st.id = "gd-marimo-fit";
+        st.textContent =
+          "#root{min-height:0 !important;}" +
+          '#App [class*="pb-["]{padding-bottom:1.5rem !important;}';
+        (doc.head || doc.documentElement).appendChild(st);
+      }
+
+      // With the gutter/min-height neutralized, the document's scrollHeight is an
+      // exact, stable measure of the content. Cap it at the last cell's bottom +
+      // margin so that if marimo ever changes those class names (fit CSS misses),
+      // the leftover gutter can't run the height away.
+      function contentHeight() {
+        var doc = iframe.contentDocument;
+        var win = iframe.contentWindow;
+        var cells = doc.querySelectorAll("[data-cell-id]");
+        if (!cells.length) return 0;
+        var scrollY = (win && win.scrollY) || doc.documentElement.scrollTop || 0;
+        var lastBottom = 0;
+        for (var i = 0; i < cells.length; i++) {
+          var bottom = cells[i].getBoundingClientRect().bottom + scrollY;
+          if (bottom > lastBottom) lastBottom = bottom;
+        }
+        return Math.ceil(Math.min(doc.documentElement.scrollHeight, lastBottom + 200));
+      }
+
+      function sync() {
+        try {
+          injectFitCss(iframe.contentDocument);
+          var h = contentHeight();
+          var cur = parseInt(iframe.style.height, 10) || 0;
+          if (h > 0 && Math.abs(h - cur) > 4) iframe.style.height = h + "px";
+        } catch (e) {
+          /* cross-origin — leave the fixed height */
+        }
+      }
+
+      function attach() {
+        var doc;
+        try {
+          doc = iframe.contentDocument;
+        } catch (e) {
+          return;
+        }
+        if (!doc) return;
+        injectFitCss(doc);
+        sync();
+        // Ongoing changes (outputs rendering, cells added/removed, a reactive
+        // output growing, edits) show up as DOM mutations. A ResizeObserver is
+        // no good here: marimo's containers are all `height:100%`, so content
+        // overflows via scrollHeight without any box changing size. Watch DOM
+        // mutations instead, debounced so bursts (typing, re-render) coalesce.
+        if (window.MutationObserver) {
+          var scheduled = false;
+          var schedule = function () {
+            if (scheduled) return;
+            scheduled = true;
+            setTimeout(function () {
+              scheduled = false;
+              sync();
+            }, 150);
+          };
+          var target = doc.getElementById("root") || doc.body;
+          if (target) {
+            new MutationObserver(schedule).observe(target, {
+              childList: true,
+              subtree: true,
+              characterData: true,
+            });
+          }
+        }
+        // Boot window: Pyodide + auto-run render outputs over several seconds.
+        var n = 0;
+        var timer = setInterval(function () {
+          sync();
+          if (++n > 60) clearInterval(timer);
+        }, 500);
+      }
+
+      iframe.addEventListener("load", attach);
+      try {
+        if (iframe.contentDocument && iframe.contentDocument.readyState === "complete") {
+          attach();
+        }
+      } catch (e) {
+        /* not ready yet — the load handler will fire */
+      }
+    });
+  }
+
   // --- Init ---
   function init() {
     initCopyButtons();
     initThemeSync();
     initPostHydrationCleanup();
     initLazyLoad();
+    initIframeAutosize();
   }
 
   if (document.readyState === "loading") {
