@@ -598,7 +598,7 @@ def _generate_mcp_index_page(
     # Front matter
     lines.append("---")
     lines.append(f'title: "{get_translation("mcp_reference", language)}"')
-    lines.append("body-classes: doc-api-page doc-reference")
+    lines.append("body-classes: doc-reference doc-mcp-reference doc-reference-index")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
@@ -654,7 +654,7 @@ def _generate_mcp_index_page(
     instructions = server_info.get("instructions")
     if instructions:
         instr_title = get_translation("mcp_server_instructions", language)
-        lines.append(f"::: {{.callout-note collapse='true' title='{instr_title}'}}")
+        lines.append(f'::: {{.details summary="{instr_title}" type="note"}}')
         lines.append("")
         lines.append("```text")
         lines.append(instructions)
@@ -666,7 +666,7 @@ def _generate_mcp_index_page(
     # Completions note (if enabled)
     if has_completions:
         comp_title = get_translation("mcp_completions", language)
-        lines.append(f"::: {{.callout-tip collapse='true' title='{comp_title}'}}")
+        lines.append(f'::: {{.details summary="{comp_title}" type="tip"}}')
         lines.append("")
         lines.append(get_translation("mcp_completions_desc", language))
         lines.append("")

@@ -459,6 +459,15 @@ class __RenderDocMembersMixin(RenderDoc):
 
         return RenderedMemberPagesGroup(title, summary)
 
+    def render_attributes_section(self, el: gf.DocstringSectionAttributes) -> BlockContent:
+        """
+        Render an `Attributes` section
+
+        Only an object with members — a class or a module — can have
+        attributes to describe.
+        """
+        return self.render_definition_items(el)
+
 
 class RenderDocMembersMixin(__RenderDocMembersMixin, RenderDoc):
     """

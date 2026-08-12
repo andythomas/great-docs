@@ -32,7 +32,7 @@ $signature-background-color: shade-color(tint-color($primary, 96%), 2%);
 $font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
 // Selectors for similar groups of elements that are created by the renderer
-$docstring-sections: ":is(.doc-parameters, .doc-other-parameters, .doc-returns, .doc-yields, .doc-receives, .doc-raises, .doc-warns, .doc-attributes, .doc-parameter-attributes, .doc-init-parameters, .doc-see-also, .doc-examples)";
+$docstring-sections: ":is(.doc-parameters, .doc-other-parameters, .doc-type-parameters, .doc-returns, .doc-yields, .doc-receives, .doc-raises, .doc-warns, .doc-attributes, .doc-parameter-attributes, .doc-init-parameters, .doc-see-also, .doc-examples)";
 $doc-object-names: "span.doc-object-name:is(.doc-class-name, .doc-method-name, .doc-module-name, .doc-function-name, .doc-alias-name, .doc-attribute-name, .doc-type-name, .doc-typevar)";
 
 a {
@@ -218,6 +218,7 @@ body.quarto-dark table.gd-summary-table td:last-child {
 // Remove h2 underlines on API reference pages (Quarto/Bootstrap adds border-bottom
 // to all h2 elements; we suppress it for doc section headings and group headings)
 h2.doc-parameters,
+h2.doc-type-parameters,
 h2.doc-returns,
 h2.doc-attributes,
 h2.doc-functions,
@@ -1010,6 +1011,19 @@ body.quarto-dark #quarto-appendix.default {
     color: #212529;
 }
 
+.gd-meta-sidebar a:has(.bi),
+.gd-meta-sidebar a:has(.fa-brands),
+.gd-meta-sidebar a:has(.ror-sidebar-icon) {
+    color: #495057;
+    text-decoration: none;
+}
+
+.gd-meta-sidebar a:has(.bi):hover,
+.gd-meta-sidebar a:has(.fa-brands):hover,
+.gd-meta-sidebar a:has(.ror-sidebar-icon):hover {
+    color: #212529;
+}
+
 /* ── Blended-homepage metadata sidebar ──
    In blended mode the first UG page becomes the site index page.  Project
    metadata (links, license, community, …) is placed in a panel that mirrors
@@ -1052,30 +1066,39 @@ body.quarto-dark #quarto-appendix.default {
     }
     .gd-meta-sidebar {
         position: absolute;
-        top: 0;
+        top: 55px;
         left: 100%;
         margin-left: 1.5em;
         width: 200px;
+        font-size: 0.825rem;
+        color: hsl(210, 10.81%, 39.51%);
     }
-    .gd-meta-sidebar h3,
-    .gd-meta-sidebar h4 {
-        font-size: 0.9em;
-        font-weight: 600;
-        margin-top: 0.8em;
-        margin-bottom: 0.25em;
-        border-bottom: none;
-        padding-bottom: 0;
+    .gd-meta-sidebar p {
+        margin-bottom: 0;
     }
-    .gd-meta-sidebar h3:first-child,
-    .gd-meta-sidebar h4:first-child {
+    .gd-meta-sidebar > :first-child > h3:first-child,
+    .gd-meta-sidebar > :first-child > h4:first-child,
+    .gd-meta-sidebar > h3:first-child,
+    .gd-meta-sidebar > h4:first-child {
         margin-top: 0;
     }
 }
 @media (max-width: 991.98px) {
     .gd-meta-sidebar {
+        font-size: 0.825rem;
+        color: hsl(210, 10.81%, 39.51%);
         border-top: 1px solid var(--bs-border-color, #dee2e6);
         padding-top: 1em;
         margin-top: 2em;
+    }
+    .gd-meta-sidebar p {
+        margin-bottom: 0;
+    }
+    .gd-meta-sidebar > :first-child > h3:first-child,
+    .gd-meta-sidebar > :first-child > h4:first-child,
+    .gd-meta-sidebar > h3:first-child,
+    .gd-meta-sidebar > h4:first-child {
+        margin-top: 0;
     }
 }
 
@@ -1438,6 +1461,12 @@ a.sidebar-item-text.sidebar-link.text-start > span {
 /* Keep reference sidebar items at the smaller size */
 .gd-ref-sidebar #quarto-sidebar .sidebar-item .menu-text {
     font-size: 12px;
+}
+
+/* Reference index links (API Index, CLI Index, MCP Index) use sans-serif */
+.gd-ref-sidebar #quarto-sidebar a.sidebar-item-text[href$="/"] {
+    font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
 }
 
 .sidebar-item-section {
@@ -3697,6 +3726,18 @@ body.quarto-dark .column-margin a:has(.ror-sidebar-icon):hover {
     color: #dee2e6;
 }
 
+body.quarto-dark .gd-meta-sidebar a:has(.bi),
+body.quarto-dark .gd-meta-sidebar a:has(.fa-brands),
+body.quarto-dark .gd-meta-sidebar a:has(.ror-sidebar-icon) {
+    color: #adb5bd;
+}
+
+body.quarto-dark .gd-meta-sidebar a:has(.bi):hover,
+body.quarto-dark .gd-meta-sidebar a:has(.fa-brands):hover,
+body.quarto-dark .gd-meta-sidebar a:has(.ror-sidebar-icon):hover {
+    color: #dee2e6;
+}
+
 body.quarto-dark .table a {
     color: var(--gd-link-color);
 }
@@ -4558,6 +4599,10 @@ body.quarto-dark .source-link:hover {
     body.quarto-dark .column-margin h4 {
         color: var(--gd-text-secondary);
         border-bottom-color: var(--gd-border-color);
+    }
+
+    body.quarto-dark .gd-meta-sidebar {
+        color: var(--gd-text-secondary);
     }
 
     body.quarto-dark .quarto-secondary-nav {

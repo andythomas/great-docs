@@ -4,20 +4,6 @@
 
 High-value features that build on existing infrastructure.
 
-### Author Attribution & Avatars
-
-Display author information with circular GitHub-style avatars on authored pages.
-
-- Author name and image from page YAML frontmatter (`author: {name, image, url}`)
-- Multiple author avatars displayed in a row
-- Circular avatar images (falls back to initials when no image)
-- Hover tooltip shows full author name
-- Author lookup from `great-docs.yml` `authors:` list for full metadata
-- Only shown on authored pages (user guide, blog, recipes) with explicit `author:` frontmatter
-- Auto-generated pages (reference, changelog) show timestamps only, no author
-- Optional `team_author:` config for a catch-all team attribution (e.g., "Great Tables Team")
-- `site.show_author: true/false` to enable/disable author display
-
 ### Reading Time Estimate
 
 Auto-calculate and display estimated reading time.
@@ -27,35 +13,6 @@ Auto-calculate and display estimated reading time.
 - Override via frontmatter (`readtime: 15`)
 - Show/hide globally or per-page
 - Useful for user guide articles, tutorials, and blog posts
-
-### Breadcrumb Navigation
-
-Display navigation path above page content.
-
-- Breadcrumb trail showing hierarchy (Home > User Guide > Configuration)
-- Clickable links to parent sections
-- Helps orientation in deep documentation structures
-- Hide per-page via frontmatter if desired
-- Responsive design for mobile
-
-### Enhanced CLI Reference
-
-API-reference-style rendering for CLI applications.
-
-- **Click** (primary): Parse command/group decorators to extract structure
-- **Typer**: Leverage Click internals via Typer's underlying Click commands
-- **argparse**: Parse `ArgumentParser` definitions and subparsers
-- **Fire**: Introspect Python functions/classes exposed as CLI
-- **Extensible**: Plugin interface for additional CLI frameworks
-- Generate `.qmd` pages with prose sections for each command and subcommand
-- Render arguments, options, and flags in styled parameter tables (like API reference)
-- Include type annotations, defaults, and help text
-- Auto-generate usage examples from framework-specific example metadata
-- Cross-reference between subcommands and parent groups
-- Search integration: CLI commands indexed alongside API symbols
-- Support for command aliases and deprecated commands
-- Environment variable documentation
-- Alternative to raw `--help` output: richer formatting, navigation, and discoverability
 
 ### Docstring Coverage Report
 
@@ -155,36 +112,6 @@ Self-contained sites that work without an internet connection.
 - Air-gapped deployable builds for secure environments
 - Bundled search index for offline queries
 - Optional asset inlining for single-file deployment
-
-### Blog Support
-
-First-class blogging integrated with documentation.
-
-- Posts directory with date-based organization
-- Automatic archive and category index pages
-- Post excerpts with `<!-- more -->` separator
-- Author profiles with avatars and bios
-- Categories and tags per post
-- RSS feed generation
-- Reading time and publication date display
-- Pinned/featured posts
-- Pagination for post listings
-- Blog-only mode (documentation optional)
-
-### MCP Server Documentation
-
-Generate documentation for Model Context Protocol (MCP) server projects.
-
-- Auto-discover tools, resources, and prompts from MCP server source code
-- Render tool schemas (input/output JSON Schema) in styled parameter tables
-- Document resource URI templates with examples
-- Display prompt templates with argument descriptions
-- Support for multiple transport types (stdio, SSE, streamable HTTP)
-- Cross-reference between tools and resources
-- "Try it" links or copy-able JSON-RPC examples for each tool
-- Server capability summary page (tools count, resources, prompts)
-- Configuration reference for server setup (env vars, auth, endpoints)
-- Compatible with Python (`mcp` SDK), TypeScript (`@modelcontextprotocol/sdk`), and other MCP implementations
 
 ### Instant Loading
 

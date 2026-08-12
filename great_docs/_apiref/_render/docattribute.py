@@ -13,6 +13,7 @@ from .doc import RenderDoc
 if TYPE_CHECKING:
     import griffe as gf
 
+    from great_docs._apiref.typing import DocstringSectionWithDefinitions
     from great_docs.pandoc.blocks import BlockContent
 
     from .. import content
@@ -65,6 +66,39 @@ class __RenderDocAttribute(RenderDoc):
         """
         items = super().docstring_sections_content
         return [(title, section) for title, section in items if title != "Returns"]
+
+    def _render_property_only_section(self, el: DocstringSectionWithDefinitions) -> BlockContent:
+        """
+        Render a section that only makes sense for a property
+
+        A property runs code on access, so it can legitimately document
+        `Raises`, `Warns`, or a `Yields`/`Receives` pair. A plain data
+        attribute cannot, so it falls through to the unhandled-section path
+        instead of rendering. Gate on the griffe fact (`"property" in
+        obj.labels`) rather than `self.label`: `get_label` runs annotation
+        heuristics (`TypeVar`, `TypeAlias`, ...) before it checks for the
+        `property` label, so a property with such a return annotation would
+        otherwise be misidentified as not a property.
+        """
+        if "property" not in self.obj.labels:
+            return self._unhandled_section(el)
+        return self.render_definition_items(el)
+
+    def render_raises_section(self, el: gf.DocstringSectionRaises) -> BlockContent:
+        """Render a `Raises` section on a property"""
+        return self._render_property_only_section(el)
+
+    def render_warns_section(self, el: gf.DocstringSectionWarns) -> BlockContent:
+        """Render a `Warns` section on a property"""
+        return self._render_property_only_section(el)
+
+    def render_yields_section(self, el: gf.DocstringSectionYields) -> BlockContent:
+        """Render a `Yields` section on a property"""
+        return self._render_property_only_section(el)
+
+    def render_receives_section(self, el: gf.DocstringSectionReceives) -> BlockContent:
+        """Render a `Receives` section on a property"""
+        return self._render_property_only_section(el)
 
 
 class RenderDocAttribute(__RenderDocAttribute):

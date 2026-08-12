@@ -407,6 +407,7 @@ def test_reference_pages_have_type_badge(pkg_name: str):
         "enum",
         "constant",
         "type_alias",
+        "typealias",
         "dataclass",
         "exception",
         "protocol",
@@ -452,7 +453,7 @@ def test_function_pages_have_signature(pkg_name: str):
         if badge_text is None:
             continue
 
-        if badge_text in ("constant", "type_alias", "enum", "namedtuple", "typeddict"):
+        if badge_text in ("constant", "type_alias", "typealias", "enum", "namedtuple", "typeddict"):
             continue
 
         sig_names = soup.select("span.sig-name")
@@ -592,6 +593,7 @@ def test_parameter_names_match_signature(pkg_name: str):
             "typeddict",
             "constant",
             "type_alias",
+            "typealias",
             "dataclass",
         ):
             continue

@@ -74,6 +74,32 @@ If you don't specify `display_name`:
 
 This ensures predictable behavior and respects your package's actual naming.
 
+## Project Type
+
+By default, Great Docs assumes a Python project. Set `project_type` to tell Great Docs about the
+primary language of your project:
+
+```{.yaml filename="great-docs.yml"}
+project_type: rust
+```
+
+Valid values:
+
+| Value | Effect |
+|-------|--------|
+| `python` | (default) Enables Python API reference, PyPI link, and Click CLI support |
+| `go` | Enables Go CLI support; disables Python-specific features (PyPI link, package info page) |
+| `rust` | Enables Rust CLI support; disables Python-specific features (PyPI link, package info page) |
+
+For projects that combine languages (e.g., a Rust binary with Python bindings), use a list:
+
+```{.yaml filename="great-docs.yml"}
+project_type: [python, rust]
+```
+
+When `python` is included in the list, Python-specific features remain active alongside the other
+language's CLI documentation.
+
 ## API Discovery Settings
 
 ### Excluding Items
@@ -576,6 +602,11 @@ to the default `index` mode (generating a homepage from your README).
 
 ## CLI Documentation
 
+Great Docs can generate CLI reference pages for Python, Go, and Rust projects. Each ecosystem has
+its own configuration key.
+
+### Python CLI (Click)
+
 Enable automatic CLI documentation for Click-based CLIs:
 
 ```{.yaml filename="great-docs.yml"}
@@ -592,7 +623,29 @@ cli:
   name: cli                # Name of the Click command object
 ```
 
-See [CLI Documentation](cli-documentation.qmd) for details.
+### Go CLI (Cobra)
+
+For Go projects using Cobra, urfave/cli, or similar frameworks. Requires `go` on your `PATH`:
+
+```{.yaml filename="great-docs.yml"}
+project_type: go
+go_cli:
+  enabled: true
+```
+
+### Rust CLI (clap)
+
+For Rust projects using clap, structopt, argh, or similar frameworks. Requires `cargo` on your
+`PATH`:
+
+```{.yaml filename="great-docs.yml"}
+project_type: rust
+rust_cli:
+  enabled: true
+```
+
+See [CLI Documentation](cli-documentation.qmd) for full details on each ecosystem, including project
+detection, help-text formatting tips, and troubleshooting.
 
 ## Changelog
 
@@ -638,6 +691,23 @@ native `listing:` directive. Posts are sorted by date and displayed with author,
 descriptions.
 
 See [Custom Sections](custom-sections.qmd) and [Blog](blog.qmd) for full details.
+
+## Navbar Order
+
+By default, navbar items appear in the order they are added during the build (Reference, Changelog,
+User Guide, custom sections). Use `navbar_order` to set an explicit ordering:
+
+```{.yaml filename="great-docs.yml"}
+navbar_order:
+  - User Guide
+  - Reference
+  - Demos
+  - Changelog
+```
+
+Items are matched by their display text. Any navbar items not listed are appended at the end in
+their original order. This is useful when you want a specific item (like the User Guide) to appear
+first.
 
 ## Author Information
 
@@ -977,6 +1047,14 @@ sections:
   - title: Blog
     dir: blog
     type: blog
+
+# Navbar Order
+navbar_order:
+  - User Guide
+  - Reference
+  - Examples
+  - Tutorials
+  - Changelog
 
 # API Reference Structure
 reference:

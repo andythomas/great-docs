@@ -1377,6 +1377,7 @@ class GreatDocs:
                 (current / "pyproject.toml").exists()
                 or (current / "setup.py").exists()
                 or (current / "go.mod").exists()
+                or (current / "Cargo.toml").exists()
             ):
                 self._package_root_cache = current
                 return current
@@ -1405,6 +1406,23 @@ class GreatDocs:
         from great_docs._go_cli import detect_go_cli_project
 
         return detect_go_cli_project(self._find_package_root())
+
+    def _detect_rust_cli_project(self):
+        """Detect whether the project is a Rust CLI project.
+
+        Delegates to `great_docs._rust_cli.detect_rust_cli_project` with the resolved project root.
+        The check is purely file-system based (reads `Cargo.toml` and looks for binary targets) and
+        never invokes the Rust compiler.
+
+        Returns
+        -------
+        RustCliProject | None
+            A `~great_docs._rust_cli.RustCliProject` instance when the project root contains a
+            `Cargo.toml` and at least one binary target, or `None` otherwise.
+        """
+        from great_docs._rust_cli import detect_rust_cli_project
+
+        return detect_rust_cli_project(self._find_package_root())
 
     def _griffe_search_paths(self) -> list[str | Path]:
         """Return search paths for griffe so it can find src/python/lib layouts.
@@ -1709,6 +1727,9 @@ class GreatDocs:
 
         # Go CLI documentation configuration
         metadata["go_cli_enabled"] = self._config.go_cli_enabled
+
+        # Rust CLI documentation configuration
+        metadata["rust_cli_enabled"] = self._config.rust_cli_enabled
 
         # MCP documentation configuration
         metadata["mcp_enabled"] = self._config.mcp_enabled
@@ -3676,6 +3697,34 @@ class GreatDocs:
 
         self._write_quarto_yml(quarto_yml, config)
 
+    def _reorder_navbar(self, config: dict) -> None:
+        """Reorder navbar items according to `navbar_order` in config."""
+        order = self._config.navbar_order
+        if not order:
+            return
+
+        navbar = config.get("website", {}).get("navbar", {})
+        left = navbar.get("left", [])
+        if not left:
+            return
+
+        by_text: dict[str, dict] = {}
+        for item in left:
+            if isinstance(item, dict) and "text" in item:
+                by_text[item["text"]] = item
+
+        ordered: list[dict] = []
+        for label in order:
+            if label in by_text:
+                ordered.append(by_text.pop(label))
+
+        for item in left:
+            if isinstance(item, dict) and item.get("text") in by_text:
+                ordered.append(item)
+                by_text.pop(item["text"], None)
+
+        navbar["left"] = ordered
+
     def _insert_before_reference(self, navbar_items: list, link: dict) -> None:
         """Insert a link before the 'Reference' navbar item, or append."""
         for i, item in enumerate(navbar_items):
@@ -4439,8 +4488,8 @@ class GreatDocs:
         Generate the CLI reference index (landing) page.
 
         Models the API reference index page: an optional intro paragraph followed by one or more
-        ``## Section {.doc-group}`` blocks, each a definition list of command links with their
-        short help. Sections come from ``cli.sections`` in great-docs.yml when configured;
+        `## Section {.doc-group}` blocks, each a definition list of command links with their
+        short help. Sections come from `cli.sections` in great-docs.yml when configured;
         otherwise commands are auto-grouped (leaf commands first, in code order, then one section
         per command group).
 
@@ -4454,7 +4503,7 @@ class GreatDocs:
         Returns
         -------
         str
-            Quarto markdown content for ``reference/cli/index.qmd``.
+            Quarto markdown content for `reference/cli/index.qmd`.
         """
         from ._translations import get_translation
 
@@ -4466,7 +4515,7 @@ class GreatDocs:
         # --- Front matter (mirrors the API reference index) ---
         lines.append("---")
         lines.append(f'title: "{title}"')
-        lines.append("body-classes: doc-reference doc-cli-reference")
+        lines.append("body-classes: doc-reference doc-cli-reference doc-reference-index")
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
@@ -4790,7 +4839,7 @@ class GreatDocs:
 
                 lines.append(f"<code>{''.join(code_parts)}</code>")
 
-                # Description line
+                # Description line — suppress entirely when there is nothing to show
                 help_str = opt.get("help", "")
                 if opt.get("required"):
                     help_str = f"**Required.** {help_str}" if help_str else "**Required.**"
@@ -4801,7 +4850,7 @@ class GreatDocs:
                     help_str += f" Environment variable: `{envvar}`."
                 help_str = self._backtick_cli_prose(help_str.strip(), option_names)
 
-                lines.append(f":   {help_str}")
+                lines.append(f":   {help_str}" if help_str else ":   &nbsp;")
                 lines.append("")
 
             lines.append(":::")
@@ -4826,7 +4875,7 @@ class GreatDocs:
                     parent_safe = cmd_info["name"].replace("-", "_")
                     href = f"{parent_safe}/{safe_name}.qmd"
                 lines.append(f"<code>[{subcmd_name}]{{.doc-parameter-name}}</code>")
-                link_text = f"[{short_help}]({href})" if short_help else f"[Details]({href})"
+                link_text = f"[{short_help}]({href})" if short_help else f"[{subcmd_name}]({href})"
                 lines.append(f":   {link_text}")
                 lines.append("")
             lines.append(":::")
@@ -4981,7 +5030,11 @@ class GreatDocs:
         navbar = config.get("website", {}).get("navbar", {})
         left = navbar.get("left", [])
         has_ref = any(
-            isinstance(item, dict) and item.get("text") in ("Reference", "CLI Reference")
+            isinstance(item, dict)
+            and (
+                item.get("text") in ("Reference", "CLI Reference")
+                or (item.get("href") or "").startswith("reference/")
+            )
             for item in left
         )
         if not has_ref:
@@ -5638,11 +5691,11 @@ class GreatDocs:
 
         A directory is considered an asset directory when either:
 
-        - It contains no ``.qmd`` files at any depth, **or**
-        - Its name starts with ``_`` (e.g., ``_includes/``, ``_snippets/``).
+        - It contains no `.qmd` files at any depth, **or**
+        - Its name starts with `_` (e.g., `_includes/`, `_snippets/`).
 
-        The underscore rule lets authors store ``.qmd`` snippets intended for
-        ``code-include`` (or other non-page purposes) alongside images and data
+        The underscore rule lets authors store `.qmd` snippets intended for
+        `code-include` (or other non-page purposes) alongside images and data
         files without the directory being mistaken for a content subdirectory.
         """
         if directory.name.startswith("_"):
@@ -5746,32 +5799,32 @@ class GreatDocs:
 
     def _expand_code_includes(self, content: str, source_dir: Path) -> str:
         """
-        Replace ``{{< include path >}}`` shortcodes with fenced code blocks.
+        Replace `{{< include path >}}` shortcodes with fenced code blocks.
 
-        Only intercepts includes that target code files (non-``.qmd``/``.md``)
-        or that use the ``lang`` or ``lines`` keywords.  Plain
-        ``{{< include _shared.qmd >}}`` shortcodes are left untouched so
+        Only intercepts includes that target code files (non-`.qmd`/`.md`)
+        or that use the `lang` or `lines` keywords.  Plain
+        `{{< include _shared.qmd >}}` shortcodes are left untouched so
         Quarto can handle them natively.
 
         Supports optional keyword arguments:
 
-        - ``lang="python"`` — override the auto-detected language
-        - ``lines="5-10"`` — include only the specified line range (1-based, inclusive)
+        - `lang="python"` — override the auto-detected language
+        - `lines="5-10"` — include only the specified line range (1-based, inclusive)
 
         File paths are resolved first relative to *source_dir* (the directory
-        containing the source ``.qmd`` file), then relative to the project root.
+        containing the source `.qmd` file), then relative to the project root.
 
         Parameters
         ----------
         content
-            The ``.qmd`` file content.
+            The `.qmd` file content.
         source_dir
             Directory of the source file (for relative path resolution).
 
         Returns
         -------
         str
-            Content with code-file ``include`` shortcodes replaced by fenced
+            Content with code-file `include` shortcodes replaced by fenced
             code blocks.
         """
 
@@ -5820,7 +5873,7 @@ class GreatDocs:
     @staticmethod
     def _parse_code_include_args(raw: str) -> tuple[str, str, str]:
         """
-        Parse ``include`` shortcode arguments.
+        Parse `include` shortcode arguments.
 
         Returns `(file_path, lang, lines)` where *lang* and *lines* may be empty strings if not
         specified.
@@ -10410,11 +10463,11 @@ title: "Security Policy"
 
         # ── 5. Meta ──────────────────────────────────────────────────────
         meta_items: list[str] = []
-        if metadata.get("requires_python"):
+        if self._config.is_python_project and metadata.get("requires_python"):
             _requires = get_translation("requires_python", lang)
             meta_items.append(f"**{_requires}:** Python `{metadata['requires_python']}`")
 
-        if metadata.get("optional_dependencies"):
+        if self._config.is_python_project and metadata.get("optional_dependencies"):
             extras = list(metadata["optional_dependencies"].keys())
             if extras:
                 extras_formatted = ", ".join(f"`{extra}`" for extra in extras)
@@ -10993,6 +11046,9 @@ body-classes: "gd-homepage"
             generation is skipped (disabled or no deps found).
         """
         if not self._config.package_info_page:
+            return None
+
+        if not self._config.is_python_project:
             return None
 
         from ._icons import get_icon_svg
@@ -11982,11 +12038,13 @@ anchor-sections: true
             else:
                 package_name = self._detect_package_name()
                 if not package_name and self._config.go_cli_enabled:
-                    # For Go CLI-only projects there is no Python package name; fall
-                    # back to the Go binary name so the navbar shows a home link.
                     go_project = self._detect_go_cli_project()
                     if go_project:
                         package_name = go_project.binary_name
+                if not package_name and self._config.rust_cli_enabled:
+                    rust_project = self._detect_rust_cli_project()
+                    if rust_project:
+                        package_name = rust_project.binary_names[0]
                 if package_name:
                     config["website"]["title"] = package_name
 
@@ -12505,6 +12563,7 @@ anchor-sections: true
         # Add reference switcher script (if CLI, Go CLI, or MCP is enabled)
         cli_enabled = metadata.get("cli_enabled", False)
         go_cli_enabled = metadata.get("go_cli_enabled", False)
+        rust_cli_enabled = metadata.get("rust_cli_enabled", False)
         # Use the runtime flag if MCP discovery has already run; otherwise fall
         # back to the config value (optimistic, will be patched later if needed)
         mcp_enabled = (
@@ -12512,7 +12571,7 @@ anchor-sections: true
             if self._mcp_pages_generated is not None
             else metadata.get("mcp_enabled", False)
         )
-        if cli_enabled or go_cli_enabled or mcp_enabled:
+        if cli_enabled or go_cli_enabled or rust_cli_enabled or mcp_enabled:
             if "include-after-body" not in config["format"]["html"]:
                 config["format"]["html"]["include-after-body"] = []  # pragma: no cover
             elif isinstance(config["format"]["html"]["include-after-body"], str):
@@ -12525,7 +12584,7 @@ anchor-sections: true
             ref_sections = []
             if self._has_api_reference:
                 ref_sections.append("api")
-            if cli_enabled or go_cli_enabled:
+            if cli_enabled or go_cli_enabled or rust_cli_enabled:
                 ref_sections.append("cli")
             if mcp_enabled:
                 ref_sections.append("mcp")
@@ -13214,6 +13273,9 @@ anchor-sections: true
             config["filters"].append("details")
         if "gd-lightbox" not in config["filters"]:
             config["filters"].append("gd-lightbox")
+
+        # Apply explicit navbar ordering from config (if set)
+        self._reorder_navbar(config)
 
         # Write back to file
         self._write_quarto_yml(quarto_yml, config)
@@ -14389,10 +14451,10 @@ anchor-sections: true
         def _neutralize_executable_cells(text: str) -> str:
             """Convert executable Quarto cells to display-only so they aren't run.
 
-            Quarto's Jupyter engine extracts ``{python}`` (and ``{r}``, etc.)
+            Quarto's Jupyter engine extracts `{python}` (and `{r}`, etc.)
             cells from the *entire* document before Markdown fence parsing,
             so wrapping in deeper fences is not sufficient.  Replacing
-            ``{python}`` with ``{.python}`` keeps syntax highlighting but
+            `{python}` with `{.python}` keeps syntax highlighting but
             prevents execution.
             """
             import re as _re
@@ -15822,7 +15884,7 @@ anchor-sections: true
                 # Source-link generation (and the CLI reference in Step 7,
                 # which reuses pkg_name) load the importable module, which can
                 # differ from the PyPI project name. Honor an explicit
-                # ``module:`` and build-backend hints via _detect_module_name.
+                # `module:` and build-backend hints via _detect_module_name.
                 pkg_name = self._resolve_importable_name(package_name)
                 with _quiet_prints():
                     self._generate_source_links_json(pkg_name)
@@ -15915,7 +15977,42 @@ anchor-sections: true
             else:
                 log.step_skip(step, "Go CLI not enabled")
 
-            # ── Step 7b: Generate MCP server reference ─────────────────
+            # ── Step 7b: Generate Rust CLI reference ──────────────────
+            step += 1
+            log.step_start(step, "Generate Rust CLI reference")
+            if self._config.rust_cli_enabled:
+                try:
+                    from great_docs._rust_cli import introspect_rust_cli
+
+                    with _quiet_prints():
+                        rust_project = self._detect_rust_cli_project()
+                    if rust_project:
+                        with _quiet_prints():
+                            cli_info = introspect_rust_cli(rust_project)
+                        if cli_info:
+                            with _quiet_prints():
+                                cli_files = self._generate_cli_reference_pages(cli_info)
+                            if cli_files:
+                                with _quiet_prints():
+                                    self._update_sidebar_with_cli(cli_files)
+                                n_pages = self._count_cli_sidebar_items(cli_files)
+                                bin_name = rust_project.binary_names[0]
+                                log.step_done(f"{n_pages} Rust CLI reference page(s) ({bin_name})")
+                            else:
+                                log.step_done("No Rust CLI pages generated")  # pragma: no cover
+                        else:
+                            log.step_skip(
+                                step, "Rust CLI introspection failed (is 'cargo' on PATH?)"
+                            )
+                    else:
+                        log.step_skip(step, "no Rust CLI project detected")
+                except Exception as e:
+                    log.warn(f"Error generating Rust CLI docs: {e}")
+                    log.step_done("Rust CLI generation had issues")
+            else:
+                log.step_skip(step, "Rust CLI not enabled")
+
+            # ── Step 7c: Generate MCP server reference ─────────────────
             step += 1
             log.step_start(step, "Generate MCP server reference")
             if self._config.mcp_enabled:

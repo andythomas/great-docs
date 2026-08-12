@@ -9,28 +9,27 @@ mode).
 
 from __future__ import annotations
 
-import enum
 import importlib
 import inspect
-import sys
 import warnings
+from copy import copy
 from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
+from weakref import WeakKeyDictionary
 
 import griffe as gf
 
 if TYPE_CHECKING:
     from griffe import DocstringOptions
 
-if sys.version_info >= (3, 12):
-    from typing import TypeAliasType
-else:  # Python 3.11 has no PEP 695 runtime support
-    TypeAliasType = None
-
 # Parser defaults ==============================================================
 
 DEFAULT_OPTIONS: dict[str, dict[str, object]] = {}
+
+_AUTHORED_DOCSTRINGS: WeakKeyDictionary[gf.GriffeLoader, dict[str, gf.Docstring]] = (
+    WeakKeyDictionary()
+)
 
 
 def get_parser_defaults(name: str) -> dict[str, object]:
@@ -248,8 +247,10 @@ def replace_docstring(obj: gf.Object | gf.Alias, runtime_obj: object = None) -> 
     """
     Replace the griffe object's docstring in place with the imported runtime docstring
 
-    Callable attributes (the `method = some_function` pattern) are also
-    promoted to functions so they render with a signature.
+    An attribute holding a function (the `method = some_function` pattern) is
+    also promoted to one, so it renders with a signature. What stays an
+    attribute keeps the docstring written beneath it, since a runtime `__doc__`
+    reached through a name usually belongs to the value rather than the name.
 
     Parameters
     ----------
@@ -271,38 +272,29 @@ def replace_docstring(obj: gf.Object | gf.Alias, runtime_obj: object = None) -> 
         if runtime_obj is None:
             return
 
-    # A PEP 695 alias inherits `__doc__` from the `TypeAliasType` class, so the
-    # runtime docstring is CPython's prose about the `type` statement rather
-    # than the author's. Keep griffe's statically-parsed docstring; when there
-    # is none the alias correctly shows no docstring rather than boilerplate.
-    if TypeAliasType is not None and isinstance(runtime_obj, TypeAliasType):
+    doc: str | None = getattr(runtime_obj, "__doc__", None)
+
+    # A name holding a function is a function, whatever griffe's static analysis
+    # made of the assignment, so `method = some_function` renders with a
+    # signature. The kind follows the value alone; an absent runtime docstring is
+    # nothing for it to depend on.
+    if isinstance(obj, gf.Attribute) and inspect.isroutine(runtime_obj) and obj.parent is not None:
+        # A docstring under the assignment is the author writing about the name,
+        # so it outranks the function's own even though the promotion stands.
+        authored = obj.docstring.value if obj.docstring is not None else doc
+        _promote_callable_attribute(obj, runtime_obj, authored)
         return
 
-    if getattr(runtime_obj, "__doc__", None) is None:
+    if doc is None:
         return
 
-    doc: str = runtime_obj.__doc__  # type: ignore[assignment]
-
-    # Enum members inherit __doc__ from the enum class. Skip the
-    # replacement so griffe's statically-parsed per-member docstring
-    # (if any) is preserved; when there is none the member correctly
-    # shows no docstring rather than the class-level one.
-    if isinstance(runtime_obj, enum.Enum):
-        parent_cls = type(runtime_obj)
-        if doc == parent_cls.__doc__:
-            return
-
-    # Reclassify callable attributes as functions.
-    # When a class uses `method = some_function` pattern, griffe sees it as
-    # Kind.ATTRIBUTE. If the runtime value is actually a function, promote it
-    # to a Function object so it gets proper function-style rendering.
-    if (
-        isinstance(obj, gf.Attribute)
-        and callable(runtime_obj)
-        and hasattr(runtime_obj, "__code__")
-        and obj.parent is not None
-    ):
-        _promote_callable_attribute(obj, runtime_obj, doc)
+    # Python discards a variable's docstring at runtime, so an attribute's
+    # runtime `__doc__` is its value's and never the author's. Keep griffe's
+    # statically-parsed docstring unless the value owns a `__doc__` of its own,
+    # which is a deliberate assignment and so documents the attribute. This also
+    # covers a PEP 695 alias (whose `__doc__` is CPython's prose about the
+    # `type` statement) and an enum member (whose `__doc__` is its class's).
+    if isinstance(obj, (gf.Attribute, gf.TypeAlias)) and not _owns_its_docstring(runtime_obj):
         return
 
     old = obj.docstring
@@ -353,7 +345,7 @@ def _locate_runtime_object(obj: gf.Object) -> object | None:
         return None
 
 
-def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
+def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str | None) -> None:
     """
     Re-register the attribute on its parent as a `gf.Function`
 
@@ -368,7 +360,8 @@ def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
         The runtime callable the attribute holds. Its signature is copied when
         `inspect` can read it, and omitted when it cannot.
     doc :
-        Docstring for the replacement function.
+        Docstring for the replacement function, or `None` to leave it
+        undocumented.
     """
     assert obj.parent is not None
 
@@ -397,7 +390,8 @@ def _promote_callable_attribute(obj: gf.Attribute, f: object, doc: str) -> None:
     except (ValueError, TypeError):
         pass
 
-    func_obj.docstring = _clone_docstring(obj.docstring, doc, func_obj)
+    if doc is not None:
+        func_obj.docstring = _clone_docstring(obj.docstring, doc, func_obj)
     obj.parent.set_member(obj.name, func_obj)
 
 
@@ -432,6 +426,38 @@ def _clone_docstring(
     )
 
 
+def _owns_its_docstring(value: object) -> bool:
+    """
+    Whether `value` carries a `__doc__` of its own rather than one inherited from its type
+
+    A class and a module both keep `__doc__` in their own `__dict__`, but it
+    documents them — not the name they were assigned to — so both are excluded.
+
+    Parameters
+    ----------
+    value :
+        The runtime value held by an attribute.
+
+    Returns
+    -------
+    :
+        True when the docstring belongs to this value alone, which is the only
+        case where it documents the attribute it was assigned to.
+    """
+    if isinstance(value, (type, ModuleType)):
+        return False
+
+    # `object.__getattribute__` rather than `getattr` so that a value which
+    # forwards unknown attributes elsewhere cannot answer for its target: a
+    # `types.GenericAlias` such as `list[int]` hands `__dict__` to `list`, and a
+    # proxy hands it to whatever it wraps.
+    try:
+        own = object.__getattribute__(value, "__dict__")
+    except AttributeError:
+        return False
+    return "__doc__" in own
+
+
 @dataclass(frozen=True)
 class _LocatedAttr:
     """
@@ -456,10 +482,16 @@ class _DeclarationOnly:
 
 @dataclass(frozen=True)
 class _Documented:
-    """The griffe object documenting an attribute, and the path it was loaded from"""
+    """
+    The griffe object documenting an attribute, and the path it was loaded from
+
+    `override` is the docstring written under the assignment when that is newer
+    than the one the object came with, and `None` when the object's own stands.
+    """
 
     obj: gf.Object | gf.Alias
     path: str
+    override: gf.Docstring | None = None
 
 
 def _same_path(one: str, other: str) -> bool:
@@ -477,6 +509,29 @@ def _same_path(one: str, other: str) -> bool:
         True when both name the same object.
     """
     return one.replace(":", ".") == other.replace(":", ".")
+
+
+def _member_now_at(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
+    """
+    The node the parent currently holds under `obj`'s name
+
+    `replace_docstring` promotes a callable attribute by registering a
+    `gf.Function` in its place, which leaves the attribute it was handed stale.
+    Only an attribute can be replaced that way, so nothing else is re-read.
+
+    Parameters
+    ----------
+    obj :
+        The node handed to `replace_docstring`.
+
+    Returns
+    -------
+    :
+        The replacement when there is one, otherwise `obj` itself.
+    """
+    if not isinstance(obj, gf.Attribute) or obj.parent is None:
+        return obj
+    return obj.parent.members.get(obj.name, obj)
 
 
 def dynamic_alias(
@@ -509,10 +564,17 @@ def dynamic_alias(
 
     documented = _load_documenting_object(located, loader)
     replace_docstring(documented.obj, located.value)
+    obj = _member_now_at(documented.obj)
+    if documented.override is not None:
+        obj.docstring = _clone_docstring(
+            documented.override,
+            documented.override.value,
+            cast("gf.Object", obj),
+        )
 
     if _same_path(documented.path, located.access_path):
-        return documented.obj
-    return _alias_into_parent(located, documented.obj, loader)
+        return obj
+    return _alias_into_parent(located, obj, loader)
 
 
 def _locate_runtime_attr(
@@ -628,11 +690,13 @@ def _load_documenting_object(
     """
     Load the griffe object that documents `located`
 
-    Prefers the attribute's canonical home, falling back to the path it was
-    accessed by. The fallback covers both an attribute that cannot report a
-    home and one whose `__module__` names a module that cannot be imported,
-    typical of PyO3 classes whose Rust `#[pyclass]` lacks `module = "..."` so
-    `__module__` defaults to `"builtins"`.
+    A class or a function is documented by the value's own node, wherever it is
+    defined, so `Widget = _W` keeps the class's members. A docstring written
+    under the assignment earns the name a node of its own instead — a class
+    sharing the original's members, a function rebuilt from the runtime
+    signature — which is what keeps what an author wrote about one name off the
+    other's page. Every other value, an instance or a module or a typing
+    construct, is documented as the attribute it was found at.
 
     Parameters
     ----------
@@ -644,19 +708,145 @@ def _load_documenting_object(
     Returns
     -------
     :
-        The node that documents the attribute, and the path it was read from.
-        Callers compare that path against the access path to decide whether the
-        attribute still needs re-exposing.
+        The node that documents the attribute, the path it was read from, and
+        the docstring to override its own with. Callers compare that path
+        against the access path to decide whether the attribute still needs
+        re-exposing.
     """
-    if located.canonical_path is not None:
-        try:
-            obj = get_object(located.canonical_path, loader=loader)
-        except (KeyError, ModuleNotFoundError, ImportError):
-            pass
-        else:
-            return _Documented(obj, located.canonical_path)
+    authored = _authored_docstring(located.access_path, loader)
 
-    return _Documented(get_object(located.access_path, loader=loader), located.access_path)
+    # A documented function is left to the access path, where `replace_docstring`
+    # rebuilds it from the runtime signature. A class is copied here instead,
+    # since its members cannot be rebuilt from the runtime object.
+    if isinstance(located.value, type) or (inspect.isroutine(located.value) and authored is None):
+        home = _canonical_home(located, loader)
+        if home is not None:
+            if authored is None:
+                return home
+            own = _reexpose_class(home.obj, located, loader)
+            return _Documented(own, located.access_path, authored)
+
+    obj = get_object(located.access_path, loader=loader)
+    override = authored if inspect.isroutine(located.value) else None
+    return _Documented(obj, located.access_path, override)
+
+
+def _reexpose_class(
+    obj: gf.Object | gf.Alias,
+    located: _LocatedAttr,
+    loader: gf.GriffeLoader | None,
+) -> gf.Object:
+    """
+    Register a second node for `obj`'s class under the name it was accessed by
+
+    The two nodes share their members, so the re-exported name documents the
+    same methods; each carries its own docstring, so what an author wrote about
+    one name never shows up on the other's page.
+
+    Parameters
+    ----------
+    obj :
+        The class as its defining module models it.
+    located :
+        The attribute the class was reached as. Its name becomes the new node's.
+    loader :
+        Loader to read the accessing module or class through.
+
+    Returns
+    -------
+    :
+        The new node, already a member of the module or class the name was
+        reached through.
+    """
+    own = copy(resolve_alias(obj))
+    own.name = located.name
+    # Only the definition's own re-exports point at the definition.
+    own.aliases = {}
+
+    parent = _access_parent(located, loader)
+    if isinstance(parent, (gf.Module, gf.Class)):
+        parent.set_member(located.name, own)
+    return own
+
+
+def _canonical_home(
+    located: _LocatedAttr,
+    loader: gf.GriffeLoader | None,
+) -> _Documented | None:
+    """
+    Load the griffe object at the path `located` reports it was defined at
+
+    `None` when that path is unreadable, which covers both a value that cannot
+    report a home and one whose `__module__` names a module that cannot be
+    imported, typical of PyO3 classes whose Rust `#[pyclass]` lacks
+    `module = "..."` so `__module__` defaults to `"builtins"`.
+
+    Parameters
+    ----------
+    located :
+        The attribute whose reported home is wanted.
+    loader :
+        Loader to read the static model through.
+
+    Returns
+    -------
+    :
+        The node at the canonical path and that path, or `None` when nothing
+        can be read there.
+    """
+    if located.canonical_path is None:
+        return None
+
+    try:
+        obj = get_object(located.canonical_path, loader=loader)
+    except (KeyError, ModuleNotFoundError, ImportError):
+        return None
+
+    return _Documented(obj, located.canonical_path)
+
+
+def _authored_docstring(
+    access_path: str,
+    loader: gf.GriffeLoader | None,
+) -> gf.Docstring | None:
+    """
+    Read the docstring the author wrote under the assignment at `access_path`
+
+    The first read is remembered per loader, so the docstring outlives the
+    attribute it was read from: documenting the name replaces that attribute
+    with a function or class node, which no longer carries it.
+
+    Parameters
+    ----------
+    access_path :
+        Path the attribute was reached by.
+    loader :
+        Loader to read the static model through.
+
+    Returns
+    -------
+    :
+        The docstring, or `None` when the path names something other than an
+        attribute, carries a bare assignment, or is absent from the static
+        model.
+    """
+    if loader is not None:
+        authored = _AUTHORED_DOCSTRINGS.get(loader, {}).get(access_path)
+        if authored is not None:
+            return authored
+
+    try:
+        obj = get_object(access_path, loader=loader)
+    except (KeyError, ModuleNotFoundError, ImportError):
+        return None
+
+    if not isinstance(obj, (gf.Attribute, gf.TypeAlias)):
+        return None
+
+    authored = obj.docstring
+    if authored is not None and loader is not None:
+        _AUTHORED_DOCSTRINGS.setdefault(loader, {})[access_path] = authored
+    return authored
 
 
 def _alias_into_parent(
@@ -687,6 +877,32 @@ def _alias_into_parent(
         class it was reached through. It is left unparented when the access path
         names something that cannot hold members.
     """
+    parent = _access_parent(located, loader)
+    if isinstance(parent, (gf.Module, gf.Class, gf.Alias)):
+        return gf.Alias(located.name, obj, parent=parent)
+    return gf.Alias(located.name, obj)
+
+
+def _access_parent(
+    located: _LocatedAttr,
+    loader: gf.GriffeLoader | None,
+) -> gf.Object | gf.Alias:
+    """
+    Load the module or class that `located` was reached through
+
+    Parameters
+    ----------
+    located :
+        The attribute as it was reached, whose access path names the parent.
+    loader :
+        Loader to read the parent through.
+
+    Returns
+    -------
+    :
+        The node one level up the access path, which is not necessarily
+        something that can hold members.
+    """
     module_path, object_path = _split_path(located.access_path)
 
     if object_path is None:
@@ -696,10 +912,7 @@ def _alias_into_parent(
     else:
         parent_path = module_path
 
-    parent = get_object(parent_path, loader=loader, dynamic=True)
-    if isinstance(parent, (gf.Module, gf.Class, gf.Alias)):
-        return gf.Alias(located.name, obj, parent=parent)
-    return gf.Alias(located.name, obj)
+    return get_object(parent_path, loader=loader, dynamic=True)
 
 
 def _canonical_path(current_part: object, qualname: str) -> str | None:

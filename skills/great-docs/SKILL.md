@@ -161,6 +161,39 @@ options.
 **Step 5**: Check the site at `http://localhost:3000`. If errors
 occur, see [references/common-errors.md](references/common-errors.md).
 
+### Upgrading Great Docs
+
+```
+Task Progress:
+- [ ] Step 1: Upgrade the package
+- [ ] Step 2: Verify version
+- [ ] Step 3: Review changelog
+- [ ] Step 4: Rebuild site
+```
+
+**Step 1**: Upgrade using whichever tool manages the environment:
+
+| Tool | Command                               |
+| ---- | ------------------------------------- |
+| pip  | `pip install --upgrade great-docs`    |
+| uv   | `uv pip install --upgrade great-docs` |
+| pipx | `pipx upgrade great-docs`             |
+
+If the project declares `great-docs` in `pyproject.toml` dependencies,
+update the version constraint there and run `uv sync` instead.
+
+**Step 2**: Run `great-docs --version` and confirm it shows the
+expected version.
+
+**Step 3**: Check the [release notes](https://github.com/posit-dev/great-docs/releases)
+for breaking changes or new configuration options.
+
+**Step 4**: Run `great-docs build` to pick up pipeline, template, or
+default-config changes. **Do not re-execute user guide notebooks** —
+`great-docs build` regenerates reference pages and templates without
+running notebook code, and notebook execution can be very
+time-consuming.
+
 ### Adding content
 
 **User guide page**: Create `user_guide/NN-title.qmd` with a
@@ -280,6 +313,10 @@ annotated options. Copy it as `great-docs.yml` and customize.
    fails at step 13.
 7. **Package must be importable.** In dynamic mode, run
    `pip install -e .` before building.
+8. **Don't re-execute notebooks after upgrading.** A plain
+   `great-docs build` is enough — it regenerates reference pages and
+   templates without running notebook code. Notebook execution is
+   time-consuming and is not required for upgrades.
 
 ## Capabilities and boundaries
 
