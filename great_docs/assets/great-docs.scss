@@ -1066,7 +1066,7 @@ body.quarto-dark #quarto-appendix.default {
     }
     .gd-meta-sidebar {
         position: absolute;
-        top: 0;
+        top: 55px;
         left: 100%;
         margin-left: 1.5em;
         width: 200px;
@@ -1075,16 +1075,6 @@ body.quarto-dark #quarto-appendix.default {
     }
     .gd-meta-sidebar p {
         margin-bottom: 0;
-    }
-    .gd-meta-sidebar h3,
-    .gd-meta-sidebar h4 {
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: #495057;
-        margin-top: 1rem;
-        margin-bottom: 0.25em;
-        border-bottom: 1px solid #dee2e6;
-        padding-bottom: 0.5rem;
     }
     .gd-meta-sidebar > :first-child > h3:first-child,
     .gd-meta-sidebar > :first-child > h4:first-child,
@@ -1103,14 +1093,6 @@ body.quarto-dark #quarto-appendix.default {
     }
     .gd-meta-sidebar p {
         margin-bottom: 0;
-    }
-    .gd-meta-sidebar h3,
-    .gd-meta-sidebar h4 {
-        font-size: 0.9rem;
-        color: #495057;
-        border-bottom: 1px solid #dee2e6;
-        padding-bottom: 0.5rem;
-        margin-top: 1rem;
     }
     .gd-meta-sidebar > :first-child > h3:first-child,
     .gd-meta-sidebar > :first-child > h4:first-child,
@@ -4621,12 +4603,6 @@ body.quarto-dark .source-link:hover {
 
     body.quarto-dark .gd-meta-sidebar {
         color: var(--gd-text-secondary);
-    }
-
-    body.quarto-dark .gd-meta-sidebar h3,
-    body.quarto-dark .gd-meta-sidebar h4 {
-        color: var(--gd-text-secondary);
-        border-bottom-color: var(--gd-border-color);
     }
 
     body.quarto-dark .quarto-secondary-nav {
