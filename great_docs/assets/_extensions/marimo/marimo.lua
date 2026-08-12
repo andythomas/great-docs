@@ -63,6 +63,10 @@ return {
         local show_copy = kwarg(kwargs, "show-copy", "true")
         local theme = kwarg(kwargs, "theme", "auto")
         local height = kwarg(kwargs, "height", "600px")
+        -- iframe chrome: "trimmed" (default) hides marimo's editor sidebar,
+        -- add-cell bar, and status bar while keeping cells editable/reactive;
+        -- "full" shows the complete editor chrome.
+        local chrome = kwarg(kwargs, "chrome", "trimmed")
 
         -- IFRAME MODE --------------------------------------------------------
         if mode == "iframe" then
@@ -71,6 +75,10 @@ return {
                 offset = quarto.project.offset .. "/"
             end
             local wasm_path = file:gsub("%.py$", "") .. "/index.html"
+            -- marimo reads ?show-chrome to toggle the editor sidebar/footer/status.
+            if chrome ~= "full" then
+                wasm_path = wasm_path .. "?show-chrome=false"
+            end
             local parts = {}
             table.insert(parts, '<div class="gd-marimo-iframe-wrap">')
             table.insert(parts, '<iframe class="gd-marimo-iframe" ')
