@@ -1011,6 +1011,19 @@ body.quarto-dark #quarto-appendix.default {
     color: #212529;
 }
 
+.gd-meta-sidebar a:has(.bi),
+.gd-meta-sidebar a:has(.fa-brands),
+.gd-meta-sidebar a:has(.ror-sidebar-icon) {
+    color: #495057;
+    text-decoration: none;
+}
+
+.gd-meta-sidebar a:has(.bi):hover,
+.gd-meta-sidebar a:has(.fa-brands):hover,
+.gd-meta-sidebar a:has(.ror-sidebar-icon):hover {
+    color: #212529;
+}
+
 /* ── Blended-homepage metadata sidebar ──
    In blended mode the first UG page becomes the site index page.  Project
    metadata (links, license, community, …) is placed in a panel that mirrors
@@ -1057,26 +1070,53 @@ body.quarto-dark #quarto-appendix.default {
         left: 100%;
         margin-left: 1.5em;
         width: 200px;
+        font-size: 0.825rem;
+        color: hsl(210, 10.81%, 39.51%);
+    }
+    .gd-meta-sidebar p {
+        margin-bottom: 0;
     }
     .gd-meta-sidebar h3,
     .gd-meta-sidebar h4 {
-        font-size: 0.9em;
+        font-size: 0.9rem;
         font-weight: 600;
-        margin-top: 0.8em;
+        color: #495057;
+        margin-top: 1rem;
         margin-bottom: 0.25em;
-        border-bottom: none;
-        padding-bottom: 0;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.5rem;
     }
-    .gd-meta-sidebar h3:first-child,
-    .gd-meta-sidebar h4:first-child {
+    .gd-meta-sidebar > :first-child > h3:first-child,
+    .gd-meta-sidebar > :first-child > h4:first-child,
+    .gd-meta-sidebar > h3:first-child,
+    .gd-meta-sidebar > h4:first-child {
         margin-top: 0;
     }
 }
 @media (max-width: 991.98px) {
     .gd-meta-sidebar {
+        font-size: 0.825rem;
+        color: hsl(210, 10.81%, 39.51%);
         border-top: 1px solid var(--bs-border-color, #dee2e6);
         padding-top: 1em;
         margin-top: 2em;
+    }
+    .gd-meta-sidebar p {
+        margin-bottom: 0;
+    }
+    .gd-meta-sidebar h3,
+    .gd-meta-sidebar h4 {
+        font-size: 0.9rem;
+        color: #495057;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.5rem;
+        margin-top: 1rem;
+    }
+    .gd-meta-sidebar > :first-child > h3:first-child,
+    .gd-meta-sidebar > :first-child > h4:first-child,
+    .gd-meta-sidebar > h3:first-child,
+    .gd-meta-sidebar > h4:first-child {
+        margin-top: 0;
     }
 }
 
@@ -3704,6 +3744,18 @@ body.quarto-dark .column-margin a:has(.ror-sidebar-icon):hover {
     color: #dee2e6;
 }
 
+body.quarto-dark .gd-meta-sidebar a:has(.bi),
+body.quarto-dark .gd-meta-sidebar a:has(.fa-brands),
+body.quarto-dark .gd-meta-sidebar a:has(.ror-sidebar-icon) {
+    color: #adb5bd;
+}
+
+body.quarto-dark .gd-meta-sidebar a:has(.bi):hover,
+body.quarto-dark .gd-meta-sidebar a:has(.fa-brands):hover,
+body.quarto-dark .gd-meta-sidebar a:has(.ror-sidebar-icon):hover {
+    color: #dee2e6;
+}
+
 body.quarto-dark .table a {
     color: var(--gd-link-color);
 }
@@ -4563,6 +4615,16 @@ body.quarto-dark .source-link:hover {
     }
 
     body.quarto-dark .column-margin h4 {
+        color: var(--gd-text-secondary);
+        border-bottom-color: var(--gd-border-color);
+    }
+
+    body.quarto-dark .gd-meta-sidebar {
+        color: var(--gd-text-secondary);
+    }
+
+    body.quarto-dark .gd-meta-sidebar h3,
+    body.quarto-dark .gd-meta-sidebar h4 {
         color: var(--gd-text-secondary);
         border-bottom-color: var(--gd-border-color);
     }
