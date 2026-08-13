@@ -43,30 +43,43 @@ def __(mo):
         """
         # Getting Started with Great Tables
 
-        This notebook demonstrates the basics of creating tables with **Great Tables**.
-        Edit the code below and see the output update reactively!
+        This notebook builds a styled table with **Great Tables**. Drag the
+        slider below — the table redraws reactively as the value changes.
         """
     )
     return
 
 
 @app.cell
-def __(gt, pl):
-    # Create sample data
-    df = pl.DataFrame(
+def __(pl):
+    # The full dataset — a slider chooses how many rows to show.
+    students = pl.DataFrame(
         {
-            "name": ["Alice", "Bob", "Charlie", "Diana"],
-            "score": [95, 87, 92, 88],
-            "grade": ["A", "B+", "A-", "B+"],
+            "name": ["Alice", "Bob", "Charlie", "Diana", "Evan", "Fiona", "Grace", "Hugo"],
+            "score": [95, 87, 92, 88, 79, 96, 84, 91],
+            "grade": ["A", "B+", "A-", "B+", "C+", "A", "B", "A-"],
         }
     )
+    return (students,)
 
-    # Build a Great Table
+
+@app.cell
+def __(mo):
+    top_n = mo.ui.slider(1, 8, value=4, label="Show top N students")
+    top_n
+    return (top_n,)
+
+
+@app.cell
+def __(gt, students, top_n):
+    # Reactive: re-runs whenever the slider moves.
+    df = students.sort("score", descending=True).head(top_n.value)
+
     (
         gt.GT(df)
         .tab_header(
             title="Student Scores",
-            subtitle="Fall 2026 Semester",
+            subtitle=f"Top {top_n.value} of {students.height}, Fall 2026",
         )
         .cols_label(
             name="Student",
@@ -78,15 +91,16 @@ def __(gt, pl):
             palette=["#fde725", "#21918c"],
         )
     )
-    return df
+    return (df,)
 
 
 @app.cell
 def __(mo):
     mo.md(
         """
-        Try modifying the data or the table styling above —
-        the output will update automatically thanks to marimo's reactive execution.
+        Every cell that depends on the slider re-runs the moment its value
+        changes — no "Run" button required. In iframe mode you can also edit
+        the code above and re-run it live.
         """
     )
     return
