@@ -412,6 +412,8 @@ ALL_PACKAGES: list[str] = [
     "gdtest_type_aliases",  # 204
     # 205: Complete docstrings for non-class/function objects
     "gdtest_complete_docstrings",  # 205
+    # 206: Marimo notebook islands showcase
+    "gdtest_marimo",  # 206
 ]
 
 

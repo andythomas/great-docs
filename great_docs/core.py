@@ -13,6 +13,30 @@ from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 from ._subprocess import TEXT_MODE_KWARGS
 from .config import Config, create_default_config
 
+# Injected into marimo `--mode edit` WASM exports (iframe mode). Those load inert
+# — cells are stale and the kernel isn't instantiated, so nothing renders and
+# nothing reacts until the reader runs the notebook. This clicks every cell's run
+# button once the kernel is ready (a cell reports "outdated"), so the embedded
+# notebook loads live and reactive. Run buttons remain in the DOM even when the
+# editor chrome is hidden (?show-chrome=false), so this works in the trimmed view.
+_MARIMO_AUTORUN_MARKER = "great-docs:marimo-autorun"
+_MARIMO_AUTORUN_SCRIPT = """
+<script>
+/* great-docs:marimo-autorun */
+(function () {
+  var done = false, tries = 0;
+  var timer = setInterval(function () {
+    if (done || tries++ > 200) { clearInterval(timer); return; }
+    if (!document.querySelector('[data-status="outdated"]')) return;
+    var btns = [].slice.call(document.querySelectorAll('[data-testid="run-button"]'));
+    if (!btns.length) return;
+    done = true; clearInterval(timer);
+    btns.forEach(function (b) { try { b.click(); } catch (e) {} });
+  }, 400);
+})();
+</script>
+"""
+
 # Quarto's default input file types, enumerated as render globs. Used to seed
 # `project.render` whenever we also add `!` exclusions. A recursive `**` glob
 # overpowers any negation that follows it (so `!skill.md` would be ignored),
@@ -322,6 +346,107 @@ class GreatDocs:
             extensions_dst = self.project_path / "_extensions"
             shutil.copytree(extensions_src, extensions_dst, dirs_exist_ok=True)
 
+        # Copy notebooks directory and pre-generate marimo island HTML
+        if self._config.marimo_enabled:
+            import importlib.util
+
+            notebooks_src = self.project_root / "notebooks"
+            if importlib.util.find_spec("marimo") is None:
+                # `marimo: true` is set but the package isn't installed. Warn and
+                # skip rather than crashing the whole build; pages using the
+                # {{< marimo >}} shortcode will show a "not generated" notice.
+                print(
+                    "Warning: marimo notebooks are enabled in great-docs.yml but "
+                    "the 'marimo' package is not installed; skipping notebook "
+                    "island generation. Install it with: pip install marimo"
+                )
+            elif notebooks_src.exists() and notebooks_src.is_dir():
+                notebooks_dst = self.project_path / "notebooks"
+                shutil.copytree(notebooks_src, notebooks_dst, dirs_exist_ok=True)
+
+                # Pre-generate island HTML for each .py notebook
+                # Marimo's import accesses sys.stdout.encoding at class-def time,
+                # so ensure the stream has that attribute before importing.
+                import io as _io
+                import sys as _sys
+
+                _orig_stdout = _sys.stdout
+                _orig_stderr = _sys.stderr
+                if not hasattr(_sys.stdout, "encoding"):
+                    _sys.stdout = _io.TextIOWrapper(_io.BytesIO(), encoding="utf-8")
+                if not hasattr(_sys.stderr, "encoding"):
+                    _sys.stderr = _io.TextIOWrapper(_io.BytesIO(), encoding="utf-8")
+                try:
+                    from great_docs._marimo import generate_islands_for_build
+
+                    islands_dir = self.project_path / "_marimo_islands"
+                    islands_dir.mkdir(exist_ok=True)
+                    for nb_file in notebooks_src.glob("*.py"):
+                        out_file = islands_dir / f"{nb_file.stem}.html"
+                        generate_islands_for_build(nb_file, out_file, reactive=True)
+                        # Also generate nocode variant for show-code="false"
+                        nocode_file = islands_dir / f"{nb_file.stem}-nocode.html"
+                        generate_islands_for_build(
+                            nb_file, nocode_file, display_code=False, reactive=True
+                        )
+
+                    # Generate WASM exports for iframe mode.
+                    # `--mode edit` produces a fully editable, reactive notebook
+                    # (readers can edit code and re-run, with dependents updating)
+                    # rendered with marimo's full editor chrome. Inline island mode
+                    # is the lightweight, read-only-code alternative.
+                    import subprocess
+
+                    for nb_file in notebooks_src.glob("*.py"):
+                        wasm_dir = self.project_path / "notebooks" / nb_file.stem
+                        wasm_dir.mkdir(parents=True, exist_ok=True)
+                        result = subprocess.run(
+                            [
+                                _sys.executable,
+                                "-m",
+                                "marimo",
+                                "export",
+                                "html-wasm",
+                                str(nb_file),
+                                "-o",
+                                str(wasm_dir) + "/",
+                                "--mode",
+                                "edit",
+                            ],
+                            input="n\n",
+                            capture_output=True,
+                            text=True,
+                        )
+                        # Surface failures: a silent export failure otherwise
+                        # leaves iframe-mode shortcodes pointing at a missing
+                        # index.html (404) with no explanation in the build log.
+                        index_html = wasm_dir / "index.html"
+                        if result.returncode != 0 or not index_html.exists():
+                            _orig_stderr.write(
+                                f"Warning: marimo WASM export failed for "
+                                f"{nb_file.name} (iframe mode will 404). "
+                                f"{(result.stderr or result.stdout or '').strip()[:500]}\n"
+                            )
+                        else:
+                            # Edit-mode exports load inert (cells stale, kernel not
+                            # instantiated) — no outputs and no reactivity until the
+                            # reader runs the notebook. Inject a small script that
+                            # clicks every cell's run button once the kernel is ready,
+                            # so the embedded notebook loads live and reactive. Works
+                            # even with the chrome hidden (?show-chrome=false), since
+                            # the run buttons stay in the DOM.
+                            html = index_html.read_text(encoding="utf-8")
+                            if _MARIMO_AUTORUN_MARKER not in html:
+                                index_html.write_text(
+                                    html.replace(
+                                        "</body>", _MARIMO_AUTORUN_SCRIPT + "</body>", 1
+                                    ),
+                                    encoding="utf-8",
+                                )
+                finally:
+                    _sys.stdout = _orig_stdout
+                    _sys.stderr = _orig_stderr
+
         # Copy lightbox assets (JS + CSS live with the extension but also need
         # to be available as top-level resources for the Lua filter's injection)
         lb_ext = self.assets_path / "_extensions" / "gd-lightbox"
@@ -382,11 +507,20 @@ class GreatDocs:
             js_files.append("skill-switcher.js")
         # termshow player is always available (lightweight, only activates if shortcode used)
         js_files.append("termshow.js")
+        # marimo islands (only when enabled)
+        if self._config.marimo_enabled:
+            js_files.append("marimo-islands.js")
         for js_file in js_files:
             js_src = self.assets_path / js_file
             if js_src.exists():
                 js_dst = self.project_path / js_file
                 shutil.copy2(js_src, js_dst)
+
+        # Copy marimo CSS when enabled
+        if self._config.marimo_enabled:
+            marimo_css_src = self.assets_path / "marimo-islands.css"
+            if marimo_css_src.exists():
+                shutil.copy2(marimo_css_src, self.project_path / "marimo-islands.css")
 
         # Create .gitignore for the great-docs directory
         gitignore_content = """# Great Docs build directory
@@ -11611,6 +11745,20 @@ anchor-sections: true
         if "termshow.css" not in config["project"]["resources"]:
             config["project"]["resources"].append("termshow.css")
 
+        # Add marimo islands resources when enabled
+        if self._config.marimo_enabled:
+            for marimo_res in ("marimo-islands.js", "marimo-islands.css"):
+                if marimo_res not in config["project"]["resources"]:
+                    config["project"]["resources"].append(marimo_res)
+            # Include notebooks directory so .py files are available to the shortcode
+            notebooks_dir = self.project_path / "notebooks"
+            if notebooks_dir.exists() and notebooks_dir.is_dir():
+                if "notebooks/**" not in config["project"]["resources"]:
+                    config["project"]["resources"].append("notebooks/**")
+            # Include pre-generated island HTML fragments
+            if "_marimo_islands/**" not in config["project"]["resources"]:
+                config["project"]["resources"].append("_marimo_islands/**")
+
         # Add gd-lightbox assets as resources
         for lb_res in (
             "gd-lightbox.js",
@@ -11783,6 +11931,48 @@ anchor-sections: true
             "termshow.css" in str(item) for item in config["format"]["html"]["include-in-header"]
         ):
             config["format"]["html"]["include-in-header"].append(tp_css_entry)
+
+        # Add marimo islands runtime (CDN JS/CSS) when enabled
+        if self._config.marimo_enabled:
+            from great_docs._marimo import get_islands_head_html
+
+            marimo_version = self._config.marimo_version
+            marimo_entry = {"text": get_islands_head_html(marimo_version)}
+            if not any(
+                "marimo-team/islands" in str(item)
+                for item in config["format"]["html"]["include-in-header"]
+            ):
+                config["format"]["html"]["include-in-header"].append(marimo_entry)
+
+            # Add marimo-islands.js (lazy-load + copy handler)
+            marimo_js_entry = {
+                "text": (
+                    "<script>document.head.appendChild(Object.assign("
+                    "document.createElement('script'),{src:(document.querySelector("
+                    "'meta[name=\"quarto:offset\"]')||{content:''}).content+"
+                    "'marimo-islands.js'}));</script>"
+                )
+            }
+            if not any(
+                "marimo-islands.js" in str(item)
+                for item in config["format"]["html"]["include-in-header"]
+            ):
+                config["format"]["html"]["include-in-header"].append(marimo_js_entry)
+
+            # Add marimo-islands.css
+            marimo_css_entry = {
+                "text": (
+                    "<script>document.head.appendChild(Object.assign("
+                    "document.createElement('link'),{rel:'stylesheet',"
+                    "href:(document.querySelector('meta[name=\"quarto:offset\"]')"
+                    "||{content:''}).content+'marimo-islands.css'}));</script>"
+                )
+            }
+            if not any(
+                "marimo-islands.css" in str(item)
+                for item in config["format"]["html"]["include-in-header"]
+            ):
+                config["format"]["html"]["include-in-header"].append(marimo_css_entry)
 
         # Add gd-lightbox CSS (uses quarto:offset for subdirectory-safe paths)
         lb_css_entry = {
