@@ -78,8 +78,8 @@ pip install "great-docs[marimo]"
 
 ### 2. Create a notebook
 
-Marimo notebooks are standard Python files. Create one in a `notebooks/` directory (or anywhere in
-your project):
+Marimo notebooks are standard Python files. Create a notebook in a `notebooks/` directory (or
+anywhere in your project):
 
 ```bash
 marimo edit --sandbox notebooks/my-demo.py
@@ -102,7 +102,7 @@ widgets. To make the code itself editable, add `mode="iframe"` (see below).
 ## Island Mode
 
 Island mode is the default. The notebook's cells render **inline in the page**, in the natural flow
-of your prose — outputs and `mo.ui` widgets are live, while the code is shown for reference only.
+of your prose (outputs and `mo.ui()` widgets are live, while the code is shown for reference only).
 It's the lightweight way to drop a live result into a paragraph.
 
 ```markdown
@@ -110,22 +110,22 @@ It's the lightweight way to drop a live result into a paragraph.
 ```
 
 Here's a small notebook embedded this way. Drag the **sliders** and watch the summary, bar chart,
-and table all recompute together — the dependent cells re-run reactively, with no "Run" button to
+and table all recompute together. The dependent cells re-run reactively, with no "Run" button to
 press:
 
 {{< marimo file="notebooks/reactive-intro.py" >}}
 
 The Pyodide runtime loads lazily (only when the notebook scrolls into view) so it doesn't slow down
-initial page load. This example uses only marimo (no third-party packages), so the kernel boots
-quickly and reliably — a good default for a live demo (see
+initial page load. The following example uses only marimo (no third-party packages), so the kernel
+boots quickly and reliably. It's a good default for a live demo (see
 [Writing WASM-compatible notebooks](#writing-wasm-compatible-notebooks)).
 
 ::: {.callout-note}
 ## Island-mode code is read-only
 
-The code above runs, but editing it won't re-execute — island mode keeps the *outputs* interactive
-while showing the code for reference. When you want readers to edit and re-run the code itself, reach
-for [iframe mode](#iframe-mode).
+The code above runs, but editing it won't re-execute (island mode keeps the *outputs* interactive
+while showing the code for reference). When you want readers to edit and re-run the code itself,
+use [iframe mode](#iframe-mode) instead.
 :::
 
 ::: {.callout-important}
@@ -133,51 +133,47 @@ for [iframe mode](#iframe-mode).
 
 All island embeds on a page share a **single** Pyodide kernel, and marimo requires every variable to
 be defined in exactly one cell across that kernel. Two island notebooks on the same page therefore
-collide and break each other's reactivity. Embed at most one island notebook per page — if you need
-several live notebooks together, use [iframe mode](#iframe-mode), which isolates each in its own
-kernel.
+collide and break each other's reactivity. Aim to embed at most one island notebook per page. if you
+need several live notebooks together, use [iframe mode](#iframe-mode), which isolates each notebook
+in its own kernel.
 :::
 
 ### Outputs only
 
-Pass `show-code="false"` to hide the source and show only the rendered outputs — handy for
+Pass `show-code="false"` to hide the source and show only the rendered outputs. This is useful for
 dashboard- or app-style presentations where the code is secondary:
 
 ```markdown
 {{{{< marimo file="notebooks/reactive-intro.py" show-code="false" >}}}}
 ```
 
-(We don't render a second live example here — that would be a second island notebook on this page,
-which, per the note above, would collide with the one already embedded.)
-
 ## Iframe Mode
 
 Iframe mode embeds the notebook as a **fully editable, reactive** environment in a sandboxed iframe.
-This is the mode to use when experimenting with the *code* is the point, not just changing inputs —
-and, because each iframe is its own isolated kernel, it's also how you put several live notebooks on
-one page.
+This is the mode to use when you want to encourage experimentation with the code. Because each
+iframe is its own isolated kernel, it's also the preferred method for placing several live notebooks
+on one page.
 
 ```markdown
 {{{{< marimo file="notebooks/reactive-intro.py" mode="iframe" height="600px" >}}}}
 ```
 
 The notebook auto-runs on load, so readers see live outputs immediately, and **every cell is
-editable**. Edit a cell and press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to re-run it — dependent cells
-update automatically. Here's the same notebook from above, now fully editable — try changing the
-chart-drawing code or the slider ranges:
+editable**. Edit a cell and press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to re-run it (dependent cells
+will update automatically). Here's the same notebook from above. It's now fully editable so try
+changing the chart-drawing code or the slider ranges:
 
 {{< marimo file="notebooks/reactive-intro.py" mode="iframe" height="600px" >}}
 
 By default the editor **chrome is trimmed** (marimo's sidebar and status bar are hidden) to keep the
-embed clean; pass `chrome="full"` for the complete editor interface. The iframe also **auto-sizes to
-fit the notebook** — it grows to hold all your cells and re-adjusts when reactive outputs change
-size, so there's no scrollbar-within-a-scrollbar. `height` just sets the initial height while the
-notebook boots.
+embed clean. Use `chrome="full"` if you'd like to provide the complete editor interface. The iframe
+also auto-sizes to fit the notebook, so it grows to hold all your cells and re-adjusts when reactive
+outputs change size. The `height` parameter sets the initial height while the notebook loads.
 
 ## Shortcode Options
 
-The `{{{< marimo >}}}` shortcode accepts several options that control how the notebook is
-rendered and how readers interact with it.
+The `{{{< marimo >}}}` shortcode accepts several options that control how the notebook is rendered
+and how readers interact with it.
 
 | Option | Default | Applies to | Description |
 |--------|---------|------------|-------------|
@@ -189,15 +185,15 @@ rendered and how readers interact with it.
 | `height` | `"600px"` | iframe | Initial height. The iframe then auto-sizes to fit the notebook |
 | `chrome` | `"trimmed"` | iframe | `"trimmed"` hides marimo's editor sidebar/status bar while `"full"` shows the complete editor |
 
-These options combine freely. For instance, you might use `show-code="false"` with `theme="dark"`
-for a polished island-mode demo, or `mode="iframe"` with a custom `height` for a full-featured
-exploratory tool.
+You can combine these options to suit your needs. For instance, you might use `show-code="false"`
+with `theme="dark"` for a polished island-mode demo, or `mode="iframe"` with a custom `height` for a
+full-featured exploratory tool.
 
 ## Writing WASM-Compatible Notebooks
 
-Because notebooks run in the browser via Pyodide, there are some differences from a standard
-Python environment. Not all packages work in WebAssembly, and memory is limited. The guidelines
-below will help you author notebooks that run reliably for your readers.
+Because notebooks run in the browser via Pyodide, there are some differences from a standard Python
+environment. Not all packages work in WebAssembly, and memory is limited. The guidelines below will
+help you author notebooks that run reliably for your readers.
 
 ### Supported packages
 
@@ -211,6 +207,8 @@ ecosystem is moving toward publishing emscripten/WASM wheels under
 [PEP 783](https://peps.python.org/pep-0783/), so these pins should become unnecessary over time.
 
 ### Best practices
+
+The following tips may be useful when setting up a Marimo notebook:
 
 1. **Use `--sandbox`** when authoring: `marimo edit --sandbox notebook.py`
 2. **Put `import marimo as mo` in its own cell**: this speeds up initial rendering
@@ -238,8 +236,8 @@ import marimo as mo
 path = mo.notebook_location() / "public" / "sample-data.csv"
 ```
 
-Following these guidelines ensures your notebooks work consistently across local development
-and the browser-based WASM environment your readers will use.
+Following these guidelines ensures your notebooks work consistently across local development and the
+browser-based WASM environment your readers will use.
 
 ## Copy Notebook
 
@@ -254,13 +252,13 @@ pip install marimo
 marimo edit reactive-intro.py
 ```
 
-The button copies the complete notebook source including the PEP 723 dependency metadata,
-so `marimo edit --sandbox` will auto-install all required packages.
+The button copies the complete notebook source including the PEP 723 dependency metadata, so
+`marimo edit --sandbox` will auto-install all required packages.
 
 ## Performance Notes
 
-Interactive notebooks add weight to a page, but several optimizations keep the experience
-smooth for readers. Here's what to expect:
+Interactive notebooks add weight to a page, but several optimizations keep the experience smooth for
+readers. Here's what to expect:
 
 - **Pyodide weighs ~15 MB** on first load (cached by the browser afterward)
 - **Lazy loading**: in island mode the WASM kernel only boots when the notebook scrolls into view
@@ -268,14 +266,14 @@ smooth for readers. Here's what to expect:
 - **Iframe mode boots its own kernel** per embed, since each iframe is a self-contained notebook
 - **First execution takes 3–5 seconds** while packages install whereas subsequent runs are fast
 
-For pages where instant rendering matters, consider providing a static screenshot or
-pre-rendered output above the interactive notebook as a visual anchor while Pyodide loads.
+For pages where instant rendering matters, consider providing a static screenshot or pre-rendered
+output above the interactive notebook as a visual anchor while Pyodide loads.
 
 ## Limitations
 
-While Marimo notebooks offer a powerful interactive experience, there are some constraints
-imposed by the browser-based execution environment. The table below summarizes the key
-limitations and suggested workarounds.
+While Marimo notebooks offer a powerful interactive experience, there are some constraints imposed
+by the browser-based execution environment. The table below summarizes the key limitations and
+suggested workarounds.
 
 | Limitation | Workaround |
 |------------|------------|
@@ -287,25 +285,25 @@ limitations and suggested workarounds.
 | Island-mode code is read-only | Use `mode="iframe"` when readers should edit the code |
 | One island notebook per page (shared kernel) | Embed at most one island notebook per page; use `mode="iframe"` for multiple live notebooks |
 
-For most documentation use cases (small datasets, pure-Python packages, and focused
-examples) these limitations won't be an issue. Design your notebooks around concise,
-self-contained demonstrations and the experience will be seamless.
+For most documentation use cases (small datasets, pure-Python packages, and focused examples) these
+limitations won't be an issue. Design your notebooks around concise, self-contained demonstrations
+and the experience will be seamless.
 
 ## Next Steps
 
-Now that you have interactive notebooks embedded in your documentation, here are some ways to
-build on it:
+Now that you have interactive notebooks embedded in your documentation, here are some ways to build
+on it:
 
 - **[Marimo docs](https://docs.marimo.io/)**: Learn about reactive programming, UI elements
-  (`mo.ui.slider`, `mo.ui.dropdown`), and layout tools to make your notebooks more interactive.
+(`mo.ui.slider`, `mo.ui.dropdown`), and layout tools to make your notebooks more interactive.
 - **Add interactivity**: Use `mo.ui` widgets to let readers explore data with sliders, dropdowns,
-  and toggles. All reactive by default, so outputs update the moment a value changes.
-- **Let readers edit the code**: Reach for `mode="iframe"` on the examples where rewriting the code
-  is the point (you get a fully editable, reactive notebook right in the page).
-- **Check WASM compatibility**: Run `marimo export html-wasm notebook.py -o test/` locally to
-  verify your notebook works in the browser before publishing.
+and toggles. All reactive by default, so outputs update the moment a value changes.
+- **Let readers edit the code**: Use `mode="iframe"` on the examples where experimenting the code
+is emphasized (you get a fully editable, reactive notebook right in the page).
+- **Check WASM compatibility**: Run `marimo export html-wasm notebook.py -o test/` locally to verify
+your notebook works in the browser before publishing.
 - **[Marimo gallery](https://marimo.io/gallery)**: Browse examples of dashboards, explorable
-  explanations, and interactive tutorials you can adapt for your own documentation.
+explanations, and interactive tutorials you can adapt for your own documentation.
 
 With Marimo notebooks, your documentation goes beyond static code examples. Readers can experiment
 with your package directly in the browser, building intuition through hands-on exploration.
