@@ -438,19 +438,10 @@ def _generate_preview_html(editor_data: dict, script_data: dict) -> str:
         tp_dir.mkdir(parents=True)
         generate_manifest(recording, script, output_dir=str(tp_dir))
 
-        # Copy player assets
-        assets_dir = Path(__file__).parent.parent / "assets"
-        shutil.copy2(assets_dir / "termshow.js", tmp_dir / "termshow.js")
-        shutil.copy2(assets_dir / "termshow.css", tmp_dir / "termshow.css")
-
-        # Copy JetBrains Mono woff2 fonts (referenced by termshow.css)
-        for woff in assets_dir.glob("JetBrainsMono-*.woff2"):
-            shutil.copy2(woff, tmp_dir / woff.name)
-
-        # Copy the Lua extension
+        # Copy the Lua extension (includes CSS, JS, and fonts)
         ext_dir = tmp_dir / "_extensions" / "termshow"
         ext_dir.mkdir(parents=True)
-        ext_src = assets_dir / "_extensions" / "termshow"
+        ext_src = Path(__file__).parent.parent / "assets" / "_extensions" / "termshow"
         for f in ext_src.iterdir():
             shutil.copy2(f, ext_dir / f.name)
 
@@ -460,20 +451,13 @@ def _generate_preview_html(editor_data: dict, script_data: dict) -> str:
             "project:\n"
             "  type: website\n"
             "  resources:\n"
-            "    - termshow.js\n"
-            "    - termshow.css\n"
-            "    - '*.woff2'\n"
             "    - termshow/**\n"
             "format:\n"
             "  html:\n"
             "    theme: darkly\n"
             "    minimal: true\n"
             "    embed-resources: true\n"
-            "    toc: false\n"
-            "    include-in-header:\n"
-            '      - text: \'<link rel="stylesheet" href="termshow.css">\'\n'
-            "    include-after-body:\n"
-            "      - text: '<script src=\"termshow.js\"></script>'\n",
+            "    toc: false\n",
             encoding="utf-8",
         )
 
