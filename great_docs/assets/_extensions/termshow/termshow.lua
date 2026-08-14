@@ -46,8 +46,27 @@ local function read_project_file(rel_path)
     return content
 end
 
+--- Register CSS/JS/font assets as a Quarto HTML dependency (once per document).
+local dependency_registered = false
+local function ensure_dependency()
+    if dependency_registered then return end
+    dependency_registered = true
+
+    quarto.doc.add_html_dependency({
+        name = "termshow-player",
+        version = "1.0.0",
+        stylesheets = { "termshow.css" },
+        scripts = { "termshow.js" },
+    })
+end
+
 return {
     ["termshow"] = function(args, kwargs, meta)
+        -- Ensure player assets are included in the page
+        if quarto.doc and quarto.doc.add_html_dependency then
+            ensure_dependency()
+        end
+
         -- Get file path (required)
         local file = kwarg_str(kwargs, "file")
         if file == "" and #args > 0 then
@@ -129,7 +148,7 @@ return {
             table.insert(parts, '</script>')
         end
 
-        -- Poster image (visible before JS inits, works with file://)
+        -- Poster image (visible before JS loads, works with file://)
         table.insert(parts, '\n  <img src="' .. escape_attr(poster_path) .. '" ')
         table.insert(parts, 'alt="Terminal recording: ' .. escape_attr(basename) .. '" ')
         table.insert(parts, 'class="gd-termshow-poster" loading="lazy"/>')
