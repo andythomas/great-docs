@@ -1172,6 +1172,84 @@ desktop, tablet, and mobile widths.
 The Termshow Editor saves only to the `.termshow.yml` script file. The raw recording is never
 modified, so you can always start fresh by deleting the script and re-editing.
 
+## Using Termshow in Any Quarto Project
+
+The Termshow player is available as a **standalone Quarto extension** that works outside of Great
+Docs. This means you can embed terminal recordings in any Quarto document (including revealjs
+presentations, standalone websites, and blogs) without building a full Great Docs site.
+
+### Install the extension
+
+Install the Termshow extension directly from the Great Docs repository:
+
+```bash
+quarto add posit-dev/great-docs/extensions/termshow
+```
+
+This installs the player shortcode, styles, JavaScript runtime, and fonts into your project's
+`_extensions/` directory. No other Great Docs components are required.
+
+### Record and render
+
+You still need the Great Docs CLI for recording and rendering terminal sessions:
+
+```bash
+pip install great-docs
+```
+
+Record a session as usual:
+
+```bash
+great-docs termshow record my-demo.termshow
+```
+
+Then optionally edit the companion `.termshow.yml` script (either by hand or with the Termshow
+Editor via `great-docs termshow edit my-demo.termshow`) to add chapters, annotations, and cuts.
+
+Since there is no `great-docs build` step in a standalone project, you need to explicitly render
+the recording into SVG frames:
+
+```bash
+great-docs termshow render my-demo.termshow
+```
+
+This produces a `termshow/<name>/` directory containing SVG keyframes and a `manifest.json`. Move or
+copy this directory into your Quarto project root if it isn't there already.
+
+### Register termshow output as a resource
+
+Add the rendered output to your project's resources so Quarto includes it in the build output.
+In your `_quarto.yml`:
+
+```yaml
+project:
+  resources:
+    - termshow/**
+```
+
+### Embed with the shortcode
+
+Use the same `{{< termshow >}}` shortcode as in a Great Docs site:
+
+```{shortcodes="false"}
+{{< termshow file="my-demo" autoplay="true" loop="true" >}}
+```
+
+All shortcode options (`autoplay`, `loop`, `speed`, `pause_on_chapters`, `controls`, `theme`) work
+identically. The extension handles CSS, JavaScript, and font injection automatically via Quarto's
+dependency system.
+
+### Supported formats
+
+The standalone extension works with any Quarto HTML-based format:
+
+- **Websites** (`type: website`)
+- **RevealJS presentations** (`format: revealjs`)
+- **Single HTML pages** (`format: html`)
+- **Books** (`type: book`)
+
+The player adapts to available width and works with both light and dark themes.
+
 ## Next Steps
 
 Terminal recordings bring CLI workflows to life with crisp, interactive playback directly in your
