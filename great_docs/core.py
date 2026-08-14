@@ -321,20 +321,6 @@ class GreatDocs:
         scss_src = self.assets_path / "great-docs.scss"
         shutil.copy2(scss_src, self.project_path / "great-docs.scss")
 
-        # Copy termshow CSS
-        tp_css_src = self.assets_path / "termshow.css"
-        if tp_css_src.exists():
-            shutil.copy2(tp_css_src, self.project_path / "termshow.css")
-
-        # Copy termshow font subsets (JetBrains Mono for box-drawing fidelity)
-        for font_file in (
-            "JetBrainsMono-Regular.subset.woff2",
-            "JetBrainsMono-Bold.subset.woff2",
-        ):
-            font_src = self.assets_path / font_file
-            if font_src.exists():
-                shutil.copy2(font_src, self.project_path / font_file)
-
         # Copy the evolution demo data file
         demo_json_src = self.assets_path / "api-evolution-demo.json"
         if demo_json_src.exists():
@@ -505,8 +491,6 @@ class GreatDocs:
             js_files.append("starfield.js")
         if self._config.skill_skills and len(self._config.skill_skills) > 1:
             js_files.append("skill-switcher.js")
-        # termshow player is always available (lightweight, only activates if shortcode used)
-        js_files.append("termshow.js")
         # marimo islands (only when enabled)
         if self._config.marimo_enabled:
             js_files.append("marimo-islands.js")
@@ -11738,12 +11722,9 @@ anchor-sections: true
             js_resource_files.append("starfield.js")
         if self._config.skill_skills and len(self._config.skill_skills) > 1:
             js_resource_files.append("skill-switcher.js")
-        js_resource_files.append("termshow.js")
         for js_file in js_resource_files:
             if js_file not in config["project"]["resources"]:
                 config["project"]["resources"].append(js_file)
-        if "termshow.css" not in config["project"]["resources"]:
-            config["project"]["resources"].append("termshow.css")
 
         # Add marimo islands resources when enabled
         if self._config.marimo_enabled:
@@ -11917,20 +11898,6 @@ anchor-sections: true
             )
             if not has_fa:
                 config["format"]["html"]["include-in-header"].append(fa_entry)
-
-        # Add termshow CSS
-        tp_css_entry = {
-            "text": (
-                "<script>document.head.appendChild(Object.assign("
-                "document.createElement('link'),{rel:'stylesheet',"
-                "href:(document.querySelector('meta[name=\"quarto:offset\"]')"
-                "||{content:''}).content+'termshow.css'}));</script>"
-            )
-        }
-        if not any(
-            "termshow.css" in str(item) for item in config["format"]["html"]["include-in-header"]
-        ):
-            config["format"]["html"]["include-in-header"].append(tp_css_entry)
 
         # Add marimo islands runtime (CDN JS/CSS) when enabled
         if self._config.marimo_enabled:
@@ -12689,7 +12656,7 @@ anchor-sections: true
         # Use an inline loader that resolves the path against the site root via
         # Quarto's quarto:offset meta tag (always present). Bare src= paths and
         # canonical-URL stripping both 404 on nested pages; quarto:offset is the
-        # robust pattern shared with termshow.js, on-this-page.js, etc.
+        # robust pattern shared with on-this-page.js, etc.
         color_swatch_entry = {
             "text": (
                 "<script>(function(){var s=document.createElement('script');"
@@ -12724,7 +12691,7 @@ anchor-sections: true
         # Use an inline loader that resolves the path against the site root via
         # Quarto's quarto:offset meta tag (always present). A bare src= path 404s
         # on nested pages; quarto:offset is the robust pattern shared with
-        # termshow.js, on-this-page.js, etc.
+        # on-this-page.js, etc.
         video_embed_script_entry = {
             "text": (
                 "<script>(function(){var s=document.createElement('script');"
@@ -12749,21 +12716,6 @@ anchor-sections: true
         )
         if not has_video_embed:
             config["format"]["html"]["include-after-body"].append(video_embed_script_entry)
-
-        # Add termshow script (always enabled — only activates if .gd-termshow elements exist)
-        term_player_script_entry = {
-            "text": (
-                "<script>(function(){var s=document.createElement('script');"
-                "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
-                "s.src=(m?m.content:'')+'termshow.js';"
-                "document.body.appendChild(s);})();</script>"
-            )
-        }
-        has_term_player = any(
-            "termshow.js" in str(item) for item in config["format"]["html"]["include-after-body"]
-        )
-        if not has_term_player:
-            config["format"]["html"]["include-after-body"].append(term_player_script_entry)
 
         # Add navbar widget collector (always enabled — consolidates dark-mode,
         # keyboard, search, and GitHub widgets into #gd-navbar-widgets)
