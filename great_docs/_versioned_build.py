@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from great_docs._subprocess import TEXT_MODE_KWARGS
+from great_docs._utils import QUARTO_YML_HEADER
 from great_docs._versioning import (
     VersionEntry,
     build_version_map,
@@ -1323,6 +1324,7 @@ def _rewrite_quarto_yml_for_version(
         header_list.append({"text": canonical_script})
 
     with open(quarto_yml, "w") as f:
+        f.write(QUARTO_YML_HEADER)
         write_yaml(config, f)
 
 
