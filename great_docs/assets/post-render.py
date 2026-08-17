@@ -1802,58 +1802,6 @@ def translate_renderer_headings(html_content):
     return html_content
 
 
-def fix_doctest_blockquotes(html_content):
-    """
-    Convert nested blockquotes from doctest `>>>` lines into code blocks.
-
-    When the renderer produces an Example section with raw `>>>` lines in the `.qmd` file,
-    Quarto/Pandoc interprets the leading `>` characters as Markdown blockquote markers.  A `>>>`
-    line becomes triple-nested `<blockquote>` elements:
-
-    ```html
-    <blockquote class="blockquote">
-    <blockquote class="blockquote">
-    <blockquote class="blockquote">
-    <p>func(x) 'result'</p>
-    </blockquote>
-    </blockquote>
-    </blockquote>
-    ```
-
-    This function detects that pattern inside Example/Examples doc-sections and replaces it with a
-    proper `<pre><code>` block so the content renders in monospace as code.
-    """
-    # Match one or more triple-nested blockquote clusters inside an
-    # Example or Examples doc-section.
-    _SECTION_RE = re.compile(
-        r'(<section\s[^>]*class="[^"]*doc-section-examples?[^"]*"[^>]*>\s*'
-        r"<h1[^>]*>.*?</h1>\s*)"
-        r"((?:\s*<blockquote\s[^>]*>\s*<blockquote\s[^>]*>\s*<blockquote\s[^>]*>"
-        r"\s*<p>.*?</p>\s*</blockquote>\s*</blockquote>\s*</blockquote>\s*)+)",
-        re.DOTALL,
-    )
-
-    # Extract individual <p> content from triple-nested blockquotes
-    _BQ_TEXT_RE = re.compile(
-        r"<blockquote\s[^>]*>\s*<blockquote\s[^>]*>\s*<blockquote\s[^>]*>"
-        r"\s*<p>(.*?)</p>\s*</blockquote>\s*</blockquote>\s*</blockquote>",
-        re.DOTALL,
-    )
-
-    def _replace_section(m):
-        header = m.group(1)
-        bq_block = m.group(2)
-        lines = []
-        for bq in _BQ_TEXT_RE.finditer(bq_block):
-            text = bq.group(1).strip()
-            # Reconstruct the doctest line with >>> prefix
-            lines.append(f"&gt;&gt;&gt; {text}")
-        code = "\n".join(lines)
-        return f"{header}<pre><code>{code}</code></pre>\n"
-
-    return _SECTION_RE.sub(_replace_section, html_content)
-
-
 def fix_plain_doctest_code_blocks(html_content):
     """
     Convert plain `<pre><code>` blocks containing doctest `>>>` lines into properly highlighted
@@ -2103,9 +2051,6 @@ for html_file in html_files:
 
     # Translate renderer-rendered headings and Usage/Source labels
     content = translate_renderer_headings(content)
-
-    # Fix doctest >>> lines that Quarto rendered as nested blockquotes
-    content = fix_doctest_blockquotes(content)
 
     # Fix plain <pre><code> blocks containing >>> doctest lines
     # (consecutive examples where only the first got a proper code fence)

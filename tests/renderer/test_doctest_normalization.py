@@ -1,7 +1,11 @@
+import textwrap
+
 import griffe as gf
 import pytest
 
+from great_docs._apiref._tools import _render
 from great_docs._builtin.normalization._doctest import normalize_doctests
+from great_docs.hooks._object_resolved import emit_object_resolved
 
 
 def _function(text: str, parser: str) -> gf.Function:
@@ -52,3 +56,132 @@ def test_doctest_normalization_registers_on_import():
     from great_docs.hooks import _object_resolved
 
     assert normalize_doctests in _object_resolved.REGISTRY
+
+
+def _render_with_hooks(source: str, name: str) -> str:
+    """Render the named object of a source snippet to qmd, with the hooks applied"""
+    with gf.temporary_visited_package(
+        "package", {"__init__.py": textwrap.dedent(source)}, docstring_parser="numpy"
+    ) as package:
+        obj = emit_object_resolved(package[name])
+        assert obj is not None
+        for member in obj.members.values():
+            _ = emit_object_resolved(member)
+        return _render(obj)
+
+
+def _unfenced_prompts(qmd: str) -> list[str]:
+    """Return the doctest prompt lines of `qmd` that fall outside a code fence"""
+    outside: list[str] = []
+    in_fence = False
+    for line in qmd.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+        elif stripped.startswith(">>>") and not in_fence:
+            outside.append(line)
+    return outside
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        (
+            "prose_then_code",
+            '''
+            def prose_then_code():
+                """
+                Do a thing.
+
+                Examples
+                --------
+                Some explanatory prose.
+
+                >>> prose_then_code()
+                3
+                """
+            ''',
+        ),
+        (
+            "two_groups",
+            '''
+            def two_groups():
+                """
+                Do two things.
+
+                Examples
+                --------
+                >>> two_groups()
+                1
+
+                >>> two_groups()
+                2
+                """
+            ''',
+        ),
+        (
+            "no_section",
+            '''
+            def no_section():
+                """
+                Do an unsectioned thing.
+
+                >>> no_section()
+                3
+                """
+            ''',
+        ),
+        (
+            "google_header",
+            '''
+            def google_header():
+                """
+                Do a thing.
+
+                Example:
+                    >>> google_header()
+                    3
+                """
+            ''',
+        ),
+        (
+            "Widget",
+            '''
+            class Widget:
+                """
+                A widget.
+
+                Examples
+                --------
+                >>> Widget()
+                <Widget>
+                """
+
+                def resize(self):
+                    """
+                    Resize the widget.
+
+                    Examples
+                    --------
+                    >>> for i in range(2):
+                    ...     print(i)
+                    0
+                    1
+                    """
+            ''',
+        ),
+    ],
+)
+def test_every_doctest_prompt_reaches_the_qmd_fenced(name: str, source: str):
+    """
+    No doctest prompt survives into the qmd outside a code fence
+
+    Pandoc reads a leading `>` as a blockquote marker, so an unfenced `>>>`
+    renders as three nested blockquotes instead of code. The prompts must be
+    fenced whatever their shape: inside an `Examples` section or loose in the
+    subject, one group or several, on a class or on its members.
+    """
+    qmd = _render_with_hooks(source, name)
+
+    assert ">>>" in qmd, "the sample rendered without its doctest at all"
+    assert _unfenced_prompts(qmd) == []
