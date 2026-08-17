@@ -598,19 +598,32 @@ The version map (`_version_map.json`) is a JSON manifest listing all versions, t
 
 Because each version is rendered independently, the build is embarrassingly parallel (there are no cross-version dependencies during rendering). A project with five versions takes only slightly longer than a single-version build on a multi-core machine.
 
-## Build Directories
+## Build directories
 
-Versioned builds create two directories in your project root:
+Versioned builds work in these directories:
 
-- **`_great_docs_build/`**: temporary staging directory where per-version source trees are prepared and rendered. Automatically cleaned and recreated at the start of every build. No manual maintenance needed.
-- **`.great-docs-cache/`**: persistent cache for API introspection results from Strategy B (`git_ref`). Stores one JSON snapshot per version so subsequent builds skip the expensive checkout-and-introspect step. You can safely delete this directory at any time to force a fresh introspection (the next build will just take longer).
+- **`great-docs/`** stores the temporary Quarto project for the latest version and the assembled site in `great-docs/_site/`. Great Docs recreates the directory at the start of every build.
+- **`great-docs-<tag>/`** stores one temporary, self-contained Quarto project for each historical version. Great Docs creates these directories beside `great-docs/`.
+- **`.great-docs-cache/`** caches one API snapshot for each version that uses Strategy B (`git_ref`). Delete the directory to repeat API introspection during the next build.
 
-Both directories should be added to your `.gitignore`. Great Docs does this automatically when you run `great-docs init`, but if you set up versioning on an existing project you can add them manually:
+Every version's Quarto project therefore sits one level below your project root, whether or not you configure `versions:`. A relative path in page content resolves to the same file either way.
+
+A project configured with a single version, marked `latest: true`, creates no `great-docs-<tag>/` directories at all.
+
+Add these to your `.gitignore`. Great Docs does this automatically when you run `great-docs init`, but if you set up versioning on an existing project you can add them manually:
 
 ```{.text filename=".gitignore"}
-_great_docs_build/
+great-docs/
+great-docs-*/
+.great-docs-build/
 .great-docs-cache/
+.great-docs/
 ```
+
+The generated ignore block also retains `.great-docs-build/` for older build layouts.
+`.great-docs/` stores snapshots created by `great-docs api-snapshot`.
+
+Great Docs deletes only build directories whose `_quarto.yml` contains its generated marker. It preserves other `great-docs-*/` directories and prints a warning. If an unmarked directory would receive a configured version, the build stops and asks you to move or delete it.
 
 ## Next Steps
 
