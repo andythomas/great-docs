@@ -1802,101 +1802,6 @@ def translate_renderer_headings(html_content):
     return html_content
 
 
-def fix_plain_doctest_code_blocks(html_content):
-    """
-    Convert plain `<pre><code>` blocks containing doctest `>>>` lines into properly highlighted
-    Python code blocks.
-
-    When the renderer renders consecutive doctest examples separated by blank lines, only the first
-    block gets a proper ```` ```python ```` fence. Subsequent blocks become 4-space-indented text in
-    the `.qmd` file, which Quarto renders as plain ``<pre><code>`` without syntax highlighting.
-
-    This function finds those plain code blocks, re-highlights them with Pygments, and wraps them in
-    the same `sourceCode python` structure that Quarto uses for fenced code blocks.
-    """
-    # Match <pre><code> blocks that contain &gt;&gt;&gt; (i.e. >>>) but
-    # are NOT already inside a sourceCode div.  We look for <pre><code>
-    # (no class) immediately, which distinguishes them from Quarto's
-    # <pre class="sourceCode ..."><code class="sourceCode ..."> blocks.
-    _PLAIN_DOCTEST_RE = re.compile(
-        r"<pre><code>(.*?)</code></pre>",
-        re.DOTALL,
-    )
-
-    # Track a counter for generating unique cb IDs
-    _cb_counter = [0]
-
-    def _find_max_cb_id(html):
-        """Find the highest existing cb ID to avoid collisions."""
-        ids = re.findall(r'id="cb(\d+)"', html)
-        return max(int(i) for i in ids) if ids else 0
-
-    _cb_counter[0] = _find_max_cb_id(html_content)
-
-    def _replace_plain_doctest(m):
-        code_html = m.group(1)
-
-        # Only process blocks that contain doctest >>> markers
-        if "&gt;&gt;&gt;" not in code_html:
-            return m.group(0)
-
-        # Decode HTML entities to get plain text for Pygments
-        plain_text = code_html
-        plain_text = plain_text.replace("&lt;", "<")
-        plain_text = plain_text.replace("&gt;", ">")
-        plain_text = plain_text.replace("&amp;", "&")
-        plain_text = plain_text.replace("&quot;", '"')
-        plain_text = plain_text.replace("&#39;", "'")
-        # Strip any existing HTML tags (unlikely but safe)
-        plain_text = re.sub(r"<[^>]+>", "", plain_text)
-
-        # Highlight with Pygments
-        lexer = PythonLexer()
-        formatter = HtmlFormatter(nowrap=True, classprefix="")
-        highlighted = highlight(plain_text, lexer, formatter)
-
-        # Map Pygments CSS classes to Quarto CSS classes
-        for pg_class, quarto_class in PYGMENTS_TO_QUARTO_CLASS.items():
-            if quarto_class:
-                highlighted = highlighted.replace(f'class="{pg_class}"', f'class="{quarto_class}"')
-            else:
-                highlighted = re.sub(
-                    rf'<span class="{pg_class}">([^<]*)</span>',
-                    r"\1",
-                    highlighted,
-                )
-
-        # Assign a unique cb ID
-        _cb_counter[0] += 1
-        cb_id = f"cb{_cb_counter[0]}"
-
-        # Wrap each line in a span with proper id for line linking
-        lines = highlighted.rstrip("\n").split("\n")
-        wrapped_lines = []
-        for j, line in enumerate(lines, 1):
-            span_id = f"{cb_id}-{j}"
-            wrapped_lines.append(
-                f'<span id="{span_id}">'
-                f'<a href="#{span_id}" aria-hidden="true" tabindex="-1"></a>'
-                f"{line}</span>"
-            )
-        highlighted = "\n".join(wrapped_lines)
-
-        return (
-            f'<div class="code-copy-outer-scaffold">'
-            f'<nav class="gd-code-nav">'
-            f'<button class="gd-code-copy" title="Copy to clipboard"></button>'
-            f"</nav>"
-            f'<div class="sourceCode" id="{cb_id}">'
-            f'<pre class="sourceCode python">'
-            f'<code class="sourceCode python">'
-            f"{highlighted}"
-            f"</code></pre></div></div>"
-        )
-
-    return _PLAIN_DOCTEST_RE.sub(_replace_plain_doctest, html_content)
-
-
 def translate_rst_references(html_content):
     """
     Convert RST citation references into a styled numbered list.
@@ -2051,10 +1956,6 @@ for html_file in html_files:
 
     # Translate renderer-rendered headings and Usage/Source labels
     content = translate_renderer_headings(content)
-
-    # Fix plain <pre><code> blocks containing >>> doctest lines
-    # (consecutive examples where only the first got a proper code fence)
-    content = fix_plain_doctest_code_blocks(content)
 
     # Translate RST citation references (.. [1] ...)
     content = translate_rst_references(content)

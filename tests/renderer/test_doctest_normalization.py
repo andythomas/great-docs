@@ -58,10 +58,10 @@ def test_doctest_normalization_registers_on_import():
     assert normalize_doctests in _object_resolved.REGISTRY
 
 
-def _render_with_hooks(source: str, name: str) -> str:
+def _render_with_hooks(source: str, name: str, parser: str = "numpy") -> str:
     """Render the named object of a source snippet to qmd, with the hooks applied"""
     with gf.temporary_visited_package(
-        "package", {"__init__.py": textwrap.dedent(source)}, docstring_parser="numpy"
+        "package", {"__init__.py": textwrap.dedent(source)}, docstring_parser=parser
     ) as package:
         obj = emit_object_resolved(package[name])
         assert obj is not None
@@ -145,6 +145,57 @@ def _unfenced_prompts(qmd: str) -> list[str]:
             ''',
         ),
         (
+            "rst_literal",
+            '''
+            def rst_literal():
+                """
+                Do a thing.
+
+                Examples
+                --------
+                ::
+
+                    >>> rst_literal()
+                    3
+                """
+            ''',
+        ),
+        (
+            "indented_groups",
+            '''
+            def indented_groups():
+                """
+                Do two things.
+
+                Examples
+                --------
+                Indented block:
+
+                    >>> indented_groups()
+                    1
+
+                    >>> indented_groups()
+                    2
+                """
+            ''',
+        ),
+        (
+            "nested_in_list",
+            '''
+            def nested_in_list():
+                """
+                Do a listed thing.
+
+                Examples
+                --------
+                - First bullet:
+
+                  >>> nested_in_list()
+                  1
+                """
+            ''',
+        ),
+        (
             "Widget",
             '''
             class Widget:
@@ -176,12 +227,70 @@ def test_every_doctest_prompt_reaches_the_qmd_fenced(name: str, source: str):
     """
     No doctest prompt survives into the qmd outside a code fence
 
-    Pandoc reads a leading `>` as a blockquote marker, so an unfenced `>>>`
-    renders as three nested blockquotes instead of code. The prompts must be
+    An unfenced prompt reaches Quarto as markdown, where a leading `>` is a
+    blockquote marker and the block is left unhighlighted. The prompts must be
     fenced whatever their shape: inside an `Examples` section or loose in the
-    subject, one group or several, on a class or on its members.
+    subject, one group or several, indented under a literal block, a paragraph
+    or a list item, and on a class or on its members.
     """
     qmd = _render_with_hooks(source, name)
+
+    assert ">>>" in qmd, "the sample rendered without its doctest at all"
+    assert _unfenced_prompts(qmd) == []
+
+
+@pytest.mark.parametrize(
+    ("parser", "docstring"),
+    [
+        (
+            "google",
+            """
+            Do a thing.
+
+            Args:
+                value: The value.
+
+            Examples:
+                >>> convert(1)
+                1
+
+                >>> convert(2)
+                2
+            """,
+        ),
+        (
+            "sphinx",
+            """
+            Do a thing.
+
+            :param value: The value.
+
+            .. rubric:: Examples
+
+            >>> convert(1)
+            1
+
+            >>> convert(2)
+            2
+            """,
+        ),
+    ],
+)
+def test_native_dialect_doctests_reach_the_qmd_fenced(parser: str, docstring: str):
+    """
+    A docstring written in its configured dialect keeps its prompts fenced
+
+    The dialect decides how griffe splits the sections, so each one reaches the
+    fencing hook differently.
+    """
+    source = f'''
+    def convert(value):
+        """
+        {textwrap.indent(textwrap.dedent(docstring), " " * 8).strip()}
+        """
+    '''
+
+    qmd = _render_with_hooks(source, "convert", parser=parser)
 
     assert ">>>" in qmd, "the sample rendered without its doctest at all"
     assert _unfenced_prompts(qmd) == []

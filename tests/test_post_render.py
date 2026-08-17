@@ -28,10 +28,6 @@ def _get_functions():
 
     source = _SCRIPT.read_text()
 
-    from pygments import highlight as _highlight
-    from pygments.formatters import HtmlFormatter as _HtmlFormatter
-    from pygments.lexers import PythonLexer as _PythonLexer
-
     # Stub _t so translated labels fall back to English
     def _t(key: str, fallback: str | None = None) -> str:
         return fallback if fallback is not None else key
@@ -42,23 +38,12 @@ def _get_functions():
         "os": _os,
         "re": _re,
         "__builtins__": __builtins__,
-        "highlight": _highlight,
-        "HtmlFormatter": _HtmlFormatter,
-        "PythonLexer": _PythonLexer,
         "_t": _t,
     }
-
-    # Extract PYGMENTS_TO_QUARTO_CLASS dict (needed by fix_plain_doctest_code_blocks)
-    cm_start = source.find("PYGMENTS_TO_QUARTO_CLASS = {")
-    if cm_start != -1:
-        cm_rest = source[cm_start:]
-        cm_end = cm_rest.find("}\n") + 2
-        exec(cm_rest[:cm_end], ns)
 
     # Extract function definitions by finding their source blocks
     funcs_to_extract = [
         "translate_sphinx_roles",
-        "fix_plain_doctest_code_blocks",
         "_postprocess_markdown_content",
     ]
 
@@ -87,14 +72,12 @@ def _get_functions():
 
     return (
         ns["translate_sphinx_roles"],
-        ns["fix_plain_doctest_code_blocks"],
         ns["_postprocess_markdown_content"],
     )
 
 
 (
     translate_sphinx_roles,
-    fix_plain_doctest_code_blocks,
     postprocess_markdown_content,
 ) = _get_functions()
 
@@ -275,69 +258,6 @@ class TestTranslateSphinxRoles:
         html = "<p>Is :py:type:<code>int</code>.</p>"
         result = translate_sphinx_roles(html)
         assert result == "<p>Is <code>int</code>.</p>"
-
-
-class TestFixPlainDoctestCodeBlocks:
-    """Tests for fix_plain_doctest_code_blocks (site 137 regression)."""
-
-    def test_single_plain_doctest_converted(self):
-        """A plain <pre><code> block with >>> gets proper sourceCode styling."""
-        html = "<pre><code>&gt;&gt;&gt; foo(\"hello\")\n'world'</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        assert 'class="sourceCode python' in result
-        assert 'class="code-copy-outer-scaffold"' in result
-        assert "<pre><code>" not in result
-
-    def test_consecutive_plain_doctests_all_converted(self):
-        """Multiple consecutive plain doctest blocks are all converted."""
-        html = (
-            # First block (already styled by Quarto — should be left alone)
-            '<div class="sourceCode" id="cb1">'
-            '<pre class="sourceCode python code-with-copy">'
-            '<code class="sourceCode python">'
-            '<span class="op">&gt;&gt;&gt;</span> schedule("cleanup")\n'
-            '<span class="va">True</span></code></pre></div>\n'
-            # Second block (plain — should be converted)
-            '<pre><code>&gt;&gt;&gt; schedule("backup", delay=60.0)\n'
-            "True</code></pre>\n"
-            # Third block (plain — should be converted)
-            '<pre><code>&gt;&gt;&gt; schedule("cleanup")\n'
-            "False</code></pre>"
-        )
-        result = fix_plain_doctest_code_blocks(html)
-        # The already-styled block should remain
-        assert result.count('class="sourceCode python') >= 3
-        # No plain <pre><code> blocks should remain
-        assert "<pre><code>" not in result
-
-    def test_plain_code_block_without_doctest_unchanged(self):
-        """A plain <pre><code> without >>> is left as-is."""
-        html = "<pre><code>just some plain text</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        assert result == html
-
-    def test_unique_cb_ids_no_collision(self):
-        """Generated cb IDs don't collide with existing ones."""
-        html = (
-            '<div class="sourceCode" id="cb3">'
-            '<pre class="sourceCode python"><code class="sourceCode python">'
-            "existing</code></pre></div>\n"
-            "<pre><code>&gt;&gt;&gt; first()\n1</code></pre>\n"
-            "<pre><code>&gt;&gt;&gt; second()\n2</code></pre>"
-        )
-        result = fix_plain_doctest_code_blocks(html)
-        # Existing cb3 plus two new blocks should give cb4 and cb5
-        assert 'id="cb4"' in result
-        assert 'id="cb5"' in result
-
-    def test_html_entities_decoded_for_highlighting(self):
-        """HTML entities in the plain block are decoded before Pygments."""
-        html = "<pre><code>&gt;&gt;&gt; x &lt; 10 &amp; y &gt; 5\nTrue</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        # Should be in a sourceCode block, not plain
-        assert 'class="sourceCode python' in result
-        # The original plain block should be gone
-        assert "<pre><code>" not in result
 
 
 def _make_autolink(inventory):
@@ -795,44 +715,6 @@ class TestAutolinkCodeReferencesPagePath:
         )
         assert 'href="../reference/Engine.html#pkg.Engine"' in result
         assert 'href="../reference/execute.html#pkg.execute"' in result
-
-
-class TestFixPlainDoctestGdCodeNav:
-    """Tests that fix_plain_doctest_code_blocks emits the gd-code-nav copy button."""
-
-    def test_converted_block_has_gd_code_nav(self):
-        """Converted doctest block should contain a gd-code-nav element."""
-        html = "<pre><code>&gt;&gt;&gt; foo()\n42</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        assert 'class="gd-code-nav"' in result
-
-    def test_converted_block_has_gd_code_copy_button(self):
-        """Converted block should have a gd-code-copy button inside the nav."""
-        html = "<pre><code>&gt;&gt;&gt; bar(1, 2)\n3</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        assert 'class="gd-code-copy"' in result
-        assert 'title="Copy to clipboard"' in result
-
-    def test_no_legacy_code_copy_button(self):
-        """Converted block should NOT have the old code-copy-button class."""
-        html = "<pre><code>&gt;&gt;&gt; baz()\nNone</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        assert "code-copy-button" not in result
-        assert '<i class="bi">' not in result
-
-    def test_nav_is_inside_scaffold(self):
-        """gd-code-nav should be nested inside code-copy-outer-scaffold."""
-        html = "<pre><code>&gt;&gt;&gt; x = 1\n</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        scaffold_start = result.find('class="code-copy-outer-scaffold"')
-        nav_start = result.find('class="gd-code-nav"')
-        assert scaffold_start < nav_start
-
-    def test_no_code_with_copy_class_on_pre(self):
-        """Converted <pre> should NOT have the Quarto 'code-with-copy' class."""
-        html = "<pre><code>&gt;&gt;&gt; hello()\n'world'</code></pre>"
-        result = fix_plain_doctest_code_blocks(html)
-        assert "code-with-copy" not in result
 
 
 # ---------------------------------------------------------------------------
