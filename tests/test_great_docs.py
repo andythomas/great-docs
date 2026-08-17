@@ -8121,7 +8121,7 @@ def test_update_gitignore_force_creates_new():
         content = gitignore.read_text()
 
         assert "great-docs/" in content
-        assert "_great_docs_build/" in content
+        assert "great-docs-*/" in content
         assert ".great-docs-build/" in content
         assert ".great-docs-cache/" in content
         assert ".great-docs/" in content
@@ -8140,7 +8140,7 @@ def test_update_gitignore_force_appends_to_existing():
 
         assert "__pycache__/" in content
         assert "great-docs/" in content
-        assert "_great_docs_build/" in content
+        assert "great-docs-*/" in content
         assert ".great-docs-build/" in content
         assert ".great-docs-cache/" in content
         assert ".great-docs/" in content
@@ -8151,7 +8151,7 @@ def test_update_gitignore_skip_when_already_present():
     with tempfile.TemporaryDirectory() as tmp_dir:
         gitignore = Path(tmp_dir) / ".gitignore"
         gitignore.write_text(
-            "great-docs/\n_great_docs_build/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
+            "great-docs/\ngreat-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
         )
 
         docs = GreatDocs(project_path=tmp_dir)
@@ -8162,7 +8162,7 @@ def test_update_gitignore_skip_when_already_present():
         lines = content.splitlines()
 
         assert lines.count("great-docs/") == 1
-        assert lines.count("_great_docs_build/") == 1
+        assert lines.count("great-docs-*/") == 1
         assert lines.count(".great-docs-build/") == 1
         assert lines.count(".great-docs-cache/") == 1
         assert lines.count(".great-docs/") == 1
@@ -25759,7 +25759,7 @@ def test_update_gitignore_already_present():
     with tempfile.TemporaryDirectory() as tmp_dir:
         gitignore = Path(tmp_dir) / ".gitignore"
         gitignore.write_text(
-            "great-docs/\n_great_docs_build/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
+            "great-docs/\ngreat-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
             encoding="utf-8",
         )
 
@@ -25770,7 +25770,7 @@ def test_update_gitignore_already_present():
         lines = content.splitlines()
         # Should not have doubled any entry
         assert lines.count("great-docs/") == 1
-        assert lines.count("_great_docs_build/") == 1
+        assert lines.count("great-docs-*/") == 1
         assert lines.count(".great-docs-build/") == 1
         assert lines.count(".great-docs-cache/") == 1
         assert lines.count(".great-docs/") == 1

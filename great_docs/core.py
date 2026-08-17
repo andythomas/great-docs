@@ -764,7 +764,7 @@ class GreatDocs:
 
         # Versioning build artifacts (added when versions are configured)
         versioning_entries = [
-            "_great_docs_build/",
+            "great-docs-*/",
             ".great-docs-build/",
             ".great-docs-cache/",
             ".great-docs/",
