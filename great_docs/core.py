@@ -16275,6 +16275,9 @@ anchor-sections: true
                     badge_expiry_raw=self._config["new_is_old"],
                 )
 
+                for warning in vb_result.get("warnings", []):
+                    log.warn(warning)
+
                 if not vb_result["success"]:
                     for err in vb_result["errors"]:
                         log.error_detail(err)

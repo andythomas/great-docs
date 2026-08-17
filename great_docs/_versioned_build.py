@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from great_docs._subprocess import TEXT_MODE_KWARGS
-from great_docs._utils import QUARTO_YML_HEADER
+from great_docs._utils import QUARTO_YML_HEADER, is_great_docs_build_dir
 from great_docs._versioning import (
     VersionEntry,
     build_version_map,
@@ -29,13 +29,107 @@ from great_docs._versioning import (
 # ---------------------------------------------------------------------------
 
 
-def _version_build_dir(build_root: Path, entry: VersionEntry, latest_tag: str) -> Path:
-    """Return the isolated build directory for a version."""
+_UNSAFE_TAG_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _safe_tag_dirname(tag: str) -> str:
+    """Return `tag` with unsafe directory-name characters replaced by `-`"""
+    return _UNSAFE_TAG_CHARS.sub("-", tag)
+
+
+def _version_build_dir(source_dir: Path, entry: VersionEntry, latest_tag: str) -> Path:
+    """
+    Return the Quarto project directory for a version
+
+    The latest version uses `source_dir`. Each historical version uses a
+    sibling directory. This keeps every version at the same depth below the
+    project root, so relative paths resolve consistently with or without a
+    `versions:` block.
+
+    Parameters
+    ----------
+    source_dir
+        Build directory for the latest version.
+    entry
+        Version to locate.
+    latest_tag
+        The tag of the latest version.
+
+    Returns
+    -------
+    Quarto project directory for the version.
+    """
     if entry.tag == latest_tag:
-        return build_root / "_root"
-    # Replace dots/slashes with underscores for safe directory names
-    safe = entry.tag.replace(".", "_").replace("/", "_")
-    return build_root / f"v__{safe}"
+        return source_dir
+    return source_dir.parent / f"{source_dir.name}-{_safe_tag_dirname(entry.tag)}"
+
+
+def _check_build_dir_collisions(
+    source_dir: Path,
+    targets: list[VersionEntry],
+    latest_tag: str,
+) -> None:
+    """
+    Reject version tags that map to the same build directory
+
+    Sanitising directory names can map distinct tags, such as `release/1.0`
+    and `release-1.0`, to one directory. Building both would publish one
+    version's pages under the other version's tag.
+
+    Parameters
+    ----------
+    source_dir
+        Build directory for the latest version.
+    targets
+        Versions to build.
+    latest_tag
+        The tag of the latest version.
+
+    Raises
+    ------
+    ValueError
+        If two tags map to the same build directory.
+    """
+    seen: dict[Path, str] = {}
+    for entry in targets:
+        ver_dir = _version_build_dir(source_dir, entry, latest_tag)
+        if ver_dir in seen:
+            raise ValueError(
+                f"Version tags {seen[ver_dir]!r} and {entry.tag!r} both map to "
+                f"build directory {ver_dir.name!r}. Rename one of the tags."
+            )
+        seen[ver_dir] = entry.tag
+
+
+def _clean_stale_version_dirs(source_dir: Path) -> list[str]:
+    """
+    Remove version build directories left behind by earlier builds
+
+    Remove only directories whose `_quarto.yml` contains the Great Docs
+    marker. Keep and report matching directories that may contain user files.
+
+    Parameters
+    ----------
+    source_dir
+        Build directory for the latest version. Matching sibling directories
+        are cleanup candidates.
+
+    Returns
+    -------
+    Warnings for matching directories retained because they lacked the marker.
+    """
+    warnings: list[str] = []
+    for candidate in sorted(source_dir.parent.glob(f"{source_dir.name}-*")):
+        if not candidate.is_dir() or candidate.is_symlink():
+            continue
+        if is_great_docs_build_dir(candidate):
+            shutil.rmtree(candidate)
+        else:
+            warnings.append(
+                f"Kept {candidate.name}/ because it does not contain a Great Docs-generated "
+                f"_quarto.yml. Delete it manually if it is a leftover build directory."
+            )
+    return warnings
 
 
 def _collect_qmd_files(source_dir: Path) -> list[Path]:
@@ -392,49 +486,49 @@ def preprocess_version(
     badge_expiry: "BadgeExpiry | None" = None,
 ) -> list[str]:
     """
-    Preprocess the documentation source for a single version.
+    Prepare the documentation source for one version
 
-    Copies the entire source tree to *dest_dir*, then:
+    Copy `source_dir` to `dest_dir` unless they are the same directory. Then:
 
-    1. Removes pages whose frontmatter `versions:` list excludes this version.
-    2. Removes pages in sections whose `versions:` list excludes this version.
-    3. Processes version fences in all remaining `.qmd` files.
-    4. Expands inline `[version-badge]` markers and version callouts.
-    5. If the version has an `api_snapshot`, regenerates API reference pages from the snapshot
-       (Strategy A).
-    6. If the version has a `git_ref`, introspects the package at that tag and generates API
-       reference pages (Strategy B).
+    1. Remove pages whose front matter excludes the version.
+    2. Remove sections whose configuration excludes the version.
+    3. Process version fences in the remaining `.qmd` files.
+    4. Expand version badges and callouts.
+    5. Generate API reference pages from a configured snapshot.
+    6. Generate API reference pages from a configured Git tag.
 
     Parameters
     ----------
     source_dir
-        The ephemeral `great-docs/` build directory (already populated by the normal build steps
-        1-14).
+        Prepared documentation tree before version-specific filtering.
     dest_dir
-        The isolated per-version build directory.
+        Quarto project directory for the version. When it equals `source_dir`,
+        prepare the latest version in place.
     entry
-        The version being built.
+        Version to prepare.
     all_versions
-        The full ordered list of version entries.
+        All configured versions in display order.
     project_root
-        Project root directory (needed for resolving snapshot paths).
+        Project root used to resolve snapshot paths.
     section_configs
-        Section configurations from `great-docs.yml`, each a dict with at least `"dir"` and
-        optionally `"versions"` keys.
+        Section configuration entries from `great-docs.yml`.
+    badge_expiry
+        Default expiry policy for `new` badges.
 
     Returns
     -------
-    list[str]
-        Relative paths (from *dest_dir*) of pages included in this version, with `.qmd` -> `.html`
-        extension mapping.
+    Page paths relative to `dest_dir`, with `.qmd` extensions replaced by
+    `.html`.
     """
     # Build a set of directories excluded by section-level version scoping
     excluded_dirs = _compute_excluded_section_dirs(entry.tag, section_configs)
 
-    # Copy the full source tree
-    if dest_dir.exists():
-        shutil.rmtree(dest_dir)
-    shutil.copytree(source_dir, dest_dir, dirs_exist_ok=False)
+    # The latest version uses `source_dir` directly; only historical versions
+    # need a copy.
+    if dest_dir.resolve() != source_dir.resolve():
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir)
+        shutil.copytree(source_dir, dest_dir, dirs_exist_ok=False)
 
     included_pages: list[str] = []
     upcoming_pages: list[tuple[str, str | None]] = []
@@ -1563,44 +1657,48 @@ def render_versions_parallel(
 
 
 def assemble_site(
-    build_root: Path,
+    source_dir: Path,
     versions: list[VersionEntry],
     latest_tag: str,
     output_dir: Path,
 ) -> None:
     """
-    Merge per-version rendered sites into the final output directory.
+    Merge per-version rendered sites into the final output directory
 
-    - `_root/_site/*` -> `output_dir/`
-    - `v__X_Y/_site/*` -> `output_dir/v/X.Y/`
+    Preserve the latest version when it has rendered directly into
+    `output_dir`. Merge historical versions under `v/<tag>/`. If the latest
+    version rendered elsewhere, replace `output_dir` before merging all sites.
 
     Parameters
     ----------
-    build_root
-        Parent directory containing per-version build dirs.
+    source_dir
+        Quarto project directory for the latest version.
     versions
         The ordered version entries.
     latest_tag
-        The tag of the latest version (becomes site root).
+        The tag of the latest version, which becomes the site root.
     output_dir
-        Final output directory (e.g., `great-docs/_site/`).
+        Final output directory, normally `great-docs/_site/`.
     """
-    if output_dir.exists():
+    # The latest version may have rendered directly into `output_dir`. Preserve
+    # it because build setup removed stale output before rendering began.
+    in_place = (source_dir / "_site").resolve() == output_dir.resolve()
+
+    if not in_place and output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for entry in versions:
-        ver_dir = _version_build_dir(build_root, entry, latest_tag)
-        site_dir = ver_dir / "_site"
+        site_dir = _version_build_dir(source_dir, entry, latest_tag) / "_site"
 
         if not site_dir.exists():
             continue
 
         if entry.tag == latest_tag:
-            # Latest version goes to site root
+            if in_place:
+                continue
             _merge_tree(site_dir, output_dir)
         else:
-            # Historical versions go under /v/<tag>/
             dest = output_dir / "v" / entry.tag
             dest.mkdir(parents=True, exist_ok=True)
             _merge_tree(site_dir, dest)
@@ -1722,40 +1820,37 @@ def run_versioned_build(
     badge_expiry_raw: str | None = None,
 ) -> dict[str, Any]:
     """
-    Orchestrate a full multi-version build.
-
-    This is the main entry point called by `GreatDocs.build()` when `versions:` config is present.
+    Build and assemble the configured documentation versions
 
     Parameters
     ----------
     source_dir
-        The ephemeral `great-docs/` build directory (steps 1-14 complete).
+        Prepared documentation tree before version-specific filtering.
     project_root
-        The project root directory.
+        Project root containing build and cache directories.
     versions_config
-        The raw `versions:` list from config.
+        Entries from the `versions` configuration.
     quarto_env
-        Environment variables for Quarto subprocesses.
+        Environment variables for Quarto processes.
     version_tags
-        If provided, only build these specific version tags.
+        Version tags to build. Build every configured version when omitted.
     latest_only
-        If True, build only the latest version.
+        Whether to build only the latest version.
     max_workers
-        Max parallel Quarto renders.
+        Maximum number of parallel Quarto renders.
     site_url
-        The site's base URL (for canonical URL injection).
+        Base site URL used for canonical links.
     progress_callback
-        Optional `(slot_index, current_page, total_pages)` callback for real-time progress reporting
-        during parallel renders.
+        Callback that receives the render slot, current page, and total pages.
     on_renders_done
-        Optional callback fired after all Quarto renders complete but before site assembly begins.
-        Useful for finishing progress bars.
+        Callback invoked after rendering and before site assembly.
+    badge_expiry_raw
+        Global `new_is_old` configuration value.
 
     Returns
     -------
-    dict[str, Any]
-        Build result with keys: `"success"` (bool), `"versions_built"` (list of tags),
-        `"pages_by_version"` (dict), `"errors"` (list).
+    Build result containing `success`, `versions_built`, `pages_by_version`,
+    `timings_by_version`, `warnings`, and `errors`.
     """
     versions = parse_versions_config(versions_config)
     latest = get_latest_version(versions)
@@ -1780,21 +1875,37 @@ def run_versioned_build(
             "success": False,
             "versions_built": [],
             "pages_by_version": {},
+            "warnings": [],
             "errors": ["No matching versions to build"],
         }
 
-    build_root = project_root / "_great_docs_build"
-    if build_root.exists():
-        shutil.rmtree(build_root)
-    build_root.mkdir(parents=True)
+    _check_build_dir_collisions(source_dir, targets, latest_tag)
+    warnings = _clean_stale_version_dirs(source_dir)
+
+    # Unmarked directories may contain user files. Refuse to overwrite them.
+    for entry in targets:
+        ver_dir = _version_build_dir(source_dir, entry, latest_tag)
+        if ver_dir == source_dir:
+            continue
+        if ver_dir.exists() and not is_great_docs_build_dir(ver_dir):
+            raise ValueError(
+                f"Version {entry.tag!r} would build into {ver_dir}, which already exists "
+                f"but does not contain a Great Docs-generated _quarto.yml. Move or delete "
+                f"the directory before building."
+            )
 
     # --- Stage 1: Preprocess each version ---
     pages_by_version: dict[str, list[str]] = {}
-    build_dirs: list[Path] = []
     errors: list[str] = []
 
-    for entry in targets:
-        ver_dir = _version_build_dir(build_root, entry, latest_tag)
+    # Copy historical trees before pruning `source_dir` for the latest version;
+    # otherwise, historical copies inherit the latest version's exclusions.
+    ordered_targets = [e for e in targets if e.tag != latest_tag]
+    ordered_targets += [e for e in targets if e.tag == latest_tag]
+
+    dir_by_tag: dict[str, Path] = {}
+    for entry in ordered_targets:
+        ver_dir = _version_build_dir(source_dir, entry, latest_tag)
         pages = preprocess_version(
             source_dir,
             ver_dir,
@@ -1807,10 +1918,13 @@ def run_versioned_build(
         _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag, site_url=site_url)
         _sync_status_inline_script(ver_dir)
         pages_by_version[entry.tag] = pages
-        build_dirs.append(ver_dir)
+        dir_by_tag[entry.tag] = ver_dir
+
+    # Restore the requested order so each progress slot keeps its version label.
+    build_dirs = [dir_by_tag[e.tag] for e in targets]
 
     # Map build dir to version tag (for pre-render diagnostics)
-    dir_to_tag_pre = {str(_version_build_dir(build_root, e, latest_tag)): e.tag for e in targets}
+    dir_to_tag_pre = {str(dir_by_tag[e.tag]): e.tag for e in targets}
 
     # --- Pre-render sanity check ---
     # Verify each build directory has renderable .qmd files and a valid _quarto.yml.
@@ -1842,6 +1956,7 @@ def run_versioned_build(
             "versions_built": [],
             "pages_by_version": pages_by_version,
             "timings_by_version": {},
+            "warnings": warnings,
             "errors": errors,
         }
 
@@ -1858,7 +1973,7 @@ def run_versioned_build(
     timings_by_version: dict[str, list[dict[str, Any]]] = {}
 
     # Map build dir back to version tag
-    dir_to_tag = {str(_version_build_dir(build_root, e, latest_tag)): e.tag for e in targets}
+    dir_to_tag = {str(dir_by_tag[e.tag]): e.tag for e in targets}
 
     for build_dir, returncode, stdout, stderr, page_timings in render_results:
         tag = dir_to_tag.get(build_dir, build_dir)
@@ -1909,12 +2024,13 @@ def run_versioned_build(
             "versions_built": [],
             "pages_by_version": pages_by_version,
             "timings_by_version": {},
+            "warnings": warnings,
             "errors": errors,
         }
 
     # --- Stage 3: Assemble ---
     output_dir = source_dir / "_site"
-    assemble_site(build_root, targets, latest_tag, output_dir)
+    assemble_site(source_dir, targets, latest_tag, output_dir)
 
     # Write version map
     write_version_map(output_dir, versions, pages_by_version)
@@ -1930,6 +2046,7 @@ def run_versioned_build(
         "versions_built": versions_built,
         "pages_by_version": pages_by_version,
         "timings_by_version": timings_by_version,
+        "warnings": warnings,
         "errors": errors,
     }
 

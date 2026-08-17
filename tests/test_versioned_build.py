@@ -8,6 +8,8 @@ import pytest
 from great_docs._api_diff import ApiSnapshot, ParameterInfo, SymbolInfo
 from great_docs._utils import QUARTO_YML_HEADER, is_great_docs_build_dir
 from great_docs._versioned_build import (
+    _check_build_dir_collisions,
+    _clean_stale_version_dirs,
     _compute_excluded_section_dirs,
     _in_excluded_section,
     _is_valid_ref_name,
@@ -65,20 +67,94 @@ def _make_source_tree(root: Path, pages: dict[str, str]) -> None:
 
 
 class TestVersionBuildDir:
-    def test_latest_gets_root(self, tmp_path: Path):
+    def test_latest_builds_in_source_dir(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
         entry = _make_entry("0.3", latest=True)
-        result = _version_build_dir(tmp_path, entry, "0.3")
-        assert result == tmp_path / "_root"
+        assert _version_build_dir(source_dir, entry, "0.3") == source_dir
 
-    def test_non_latest_gets_prefixed(self, tmp_path: Path):
+    def test_non_latest_gets_a_sibling_dir(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
         entry = _make_entry("0.2")
-        result = _version_build_dir(tmp_path, entry, "0.3")
-        assert result == tmp_path / "v__0_2"
+        assert _version_build_dir(source_dir, entry, "0.3") == tmp_path / "great-docs-0.2"
 
-    def test_complex_tag(self, tmp_path: Path):
-        entry = _make_entry("1.2.3")
-        result = _version_build_dir(tmp_path, entry, "2.0")
-        assert result == tmp_path / "v__1_2_3"
+    def test_dots_are_kept(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        entry = _make_entry("v1.2.3")
+        assert _version_build_dir(source_dir, entry, "2.0") == tmp_path / "great-docs-v1.2.3"
+
+    def test_slashes_are_sanitised(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        entry = _make_entry("release/1.0")
+        assert _version_build_dir(source_dir, entry, "2.0") == tmp_path / "great-docs-release-1.0"
+
+    def test_every_version_sits_one_level_below_the_project_root(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        versions = parse_versions_config(["0.3", "0.2", "0.1"])
+        for entry in versions:
+            assert _version_build_dir(source_dir, entry, "0.3").parent == tmp_path
+
+
+class TestCheckBuildDirCollisions:
+    def test_passes_for_distinct_tags(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        targets = parse_versions_config(["0.3", "0.2"])
+        _check_build_dir_collisions(source_dir, targets, "0.3")
+
+    def test_raises_when_tags_sanitise_to_one_name(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        targets = parse_versions_config(["2.0", "release/1.0", "release-1.0"])
+        with pytest.raises(ValueError, match="both map to build directory"):
+            _check_build_dir_collisions(source_dir, targets, "2.0")
+
+
+class TestCleanStaleVersionDirs:
+    def _make_build_dir(self, path: Path) -> None:
+        path.mkdir(parents=True)
+        (path / "_quarto.yml").write_text(
+            QUARTO_YML_HEADER + "project:\n  type: website\n", encoding="utf-8"
+        )
+
+    def test_removes_marked_dirs(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        source_dir.mkdir()
+        self._make_build_dir(tmp_path / "great-docs-0.2")
+
+        warnings = _clean_stale_version_dirs(source_dir)
+
+        assert not (tmp_path / "great-docs-0.2").exists()
+        assert warnings == []
+
+    def test_keeps_the_source_dir(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        self._make_build_dir(source_dir)
+
+        _clean_stale_version_dirs(source_dir)
+
+        assert source_dir.exists()
+
+    def test_keeps_unmarked_dirs_and_warns(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        source_dir.mkdir()
+        notes = tmp_path / "great-docs-notes"
+        notes.mkdir()
+        (notes / "draft.md").write_text("mine", encoding="utf-8")
+
+        warnings = _clean_stale_version_dirs(source_dir)
+
+        assert (notes / "draft.md").read_text() == "mine"
+        assert len(warnings) == 1
+        assert "great-docs-notes" in warnings[0]
+
+    def test_ignores_files_matching_the_pattern(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        source_dir.mkdir()
+        stray = tmp_path / "great-docs-notes.txt"
+        stray.write_text("mine", encoding="utf-8")
+
+        warnings = _clean_stale_version_dirs(source_dir)
+
+        assert stray.exists()
+        assert warnings == []
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +394,16 @@ class TestPreprocessVersion:
         # Should NOT have the minimal snapshot format
         assert "*Kind:* class" not in result_content
 
+    def test_in_place_destination_is_not_wiped(self, tmp_path: Path):
+        source = tmp_path / "great-docs"
+        _make_source_tree(source, {"index.qmd": "---\ntitle: Home\n---\n\nHome\n"})
+        versions = self._setup_versions()
+
+        pages = preprocess_version(source, source, versions[0], versions)
+
+        assert (source / "index.qmd").is_file()
+        assert "index.html" in pages
+
 
 # ---------------------------------------------------------------------------
 # Site assembly
@@ -325,51 +411,58 @@ class TestPreprocessVersion:
 
 
 class TestAssembleSite:
-    def test_basic_assembly(self, tmp_path: Path):
-        build_root = tmp_path / "build"
+    def test_in_place_latest_survives_assembly(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
 
-        # Simulate _root version (latest)
-        root_site = build_root / "_root" / "_site"
-        root_site.mkdir(parents=True)
-        (root_site / "index.html").write_text("<h1>Latest</h1>")
-        (root_site / "guide").mkdir()
-        (root_site / "guide" / "index.html").write_text("<h1>Guide</h1>")
+        latest_site = source_dir / "_site"
+        latest_site.mkdir(parents=True)
+        (latest_site / "index.html").write_text("<h1>Latest</h1>")
+        (latest_site / "guide").mkdir()
+        (latest_site / "guide" / "index.html").write_text("<h1>Guide</h1>")
 
-        # Simulate v__0_2 version
-        v02_site = build_root / "v__0_2" / "_site"
+        v02_site = tmp_path / "great-docs-0.2" / "_site"
         v02_site.mkdir(parents=True)
         (v02_site / "index.html").write_text("<h1>v0.2</h1>")
 
-        versions = [
-            _make_entry("0.3", latest=True),
-            _make_entry("0.2"),
-        ]
+        versions = [_make_entry("0.3", latest=True), _make_entry("0.2")]
 
-        output = tmp_path / "output"
-        assemble_site(build_root, versions, "0.3", output)
+        assemble_site(source_dir, versions, "0.3", latest_site)
 
-        # Latest at root
-        assert (output / "index.html").read_text() == "<h1>Latest</h1>"
-        assert (output / "guide" / "index.html").read_text() == "<h1>Guide</h1>"
+        assert (latest_site / "index.html").read_text() == "<h1>Latest</h1>"
+        assert (latest_site / "guide" / "index.html").read_text() == "<h1>Guide</h1>"
+        assert (latest_site / "v" / "0.2" / "index.html").read_text() == "<h1>v0.2</h1>"
 
-        # Old version under /v/0.2/
-        assert (output / "v" / "0.2" / "index.html").read_text() == "<h1>v0.2</h1>"
+    def test_separate_output_dir_is_cleaned(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        latest_site = source_dir / "_site"
+        latest_site.mkdir(parents=True)
+        (latest_site / "index.html").write_text("new")
 
-    def test_cleans_existing_output(self, tmp_path: Path):
+        v01_site = tmp_path / "great-docs-0.1" / "_site"
+        v01_site.mkdir(parents=True)
+        (v01_site / "index.html").write_text("<h1>v0.1</h1>")
+
         output = tmp_path / "output"
         output.mkdir()
         (output / "stale.html").write_text("old")
 
-        build_root = tmp_path / "build"
-        root_site = build_root / "_root" / "_site"
-        root_site.mkdir(parents=True)
-        (root_site / "index.html").write_text("new")
-
-        versions = [_make_entry("1.0", latest=True)]
-        assemble_site(build_root, versions, "1.0", output)
+        versions = [_make_entry("1.0", latest=True), _make_entry("0.1")]
+        assemble_site(source_dir, versions, "1.0", output)
 
         assert not (output / "stale.html").exists()
         assert (output / "index.html").read_text() == "new"
+        assert (output / "v" / "0.1" / "index.html").read_text() == "<h1>v0.1</h1>"
+
+    def test_missing_version_site_is_skipped(self, tmp_path: Path):
+        source_dir = tmp_path / "great-docs"
+        latest_site = source_dir / "_site"
+        latest_site.mkdir(parents=True)
+        (latest_site / "index.html").write_text("<h1>Latest</h1>")
+
+        versions = [_make_entry("0.3", latest=True), _make_entry("0.2")]
+        assemble_site(source_dir, versions, "0.3", latest_site)
+
+        assert not (latest_site / "v" / "0.2").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -479,46 +572,6 @@ class TestWriteVersionMap:
 # ---------------------------------------------------------------------------
 # Full orchestrator (unit-level)
 # ---------------------------------------------------------------------------
-
-
-class TestRunVersionedBuild:
-    def test_returns_error_for_no_matching_versions(self, tmp_path: Path):
-        source = tmp_path / "source"
-        source.mkdir()
-
-        result = run_versioned_build(
-            source_dir=source,
-            project_root=tmp_path,
-            versions_config=["0.3", "0.2"],
-            version_tags=["0.5"],  # doesn't exist
-        )
-
-        assert result["success"] is False
-        assert "No matching versions" in result["errors"][0]
-
-    def test_latest_only_filters_to_one(self, tmp_path: Path):
-        """Test that latest_only creates only one build directory."""
-        source = tmp_path / "source"
-        _make_source_tree(
-            source,
-            {
-                "index.qmd": "---\ntitle: Home\n---\n\nHi",
-            },
-        )
-
-        # We can't run the full orchestrator without Quarto, but we can
-        # verify preprocessing works correctly for a single version
-        versions = parse_versions_config(["0.3", "0.2", "0.1"])
-        latest = versions[0]
-
-        build_root = tmp_path / "build"
-        build_root.mkdir()
-        ver_dir = _version_build_dir(build_root, latest, "0.3")
-
-        pages = preprocess_version(source, ver_dir, latest, versions)
-        assert "index.html" in pages
-        # Only _root dir should exist
-        assert ver_dir.name == "_root"
 
 
 # ---------------------------------------------------------------------------
@@ -2950,6 +3003,116 @@ class TestRunVersionedBuild:
             )
 
         callback.assert_called_once()
+
+    def test_build_dirs_follow_targets_order_for_progress_labels(self, tmp_path: Path):
+        """
+        Keep progress slots aligned with the requested versions
+
+        Historical versions must be copied first, but progress callbacks label
+        their slots in request order.
+        """
+        from unittest.mock import patch
+
+        source = tmp_path / "source"
+        _make_source_tree(source, {"index.qmd": "---\ntitle: Hi\n---\nHi"})
+
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+
+        captured_build_dirs: list[Path] = []
+
+        def mock_render(build_dirs, **kwargs):
+            captured_build_dirs.extend(build_dirs)
+            results = []
+            for d in build_dirs:
+                site_dir = d / "_site"
+                site_dir.mkdir(parents=True, exist_ok=True)
+                (site_dir / "index.html").write_text("<html/>")
+                results.append((str(d), 0, "", "", []))
+            return results
+
+        with patch(
+            "great_docs._versioned_build.render_versions_parallel",
+            side_effect=mock_render,
+        ):
+            run_versioned_build(
+                source_dir=source,
+                project_root=project_root,
+                versions_config=["0.3", "0.2"],
+            )
+
+        assert captured_build_dirs[0] == source
+        assert captured_build_dirs[1] == tmp_path / "source-0.2"
+
+    def test_raises_when_target_dir_exists_and_unmarked(self, tmp_path: Path):
+        """
+        Preserve an unmarked directory that collides with a version build
+
+        An unmarked directory may contain user files, so the build must stop
+        before preprocessing can replace it.
+        """
+        source = tmp_path / "source"
+        _make_source_tree(source, {"index.qmd": "---\ntitle: Hi\n---\nHi"})
+
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+
+        stray = tmp_path / "source-0.2"
+        stray.mkdir()
+        (stray / "notes.txt").write_text("mine", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="source-0.2"):
+            run_versioned_build(
+                source_dir=source,
+                project_root=project_root,
+                versions_config=["0.3", "0.2"],
+            )
+
+        assert (stray / "notes.txt").read_text() == "mine"
+
+    def test_older_version_page_is_isolated_from_source_dir(self, tmp_path: Path):
+        """
+        Copy historical pages before pruning the latest version
+
+        A page restricted to an older tag must remain in that tag's build
+        directory after the latest version excludes it.
+        """
+        from unittest.mock import patch
+
+        source = tmp_path / "source"
+        _make_source_tree(
+            source,
+            {
+                "index.qmd": "---\ntitle: Home\n---\nHi",
+                "old-only.qmd": '---\ntitle: Old\nversions: ["0.2"]\n---\nOnly in 0.2.',
+            },
+        )
+
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+
+        def mock_render(build_dirs, **kwargs):
+            results = []
+            for d in build_dirs:
+                site_dir = d / "_site"
+                site_dir.mkdir(parents=True, exist_ok=True)
+                (site_dir / "index.html").write_text("<html/>")
+                results.append((str(d), 0, "", "", []))
+            return results
+
+        with patch(
+            "great_docs._versioned_build.render_versions_parallel",
+            side_effect=mock_render,
+        ):
+            result = run_versioned_build(
+                source_dir=source,
+                project_root=project_root,
+                versions_config=["0.3", "0.2"],
+            )
+
+        assert result["success"] is True
+        assert (tmp_path / "source-0.2" / "old-only.qmd").exists()
+        assert not (source / "old-only.qmd").exists()
 
     def test_badge_expiry_raw_passed_through(self, tmp_path: Path):
         from unittest.mock import patch

@@ -111,37 +111,31 @@ def run_mock_versioned_build(
     latest_only: bool = False,
 ) -> dict[str, Any]:
     """
-    Run the full multi-version pipeline with a mock Quarto renderer.
+    Run the versioned pipeline with a mock Quarto renderer
 
     Parameters
     ----------
     tmp_path
-        Temporary directory for the build.
+        Temporary project directory.
     versions_config
-        The ``versions:`` list as it would appear in ``great-docs.yml``.
+        Entries from the `versions` configuration.
     pages
-        Mapping of relative path → QMD content for the source tree.
+        Source page contents keyed by relative path.
     snapshots
-        Optional mapping of version tag → ``ApiSnapshot`` to save as
-        snapshot files (for Strategy A testing).
+        API snapshots keyed by version tag.
     section_configs
-        Section configs from ``great-docs.yml`` (for section-level scoping).
+        Section configuration entries from `great-docs.yml`.
     site_url
-        Site base URL for canonical URL injection.
+        Base site URL used for canonical links.
     version_tags
-        Filter to build only these version tags.
+        Version tags to build. Build every configured version when omitted.
     latest_only
-        Build only the latest version.
+        Whether to build only the latest version.
 
     Returns
     -------
-    dict
-        Build result with keys:
-        - ``versions``: parsed ``VersionEntry`` list
-        - ``latest_tag``: tag of the latest version
-        - ``pages_by_version``: ``{tag: [page_paths]}``
-        - ``output_dir``: ``Path`` to the final ``_site/``
-        - ``build_root``: ``Path`` to the per-version build dirs
+    Build fixture result containing `versions`, `latest_tag`,
+    `pages_by_version`, `output_dir`, `source_dir`, and `project_root`.
     """
     # --- Setup ---
     project_root = tmp_path / "project"
@@ -185,14 +179,15 @@ def run_mock_versioned_build(
         targets = list(versions)
 
     # --- Stage 1: Preprocess ---
-    build_root = project_root / "_great_docs_build"
-    build_root.mkdir(parents=True)
+    # Copy historical trees before pruning the latest version in place.
+    ordered_targets = [v for v in targets if v.tag != latest_tag]
+    ordered_targets += [v for v in targets if v.tag == latest_tag]
 
     pages_by_version: dict[str, list[str]] = {}
     build_dirs: list[Path] = []
 
-    for entry in targets:
-        ver_dir = _version_build_dir(build_root, entry, latest_tag)
+    for entry in ordered_targets:
+        ver_dir = _version_build_dir(source_dir, entry, latest_tag)
         pp_pages = preprocess_version(
             source_dir,
             ver_dir,
@@ -210,7 +205,7 @@ def run_mock_versioned_build(
 
     # --- Stage 3: Assemble ---
     output_dir = source_dir / "_site"
-    assemble_site(build_root, targets, latest_tag, output_dir)
+    assemble_site(source_dir, targets, latest_tag, output_dir)
 
     # Version map
     write_version_map(output_dir, versions, pages_by_version)
@@ -227,7 +222,6 @@ def run_mock_versioned_build(
         "latest_tag": latest_tag,
         "pages_by_version": pages_by_version,
         "output_dir": output_dir,
-        "build_root": build_root,
         "source_dir": source_dir,
         "project_root": project_root,
     }
@@ -2049,20 +2043,17 @@ class TestCanonicalUrlInjection:
         latest = get_latest_version(versions)
         latest_tag = latest.tag
 
-        build_root = project_root / "_great_docs_build"
-        build_root.mkdir()
-
         from great_docs._versioned_build import _rewrite_quarto_yml_for_version
 
         for entry in versions:
-            ver_dir = _version_build_dir(build_root, entry, latest_tag)
+            ver_dir = _version_build_dir(source_dir, entry, latest_tag)
             preprocess_version(source_dir, ver_dir, entry, versions, project_root=project_root)
             _rewrite_quarto_yml_for_version(
                 ver_dir, entry, latest_tag, site_url="https://example.com/docs"
             )
 
         return {
-            "build_root": build_root,
+            "source_dir": source_dir,
             "latest_tag": latest_tag,
             "versions": versions,
         }
@@ -2070,7 +2061,7 @@ class TestCanonicalUrlInjection:
     def test_old_version_has_title_suffix(self, site):
         from yaml12 import read_yaml
 
-        old_dir = _version_build_dir(site["build_root"], site["versions"][1], site["latest_tag"])
+        old_dir = _version_build_dir(site["source_dir"], site["versions"][1], site["latest_tag"])
         with open(old_dir / "_quarto.yml") as f:
             config = read_yaml(f)
         title = config.get("website", {}).get("title", "")
@@ -2079,7 +2070,7 @@ class TestCanonicalUrlInjection:
     def test_old_version_has_canonical_injection(self, site):
         from yaml12 import read_yaml
 
-        old_dir = _version_build_dir(site["build_root"], site["versions"][1], site["latest_tag"])
+        old_dir = _version_build_dir(site["source_dir"], site["versions"][1], site["latest_tag"])
         with open(old_dir / "_quarto.yml") as f:
             config = read_yaml(f)
         headers = config.get("format", {}).get("html", {}).get("include-in-header", [])
@@ -2088,7 +2079,7 @@ class TestCanonicalUrlInjection:
     def test_latest_version_no_title_suffix(self, site):
         from yaml12 import read_yaml
 
-        latest_dir = _version_build_dir(site["build_root"], site["versions"][0], site["latest_tag"])
+        latest_dir = _version_build_dir(site["source_dir"], site["versions"][0], site["latest_tag"])
         with open(latest_dir / "_quarto.yml") as f:
             config = read_yaml(f)
         title = config.get("website", {}).get("title", "")
@@ -2114,18 +2105,15 @@ class TestCanonicalUrlNone:
         latest = get_latest_version(versions)
         latest_tag = latest.tag
 
-        build_root = project_root / "_great_docs_build"
-        build_root.mkdir()
-
         from great_docs._versioned_build import _rewrite_quarto_yml_for_version
 
         for entry in versions:
-            ver_dir = _version_build_dir(build_root, entry, latest_tag)
+            ver_dir = _version_build_dir(source_dir, entry, latest_tag)
             preprocess_version(source_dir, ver_dir, entry, versions, project_root=project_root)
             _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag, site_url=None)
 
         return {
-            "build_root": build_root,
+            "source_dir": source_dir,
             "latest_tag": latest_tag,
             "versions": versions,
         }
@@ -2133,7 +2121,7 @@ class TestCanonicalUrlNone:
     def test_no_canonical_injection(self, site):
         from yaml12 import read_yaml
 
-        old_dir = _version_build_dir(site["build_root"], site["versions"][1], site["latest_tag"])
+        old_dir = _version_build_dir(site["source_dir"], site["versions"][1], site["latest_tag"])
         with open(old_dir / "_quarto.yml") as f:
             config = read_yaml(f)
         headers = config.get("format", {}).get("html", {}).get("include-in-header", [])
