@@ -11,7 +11,7 @@ from typing import Any
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 
 from ._subprocess import TEXT_MODE_KWARGS
-from ._utils import QUARTO_YML_HEADER
+from ._utils import QUARTO_YML_HEADER, is_great_docs_build_dir
 from .config import Config, create_default_config
 
 # Injected into marimo `--mode edit` WASM exports (iframe mode). Those load inert
@@ -15305,27 +15305,31 @@ anchor-sections: true
         print("✅ Great-docs uninstalled successfully!")
 
     def _persist_freeze_cache(self) -> int | None:
-        """Copy _freeze/ from build directories back to the project root.
+        """
+        Copy every build's freeze cache to the project root
 
-        Handles both single-version builds (freeze in project_path/_freeze)
-        and versioned builds (freeze in _great_docs_build/v__*/_freeze).
+        The latest version and a non-versioned build store their cache in
+        `great-docs/_freeze`. Historical versions store caches in sibling
+        `great-docs-<tag>/_freeze` directories.
 
-        Returns the number of cached files, or None if no freeze cache exists.
+        Returns
+        -------
+        Number of cached files, or `None` when no freeze cache exists.
         """
         freeze_sources: list[Path] = []
 
-        # Single-version build
+        # The latest version and a non-versioned build share this location.
         single = self.project_path / "_freeze"
         if single.is_dir():
             freeze_sources.append(single)
 
-        # Versioned build
-        versioned_root = self.project_root / "_great_docs_build"
-        if versioned_root.is_dir():
-            for ver_dir in versioned_root.iterdir():
-                candidate = ver_dir / "_freeze"
-                if candidate.is_dir():
-                    freeze_sources.append(candidate)
+        # Historical versions use marked sibling directories.
+        for ver_dir in sorted(self.project_root.glob(f"{self.docs_dir.name}-*")):
+            if not ver_dir.is_dir() or not is_great_docs_build_dir(ver_dir):
+                continue
+            candidate = ver_dir / "_freeze"
+            if candidate.is_dir():
+                freeze_sources.append(candidate)
 
         if not freeze_sources:
             return None

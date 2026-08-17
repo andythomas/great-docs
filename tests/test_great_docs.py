@@ -5063,11 +5063,7 @@ def test_reorder_navbar_applies_configured_order():
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
         (project_path / "great-docs.yml").write_text(
-            "navbar_order:\n"
-            "  - User Guide\n"
-            "  - Reference\n"
-            "  - Demos\n"
-            "  - Changelog\n"
+            "navbar_order:\n  - User Guide\n  - Reference\n  - Demos\n  - Changelog\n"
         )
         build_dir = project_path / "great-docs"
         build_dir.mkdir()
@@ -41921,9 +41917,7 @@ def test_announcement_position_in_meta_tag():
     """_update_quarto_config emits data-position on the gd-announcement meta tag"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
-        (project_path / "pyproject.toml").write_text(
-            '[project]\nname = "test"\nversion = "0.1.0"'
-        )
+        (project_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "0.1.0"')
         (project_path / "great-docs.yml").write_text(
             "announcement:\n  content: Hi\n  position: below-navbar\n",
             encoding="utf-8",
@@ -41947,12 +41941,8 @@ def test_announcement_position_defaults_above_in_meta_tag():
     """Default announcement position is above-navbar in the meta tag"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
-        (project_path / "pyproject.toml").write_text(
-            '[project]\nname = "test"\nversion = "0.1.0"'
-        )
-        (project_path / "great-docs.yml").write_text(
-            "announcement: Hi\n", encoding="utf-8"
-        )
+        (project_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "0.1.0"')
+        (project_path / "great-docs.yml").write_text("announcement: Hi\n", encoding="utf-8")
 
         docs = GreatDocs(project_path=tmp_dir)
         docs.project_path.mkdir(parents=True, exist_ok=True)
@@ -42017,12 +42007,40 @@ class TestInspectRepoGitNeeds:
 
     def test_legacy_nested_show_dates_still_requires_full_history(self, tmp_path: Path):
         """The legacy `site.show_dates` location keeps working."""
-        (tmp_path / "great-docs.yml").write_text(
-            "site:\n  show_dates: true\n", encoding="utf-8"
-        )
+        (tmp_path / "great-docs.yml").write_text("site:\n  show_dates: true\n", encoding="utf-8")
         assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
 
     def test_no_show_dates_does_not_require_full_history(self, tmp_path: Path):
         """No `show_dates` anywhere resolves to `tags` (no `source.branch` set)."""
         (tmp_path / "great-docs.yml").write_text("package: test\n", encoding="utf-8")
         assert GreatDocs._inspect_repo_git_needs(tmp_path) == "tags"
+
+
+class TestPersistFreezeCacheVersioned:
+    def test_collects_freeze_from_sibling_version_dirs(self, tmp_path: Path):
+        from great_docs._utils import QUARTO_YML_HEADER
+
+        docs = GreatDocs(project_path=str(tmp_path))
+
+        latest_freeze = tmp_path / "great-docs" / "_freeze"
+        latest_freeze.mkdir(parents=True)
+        (latest_freeze / "latest.json").write_text("{}", encoding="utf-8")
+
+        old = tmp_path / "great-docs-0.2"
+        old.mkdir()
+        (old / "_quarto.yml").write_text(
+            QUARTO_YML_HEADER + "project:\n  type: website\n", encoding="utf-8"
+        )
+        (old / "_freeze").mkdir()
+        (old / "_freeze" / "old.json").write_text("{}", encoding="utf-8")
+
+        unmarked = tmp_path / "great-docs-notes"
+        (unmarked / "_freeze").mkdir(parents=True)
+        (unmarked / "_freeze" / "stray.json").write_text("{}", encoding="utf-8")
+
+        count = docs._persist_freeze_cache()
+
+        assert count == 2
+        assert (tmp_path / "_freeze" / "latest.json").is_file()
+        assert (tmp_path / "_freeze" / "old.json").is_file()
+        assert not (tmp_path / "_freeze" / "stray.json").exists()
