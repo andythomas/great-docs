@@ -16,7 +16,7 @@ SPEC = {
         "project": {
             "name": "gdtest-ref-sectioned",
             "version": "0.1.0",
-            "description": "Test reference with 4 named sections.",
+            "description": "Synthetic reference with four titled sections and one subtitled section.",
         },
         "build-system": {
             "requires": ["setuptools"],
@@ -293,7 +293,10 @@ SPEC = {
                 """
                 return name.upper() if upper else name
         ''',
-        "README.md": ("# gdtest-ref-sectioned\n\nTest reference with 4 named sections.\n"),
+        "README.md": (
+            "# gdtest-ref-sectioned\n\n"
+            "Exercise four titled reference sections and one subtitled section.\n"
+        ),
     },
     "expected": {
         "detected_name": "gdtest-ref-sectioned",
