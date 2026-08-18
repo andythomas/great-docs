@@ -1127,7 +1127,9 @@ dd > ol > li::marker {
 }
 
 /* API reference section headings (Parameters, Returns, Examples, etc.) */
-h2.doc-section {
+/* Fallback sections use `h2` at the top level and `h4` inside members. Style
+   the `doc-section` class at every heading level. */
+:is(h1, h2, h3, h4, h5, h6).doc-section {
     font-size: 22px;
     border-bottom: none;
     padding-bottom: 0;
@@ -1143,8 +1145,8 @@ h2.doc-section {
     margin-left: 0;
 }
 
-/* Warnings section: h2 header above, body in callout box */
-.doc-section-warnings > h2 {
+/* Place the warning heading above its callout body at every nesting depth. */
+.doc-section-warnings > :is(h1, h2, h3, h4, h5, h6) {
     color: Crimson;
     font-weight: 600;
     margin-bottom: 0.5rem;
@@ -1153,7 +1155,7 @@ h2.doc-section {
     padding-left: 0;
 }
 
-.doc-section-warnings > h2::before {
+.doc-section-warnings > :is(h1, h2, h3, h4, h5, h6)::before {
     content: "⚠️ ";
 }
 
@@ -4012,7 +4014,7 @@ body.quarto-dark .doc-section-parameters dt code {
 }
 
 /* Warnings section dark mode */
-body.quarto-dark .doc-section-warnings > h2 {
+body.quarto-dark .doc-section-warnings > :is(h1, h2, h3, h4, h5, h6) {
     color: #FCA5A5;
 }
 
