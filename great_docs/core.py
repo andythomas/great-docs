@@ -4546,6 +4546,7 @@ class GreatDocs:
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
+        lines.append("shift-heading-level-by: 0")
         lines.append("---")
         lines.append("")
 
@@ -4710,11 +4711,10 @@ class GreatDocs:
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
+        # Front matter provides the page's only `h1`; render body sections at
+        # their written levels.
+        lines.append("shift-heading-level-by: 0")
         lines.append("---")
-        lines.append("")
-
-        # --- Heading ---
-        lines.append(f"# [{title}]{{.doc-object-name .doc-function .doc-label .{label_class}}}")
         lines.append("")
 
         # --- Description ---

@@ -416,6 +416,8 @@ ALL_PACKAGES: list[str] = [
     "gdtest_marimo",  # 206
     # 207: API reference pages without breadcrumbs
     "gdtest_no_breadcrumbs",  # 207
+    # 208: MCP object pages
+    "gdtest_mcp",  # 208
 ]
 
 
@@ -2318,6 +2320,10 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "Mirror gdtest_minimal with two functions and NumPy docstrings. Disable "
         "breadcrumbs site-wide through the `site` passthrough. Reference object "
         "pages and the index must still show the API title bar and exactly one h1."
+    ),
+    "gdtest_mcp": (
+        "Document the Great Docs MCP server through an empty Python package. "
+        "Exercise rendered tool, resource, resource-template and prompt pages."
     ),
 }
 

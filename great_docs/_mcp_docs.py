@@ -809,7 +809,7 @@ def _generate_tool_page(tool: dict[str, Any], server_name: str, language: str = 
 
     # Parameters section — uses definition list format matching Python API style
     if properties:
-        lines.append(f"## {get_translation('mcp_parameters', language)} {{.doc-parameters}}")
+        lines.append(f"### {get_translation('mcp_parameters', language)} {{.doc-parameters}}")
         lines.append("")
         lines.append("::: {.doc-definition-items}")
         for param_name, param_info in properties.items():
@@ -878,7 +878,7 @@ def _generate_resource_page(
         lines.append(":::")
         lines.append("")
 
-    lines.append(f"## {get_translation('mcp_details', language)} {{.doc-parameters}}")
+    lines.append(f"### {get_translation('mcp_details', language)} {{.doc-parameters}}")
     lines.append("")
     lines.append(f"**URI:** `{uri}`")
     lines.append("")
@@ -920,7 +920,7 @@ def _generate_resource_template_page(
         lines.append(":::")
         lines.append("")
 
-    lines.append(f"## {get_translation('mcp_details', language)} {{.doc-parameters}}")
+    lines.append(f"### {get_translation('mcp_details', language)} {{.doc-parameters}}")
     lines.append("")
     lines.append(f"**URI Template:** `{uri_template}`")
     lines.append("")
@@ -934,7 +934,7 @@ def _generate_resource_template_page(
     variables = _re.findall(r"\{(\w+)\}", uri_template)
     if variables:
         lines.append(
-            f"## {get_translation('mcp_template_variables', language)} {{.doc-parameters}}"
+            f"### {get_translation('mcp_template_variables', language)} {{.doc-parameters}}"
         )
         lines.append("")
         lines.append("::: {.doc-definition-items}")
@@ -982,7 +982,7 @@ def _generate_prompt_page(prompt: dict[str, Any], server_name: str, language: st
         lines.append("")
 
     if arguments:
-        lines.append(f"## {get_translation('mcp_arguments', language)} {{.doc-parameters}}")
+        lines.append(f"### {get_translation('mcp_arguments', language)} {{.doc-parameters}}")
         lines.append("")
         lines.append("::: {.doc-definition-items}")
         for arg in arguments:
@@ -1010,7 +1010,7 @@ def _generate_prompt_page(prompt: dict[str, Any], server_name: str, language: st
 
     # Prompt message content
     if messages:
-        lines.append(f"## {get_translation('mcp_prompt_text', language)}")
+        lines.append(f"### {get_translation('mcp_prompt_text', language)}")
         lines.append("")
         for msg in messages:
             role = msg.get("role", "user")

@@ -2088,6 +2088,75 @@ def test_cli_sidebar_has_cli_section():
 
 
 @pytest.mark.dedicated
+@requires_bs4
+@pytest.mark.parametrize("pkg_name", ["gdtest_cli_click", "gdtest_cli_nested"])
+def test_cli_command_page_heading_levels(pkg_name: str):
+    """
+    Verify the CLI command-page heading hierarchy
+
+    Front matter provides one `h1` title. Arguments, Options and Commands
+    sections render at `h2`. The nested fixture covers group and leaf commands.
+    """
+    cli_dir = _ref_dir(pkg_name) / "cli"
+    if not cli_dir.exists():
+        pytest.skip(f"No reference/cli/ directory for {pkg_name}")
+
+    pages = [p for p in cli_dir.rglob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg_name}: no CLI command pages"
+
+    sections_checked = 0
+    for page in pages:
+        soup = _load_html(page)
+
+        title = soup.select_one("h1.title")
+        assert title is not None, f"{page.name}: missing h1.title page title"
+
+        page_h1s = soup.select("h1")
+        assert len(page_h1s) == 1, (
+            f"{page.name}: expected exactly one h1 in the whole document, "
+            f"found {len(page_h1s)}"
+        )
+
+        for section in soup.select("section.level2.doc-parameters"):
+            heading = section.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: section has no heading"
+            assert heading.name == "h2", (
+                f"{page.name}: expected h2 section heading, found {heading.name}"
+            )
+            sections_checked += 1
+
+    assert sections_checked > 0, f"{pkg_name}: no CLI command sections were checked"
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_cli_index_heading_levels():
+    """Verify that CLI index group headings are `h2` elements"""
+    pkg = "gdtest_cli_nested"
+    index = _ref_dir(pkg) / "cli" / "index.html"
+    if not index.exists():
+        pytest.skip(f"No CLI index for {pkg}")
+
+    soup = _load_html(index)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, "CLI reference index is missing its h1.title"
+
+    page_h1s = soup.select("h1")
+    assert len(page_h1s) == 1, (
+        f"CLI reference index: expected exactly one h1, found {len(page_h1s)}"
+    )
+
+    groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
+    assert groups, "CLI reference index contains no group headings"
+    for heading in groups:
+        assert heading.name == "h2", (
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
+            f"found {heading.name}"
+        )
+
+
+@pytest.mark.dedicated
 def test_cli_sidebar_structure_flat():
     """Flat CLI sidebar in _quarto.yml should contain only path strings."""
     pkg = "gdtest_cli_click"
@@ -2210,6 +2279,94 @@ def test_cli_sidebar_no_raw_qmd_paths_in_nested():
         assert stem not in known_subcommands, (
             f"Subcommand path {path!r} is at the top level of the CLI sidebar — "
             f"it should be nested inside its group section"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# R4: MCP documentation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_mcp_page_heading_levels():
+    """
+    Verify the MCP object-page heading hierarchy
+
+    Quarto hoists each `.title` heading into the page header. The result must
+    contain one `h1`, with object details and parameters at `h2`.
+    """
+    pkg = "gdtest_mcp"
+    mcp_dir = _ref_dir(pkg) / "mcp"
+    if not mcp_dir.exists():
+        pytest.skip(f"No reference/mcp/ directory for {pkg}")
+
+    expected_pages = {
+        "gd_build.html": "mcp-tool",
+        "resource_build_log.html": "mcp-resource",
+        "template_reference_symbol.html": "mcp-resource-template",
+        "prompt_setup_docs.html": "mcp-prompt",
+    }
+    for filename, label_class in expected_pages.items():
+        page = mcp_dir / filename
+        assert page.exists(), f"{pkg}: missing {filename}"
+        soup = _load_html(page)
+        assert soup.select_one(f"h1.title .doc-label-{label_class}") is not None, (
+            f"{filename}: missing {label_class} title label"
+        )
+
+    pages = [p for p in mcp_dir.glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg}: no MCP pages"
+
+    sections_checked = 0
+    for page in pages:
+        soup = _load_html(page)
+
+        title = soup.select_one("h1.title")
+        assert title is not None, f"{page.name}: missing h1.title page title"
+
+        page_h1s = soup.select("h1")
+        assert len(page_h1s) == 1, (
+            f"{page.name}: expected exactly one h1 in the whole document, "
+            f"found {len(page_h1s)}"
+        )
+
+        for section in soup.select("section.level2.doc-parameters"):
+            heading = section.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: section has no heading"
+            assert heading.name == "h2", (
+                f"{page.name}: expected h2 section heading, found {heading.name}"
+            )
+            sections_checked += 1
+
+    assert sections_checked > 0, f"{pkg}: no MCP object sections were checked"
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_mcp_index_heading_levels():
+    """Verify that MCP index group headings are `h2` elements"""
+    pkg = "gdtest_mcp"
+    index = _ref_dir(pkg) / "mcp" / "index.html"
+    if not index.exists():
+        pytest.skip(f"No MCP index for {pkg}")
+
+    soup = _load_html(index)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, "MCP reference index is missing its h1.title"
+
+    page_h1s = soup.select("h1")
+    assert len(page_h1s) == 1, (
+        f"MCP reference index: expected exactly one h1, found {len(page_h1s)}"
+    )
+
+    groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
+    assert groups, "MCP reference index contains no group headings"
+    for heading in groups:
+        assert heading.name == "h2", (
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
+            f"found {heading.name}"
         )
 
 
