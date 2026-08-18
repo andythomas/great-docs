@@ -2599,7 +2599,7 @@ def process_cli_reference_pages():
     This adds the 'cli-title' class to h1 elements in CLI reference pages so they match the
     monospaced font style of API reference pages.
     """
-    cli_html_files = glob.glob("_site/reference/cli/*.html")
+    cli_html_files = glob.glob("_site/reference/cli/**/*.html", recursive=True)
 
     if not cli_html_files:
         return
@@ -2622,9 +2622,13 @@ def process_cli_reference_pages():
         _cli_label = _t("cli", "CLI")
         # Keep the navigation label below the page's `h1` title.
         if cmd_name != "index":
-            # Extract full command name from the page title (e.g., "great-docs init")
-            _title_match = re.search(r'<h1 class="title[^"]*">([^<]+)</h1>', content)
-            _full_cmd = _title_match.group(1).strip() if _title_match else f"great-docs {cmd_name}"
+            # Read all text inside the title because the command name may be
+            # nested in a `span`.
+            _title_match = re.search(r'<h1 class="title[^"]*">(.*?)</h1>', content, re.DOTALL)
+            if _title_match:
+                _full_cmd = html.unescape(re.sub(r"<[^>]+>", "", _title_match.group(1))).strip()
+            else:
+                _full_cmd = f"great-docs {cmd_name}"
             _cli_title_html = (
                 f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
                 f'<span class="gd-ref-title-prefix">{_cli_label}</span>'

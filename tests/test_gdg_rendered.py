@@ -2130,6 +2130,42 @@ def test_cli_command_page_heading_levels(pkg_name: str):
 
 @pytest.mark.dedicated
 @requires_bs4
+@pytest.mark.parametrize(
+    ("pkg_name", "page_rel_path"),
+    [
+        ("gdtest_cli_click", "gdtest_cli.html"),
+        ("gdtest_cli_nested", "config/get.html"),
+    ],
+)
+def test_cli_title_bar_label_matches_command_name(pkg_name: str, page_rel_path: str):
+    """
+    Verify that CLI navigation labels use full command names
+
+    Compare the `h5` navigation label with the marked-up `h1` title on flat
+    and nested command pages.
+    """
+    cli_dir = _ref_dir(pkg_name) / "cli"
+    page = cli_dir / page_rel_path
+    if not page.exists():
+        pytest.skip(f"No {page_rel_path} for {pkg_name}")
+
+    soup = _load_html(page)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, f"{page_rel_path}: missing h1.title page title"
+    command_name = title.get_text(strip=True)
+
+    label = soup.select_one("h5.gd-ref-title .gd-ref-title-name")
+    assert label is not None, f"{page_rel_path}: navigation label is missing"
+
+    assert label.get_text(strip=True) == command_name, (
+        f"{page_rel_path}: title bar label {label.get_text(strip=True)!r} "
+        f"does not match the command name {command_name!r}"
+    )
+
+
+@pytest.mark.dedicated
+@requires_bs4
 def test_cli_index_heading_levels():
     """Verify that CLI index group headings are `h2` elements"""
     pkg = "gdtest_cli_nested"
@@ -2178,8 +2214,8 @@ def test_cli_sidebar_structure_flat():
 
     contents = cli_section.get("contents", [])
     assert len(contents) >= 1
-    # All items should be plain path strings — no section dicts
-    for item in contents:
+    # The first item is the labelled CLI index; the remaining items are paths.
+    for item in contents[1:]:
         assert isinstance(item, str), f"Flat CLI sidebar should only have path strings, got: {item}"
 
 
@@ -2206,9 +2242,9 @@ def test_cli_sidebar_structure_nested():
     contents = cli_section.get("contents", [])
     assert len(contents) >= 3, f"Expected at least 3 items (index + 2 groups), got {len(contents)}"
 
-    # First item should be the main CLI index page
-    assert contents[0] == "reference/cli/index.qmd", (
-        f"First sidebar item should be the CLI index, got: {contents[0]}"
+    # Require the labelled CLI index as the first item.
+    assert contents[0] == {"text": "CLI Index", "href": "reference/cli/index.qmd"}, (
+        f"First sidebar item should be the labelled CLI index link, got: {contents[0]}"
     )
 
     # Remaining items for groups should be section dicts
