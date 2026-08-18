@@ -603,7 +603,7 @@ Because each version is rendered independently, the build is embarrassingly para
 Versioned builds work in these directories:
 
 - **`great-docs/`** stores the temporary Quarto project for the latest version and the assembled site in `great-docs/_site/`. Great Docs recreates the directory at the start of every build.
-- **`great-docs-<tag>/`** stores one temporary, self-contained Quarto project for each historical version. Great Docs creates these directories beside `great-docs/`.
+- **`great-docs-<tag>/`** stores one temporary, self-contained Quarto project for each historical version. Great Docs removes existing marked sibling directories before a versioned build and recreates only those selected for that build.
 - **`.great-docs-cache/`** caches one API snapshot for each version that uses Strategy B (`git_ref`). Delete the directory to repeat API introspection during the next build.
 
 Every version's Quarto project therefore sits one level below your project root, whether or not you configure `versions:`. A relative path in page content resolves to the same file either way.
@@ -614,7 +614,7 @@ Add these to your `.gitignore`. Great Docs does this automatically when you run 
 
 ```{.text filename=".gitignore"}
 great-docs/
-great-docs-*/
+/great-docs-*/
 .great-docs-build/
 .great-docs-cache/
 .great-docs/

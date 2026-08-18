@@ -764,7 +764,7 @@ class GreatDocs:
 
         # Versioning build artifacts (added when versions are configured)
         versioning_entries = [
-            "great-docs-*/",
+            "/great-docs-*/",
             ".great-docs-build/",
             ".great-docs-cache/",
             ".great-docs/",
@@ -15310,7 +15310,9 @@ anchor-sections: true
 
         The latest version and a non-versioned build store their cache in
         `great-docs/_freeze`. Historical versions store caches in sibling
-        `great-docs-<tag>/_freeze` directories.
+        `great-docs-<tag>/_freeze` directories. Merge individual files so a
+        page from one version cannot replace different pages in the same
+        section. When versions cache the same path, the latest version wins.
 
         Returns
         -------
@@ -15318,18 +15320,18 @@ anchor-sections: true
         """
         freeze_sources: list[Path] = []
 
-        # The latest version and a non-versioned build share this location.
-        single = self.project_path / "_freeze"
-        if single.is_dir():
-            freeze_sources.append(single)
-
-        # Historical versions use marked sibling directories.
+        # Merge historical caches first so the latest version wins collisions.
         for ver_dir in sorted(self.project_root.glob(f"{self.docs_dir.name}-*")):
-            if not ver_dir.is_dir() or not is_great_docs_build_dir(ver_dir):
+            if not ver_dir.is_dir() or ver_dir.is_symlink() or not is_great_docs_build_dir(ver_dir):
                 continue
             candidate = ver_dir / "_freeze"
             if candidate.is_dir():
                 freeze_sources.append(candidate)
+
+        # The latest version and a non-versioned build share this location.
+        single = self.project_path / "_freeze"
+        if single.is_dir():
+            freeze_sources.append(single)
 
         if not freeze_sources:
             return None
@@ -15339,15 +15341,15 @@ anchor-sections: true
             shutil.rmtree(freeze_dst)
         freeze_dst.mkdir()
 
+        # Copy files individually. Replacing a top-level cache directory would
+        # discard pages contributed by earlier sources.
         for src in freeze_sources:
-            for item in src.iterdir():
-                dest = freeze_dst / item.name
-                if item.is_dir():
-                    if dest.exists():
-                        shutil.rmtree(dest)
-                    shutil.copytree(item, dest)
-                else:
-                    shutil.copy2(item, dest)
+            for item in src.rglob("*"):
+                if not item.is_file():
+                    continue
+                dest = freeze_dst / item.relative_to(src)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, dest)
 
         for js_file in freeze_dst.rglob("*.js"):
             data = js_file.read_bytes()

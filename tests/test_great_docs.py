@@ -8121,7 +8121,7 @@ def test_update_gitignore_force_creates_new():
         content = gitignore.read_text()
 
         assert "great-docs/" in content
-        assert "great-docs-*/" in content
+        assert "/great-docs-*/" in content
         assert ".great-docs-build/" in content
         assert ".great-docs-cache/" in content
         assert ".great-docs/" in content
@@ -8140,7 +8140,7 @@ def test_update_gitignore_force_appends_to_existing():
 
         assert "__pycache__/" in content
         assert "great-docs/" in content
-        assert "great-docs-*/" in content
+        assert "/great-docs-*/" in content
         assert ".great-docs-build/" in content
         assert ".great-docs-cache/" in content
         assert ".great-docs/" in content
@@ -8151,7 +8151,7 @@ def test_update_gitignore_skip_when_already_present():
     with tempfile.TemporaryDirectory() as tmp_dir:
         gitignore = Path(tmp_dir) / ".gitignore"
         gitignore.write_text(
-            "great-docs/\ngreat-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
+            "great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
         )
 
         docs = GreatDocs(project_path=tmp_dir)
@@ -8162,10 +8162,61 @@ def test_update_gitignore_skip_when_already_present():
         lines = content.splitlines()
 
         assert lines.count("great-docs/") == 1
-        assert lines.count("great-docs-*/") == 1
+        assert lines.count("/great-docs-*/") == 1
         assert lines.count(".great-docs-build/") == 1
         assert lines.count(".great-docs-cache/") == 1
         assert lines.count(".great-docs/") == 1
+
+
+def test_update_gitignore_versioning_pattern_is_anchored():
+    """
+    Keep the historical build pattern at the project root
+
+    Without the leading `/`, Git would also ignore a project directory such
+    as `docs/great-docs-examples/`.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        content = (Path(tmp_dir) / ".gitignore").read_text()
+
+        assert "/great-docs-*/" in content
+        assert "\ngreat-docs-*/" not in content
+
+
+def test_update_gitignore_versioning_pattern_does_not_match_nested_dir():
+    """
+    Leave nested directories outside the historical build pattern
+
+    Use Git to verify the generated rule instead of duplicating its ignore
+    semantics in the test.
+    """
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git is not available")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        subprocess.run([git, "init", "-q"], cwd=tmp, check=True)
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        nested = tmp / "docs" / "great-docs-examples"
+        nested.mkdir(parents=True)
+        (nested / "y.md").write_text("content\n")
+
+        result = subprocess.run(
+            [git, "check-ignore", str(nested / "y.md")],
+            cwd=tmp,
+            capture_output=True,
+            text=True,
+        )
+
+        # Git reports an unignored path with no output and a nonzero status.
+        assert result.returncode != 0
+        assert result.stdout.strip() == ""
 
 
 def test_detect_package_name_from_setup_cfg_preexisting():
@@ -25759,7 +25810,7 @@ def test_update_gitignore_already_present():
     with tempfile.TemporaryDirectory() as tmp_dir:
         gitignore = Path(tmp_dir) / ".gitignore"
         gitignore.write_text(
-            "great-docs/\ngreat-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
+            "great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
             encoding="utf-8",
         )
 
@@ -25770,7 +25821,7 @@ def test_update_gitignore_already_present():
         lines = content.splitlines()
         # Should not have doubled any entry
         assert lines.count("great-docs/") == 1
-        assert lines.count("great-docs-*/") == 1
+        assert lines.count("/great-docs-*/") == 1
         assert lines.count(".great-docs-build/") == 1
         assert lines.count(".great-docs-cache/") == 1
         assert lines.count(".great-docs/") == 1
@@ -42044,3 +42095,43 @@ class TestPersistFreezeCacheVersioned:
         assert (tmp_path / "_freeze" / "latest.json").is_file()
         assert (tmp_path / "_freeze" / "old.json").is_file()
         assert not (tmp_path / "_freeze" / "stray.json").exists()
+
+    def test_merge_keeps_pages_scoped_out_of_a_historical_version(self, tmp_path: Path):
+        """
+        Preserve latest pages that a historical version excludes
+
+        Quarto groups page caches below shared section directories. Replacing
+        a whole section with a historical cache would discard pages that the
+        historical version excluded.
+        """
+        from great_docs._utils import QUARTO_YML_HEADER
+
+        docs = GreatDocs(project_path=str(tmp_path))
+
+        latest_freeze = tmp_path / "great-docs" / "_freeze" / "user-guide"
+        for page in ("a", "b", "c"):
+            page_dir = latest_freeze / page / "execute-results"
+            page_dir.mkdir(parents=True)
+            (page_dir / "html.json").write_text(f'{{"page": "{page}"}}', encoding="utf-8")
+
+        old = tmp_path / "great-docs-0.14.0"
+        old.mkdir()
+        (old / "_quarto.yml").write_text(
+            QUARTO_YML_HEADER + "project:\n  type: website\n", encoding="utf-8"
+        )
+        old_page_dir = old / "_freeze" / "user-guide" / "a" / "execute-results"
+        old_page_dir.mkdir(parents=True)
+        (old_page_dir / "html.json").write_text('{"page": "a-old"}', encoding="utf-8")
+
+        docs._persist_freeze_cache()
+
+        for page in ("a", "b", "c"):
+            assert (
+                tmp_path / "_freeze" / "user-guide" / page / "execute-results" / "html.json"
+            ).is_file()
+
+        # The latest cache is merged last and must win same-path collisions.
+        merged_a = (
+            tmp_path / "_freeze" / "user-guide" / "a" / "execute-results" / "html.json"
+        ).read_text(encoding="utf-8")
+        assert merged_a == '{"page": "a"}'

@@ -1880,9 +1880,9 @@ def run_versioned_build(
         }
 
     _check_build_dir_collisions(source_dir, targets, latest_tag)
-    warnings = _clean_stale_version_dirs(source_dir)
 
-    # Unmarked directories may contain user files. Refuse to overwrite them.
+    # Unmarked directories may contain user files. Check them before cleanup so
+    # an aborted build also preserves existing, marked version output.
     for entry in targets:
         ver_dir = _version_build_dir(source_dir, entry, latest_tag)
         if ver_dir == source_dir:
@@ -1893,6 +1893,8 @@ def run_versioned_build(
                 f"but does not contain a Great Docs-generated _quarto.yml. Move or delete "
                 f"the directory before building."
             )
+
+    warnings = _clean_stale_version_dirs(source_dir)
 
     # --- Stage 1: Preprocess each version ---
     pages_by_version: dict[str, list[str]] = {}

@@ -3070,6 +3070,40 @@ class TestRunVersionedBuild:
 
         assert (stray / "notes.txt").read_text() == "mine"
 
+    def test_marked_sibling_survives_when_target_dir_unmarked(self, tmp_path: Path):
+        """
+        Preserve existing output when a target collides with a user directory
+
+        Collision validation must stop the build before cleanup removes marked
+        sibling directories.
+        """
+        source = tmp_path / "source"
+        _make_source_tree(source, {"index.qmd": "---\ntitle: Hi\n---\nHi"})
+
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+
+        marked = tmp_path / "source-0.1"
+        marked.mkdir()
+        (marked / "_quarto.yml").write_text(
+            QUARTO_YML_HEADER + "project:\n  type: website\n", encoding="utf-8"
+        )
+        (marked / "notes.txt").write_text("kept", encoding="utf-8")
+
+        stray = tmp_path / "source-0.2"
+        stray.mkdir()
+        (stray / "notes.txt").write_text("mine", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="source-0.2"):
+            run_versioned_build(
+                source_dir=source,
+                project_root=project_root,
+                versions_config=["0.3", "0.2", "0.1"],
+            )
+
+        assert is_great_docs_build_dir(marked)
+        assert (marked / "notes.txt").read_text() == "kept"
+
     def test_older_version_page_is_isolated_from_source_dir(self, tmp_path: Path):
         """
         Copy historical pages before pruning the latest version

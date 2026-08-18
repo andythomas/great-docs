@@ -1243,6 +1243,39 @@ class TestCheckStaleVersions:
         _check_stale_versions(tmp_path, result)
         assert len(result.issues) == 0
 
+    def test_skips_versioned_build_dirs(self, tmp_path):
+        """
+        Skip generated copies when checking stale version markers
+
+        Versioned builds copy source `.qmd` pages into `great-docs/` and
+        `great-docs-<tag>/`. Scanning those copies would duplicate each finding,
+        while a nested user directory must remain in scope.
+        """
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {
+                "great-docs/user-guide/page.qmd": (
+                    "---\ntitle: Test\n---\n\n[version-badge new 0.1]\n"
+                ),
+                "great-docs-0.6/user-guide/page.qmd": (
+                    "---\ntitle: Test\n---\n\n[version-badge new 0.1]\n"
+                ),
+                # A nested project directory remains source; only top-level
+                # build directories are excluded.
+                "docs/great-docs-examples/page.qmd": (
+                    "---\ntitle: Test\n---\n\n[version-badge new 0.1]\n"
+                ),
+            },
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        stale = [i for i in result.issues if i.check == "stale-badge"]
+        assert len(stale) == 1
+        assert "great-docs-examples" in stale[0].symbol
+
     def test_line_numbers_correct(self, tmp_path):
         from great_docs._lint import _check_stale_versions
 

@@ -621,12 +621,15 @@ def _check_stale_versions(project_root: Path, result: LintResult) -> None:
         re.MULTILINE,
     )
 
-    # Collect .qmd files (skip _site, _extensions, build dirs, hidden dirs)
+    # Ignore generated build copies at the project root. Nested directories
+    # with similar names remain part of the user's source tree.
     qmd_files = []
     for qmd in project_root.rglob("*.qmd"):
         rel = qmd.relative_to(project_root)
         parts = rel.parts
         if any(p.startswith("_") or p.startswith(".") for p in parts):
+            continue
+        if parts and (parts[0] == "great-docs" or parts[0].startswith("great-docs-")):
             continue
         qmd_files.append(qmd)
 
