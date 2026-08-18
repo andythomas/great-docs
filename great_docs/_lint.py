@@ -377,14 +377,19 @@ def _section_kinds(docstring: str, style: str) -> set[str]:
     import griffe
 
     logger = logging.getLogger("griffe")
-    previous = logger.disabled
+    previous_disabled = logger.disabled
+    previous_propagate = logger.propagate
+    # disabled suppresses records sent directly to this logger; propagate=False
+    # stops child-logger records from reaching root handlers via propagation.
     logger.disabled = True
+    logger.propagate = False
     try:
         parsed = griffe.Docstring(  # pyright: ignore[reportArgumentType]
             docstring, parser=style
         ).parsed
     finally:
-        logger.disabled = previous
+        logger.disabled = previous_disabled
+        logger.propagate = previous_propagate
     return {section.kind.value for section in parsed if section.kind.value != "text"}
 
 
