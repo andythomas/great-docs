@@ -653,6 +653,79 @@ def test_reference_index_heading_levels(pkg_name: str):
         )
 
 
+@requires_bs4
+def test_reference_index_subtitle_renders_as_h3_in_toc():
+    """
+    Verify subtitle-only reference sections in the index
+
+    The fixture's final section has `subtitle` instead of `title`. It must
+    render as `h3.doc-group` and appear in the table of contents beside the
+    `h2` titled sections.
+    """
+    index = _ref_dir("gdtest_ref_sectioned") / "index.html"
+    if not index.exists():
+        pytest.skip("No reference index for gdtest_ref_sectioned")
+
+    soup = _load_html(index)
+
+    subtitle_heading = soup.select_one("h3.doc-group")
+    assert subtitle_heading is not None, "subtitled section has no h3.doc-group heading"
+    assert subtitle_heading.get_text(strip=True) == "Miscellaneous"
+
+    # Titled sections remain at `h2`.
+    title_headings = soup.select("h2.doc-group")
+    assert {h.get_text(strip=True) for h in title_headings} == {
+        "Constructors",
+        "Transformers",
+        "Validators",
+        "Utilities",
+    }
+
+    toc = soup.select_one("nav#TOC")
+    assert toc is not None, "reference index is missing nav#TOC"
+    toc_entries = {a.get_text(strip=True) for a in toc.select("a")}
+    assert "Miscellaneous" in toc_entries, (
+        "subtitled section is missing from the table of contents"
+    )
+
+
+@requires_bs4
+def test_fallback_docstring_section_nested_in_member_renders_as_h4():
+    """
+    Verify that fallback sections follow member nesting
+
+    `Converter.is_valid` renders at `h3`, so its fallback Parameters and
+    Returns sections must render at `h4`. The top-level `validate` function's
+    fallback sections remain at `h2`.
+    """
+    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
+    if not converter.exists():
+        pytest.skip("No Converter page for gdtest_mixed_docs")
+
+    soup = _load_html(converter)
+
+    is_valid_section = soup.select_one("section#is_valid")
+    assert is_valid_section is not None, "is_valid member section is missing"
+    assert is_valid_section.get("class") and "level3" in is_valid_section["class"], (
+        "is_valid member section is not level3"
+    )
+
+    fallback_headings = is_valid_section.select("section.doc-section h1, "
+        "section.doc-section h2, section.doc-section h3, section.doc-section h4")
+    assert fallback_headings, "is_valid has no fallback sections to check"
+    for heading in fallback_headings:
+        assert heading.name == "h4", (
+            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
+            f"inside is_valid, found {heading.name}"
+        )
+
+    validate_page = _ref_dir("gdtest_mixed_docs") / "validate.html"
+    if validate_page.exists():
+        validate_soup = _load_html(validate_page)
+        top_level_headings = validate_soup.select("section.doc-section h2")
+        assert top_level_headings, "validate has no top-level h2 fallback sections"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # R2: Docstring Rendering — parameters, returns, raises, examples
 # ═══════════════════════════════════════════════════════════════════════════════

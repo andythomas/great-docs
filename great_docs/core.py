@@ -8773,7 +8773,8 @@ class GreatDocs:
         for section_config in reference_config:
             if not isinstance(section_config, dict):
                 continue
-            title = section_config.get("title", "Untitled")
+            title = section_config.get("title")
+            subtitle = section_config.get("subtitle")
             desc = section_config.get("desc", "")
             contents_config = section_config.get("contents", [])
 
@@ -8816,7 +8817,7 @@ class GreatDocs:
             if section_contents:
                 sections.append(
                     {
-                        "title": title,
+                        **({"subtitle": subtitle} if subtitle is not None else {"title": title or "Untitled"}),
                         "desc": desc,
                         "contents": section_contents,
                     }
@@ -9137,7 +9138,8 @@ class GreatDocs:
         for section_config in reference_config:
             if not isinstance(section_config, dict):
                 continue  # pragma: no cover
-            title = section_config.get("title", "Untitled")
+            title = section_config.get("title")
+            subtitle = section_config.get("subtitle")
             desc = section_config.get("desc", "")
             contents_config = section_config.get("contents", [])
 
@@ -9200,7 +9202,11 @@ class GreatDocs:
             if section_contents:
                 sections.append(
                     {
-                        "title": title,
+                        **(
+                            {"subtitle": subtitle}
+                            if subtitle is not None
+                            else {"title": title or "Untitled"}
+                        ),
                         "desc": desc,
                         "contents": section_contents,
                     }
@@ -13419,7 +13425,8 @@ anchor-sections: true
 
         # Build sidebar structure from sections
         for section in sections:
-            section_entry = {"section": section["title"], "contents": []}
+            heading = section.get("title") or section.get("subtitle") or ""
+            section_entry = {"section": heading, "contents": []}
 
             # Add each item in the section
             for item in section.get("contents", []):

@@ -58,6 +58,17 @@ SPEC = {
                     """
                     return data
 
+                def is_valid(self, data: str) -> bool:
+                    """Return whether this converter accepts the data
+
+                    Args:
+                        data: Data string to validate.
+
+                    Returns:
+                        Whether `data` is non-empty.
+                    """
+                    return len(data) > 0
+
 
             def encode(data: str, encoding: str = "utf-8") -> bytes:
                 """

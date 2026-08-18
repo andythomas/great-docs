@@ -1158,6 +1158,33 @@ def strip_colgroup_tags(html_content):
     return colgroup_pattern.sub(_replace_if_not_gt, html_content)
 
 
+_HEADING_TAG_RE = re.compile(r"<h([1-9])(?:\s[^>]*)?>")
+
+
+def _fallback_section_level(html_content, pos):
+    """
+    Select the heading level for a fallback docstring section
+
+    Top-level sections render at `h2`. Sections within an `h3` member render
+    at `h4`. The nearest preceding heading determines which level applies.
+
+    Parameters
+    ----------
+    html_content
+        Complete page HTML.
+    pos
+        Character offset where the fallback section starts.
+
+    Returns
+    -------
+    `4` after an `h3` member heading; otherwise `2`.
+    """
+    last_level = None
+    for m in _HEADING_TAG_RE.finditer(html_content, 0, pos):
+        last_level = int(m.group(1))
+    return 4 if last_level == 3 else 2
+
+
 def translate_sphinx_fields(html_content):
     """
     Convert Sphinx field-list directives into structured doc sections.
@@ -1229,6 +1256,7 @@ def translate_sphinx_fields(html_content):
                 raises.append((name, body))
 
         parts = []
+        lvl = _fallback_section_level(html_content, m.start())
 
         # ── Parameters section ───────────────────────────────────────────
         if params:
@@ -1252,8 +1280,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{pdesc}</p>\n</dd>" if pdesc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="parameters" class="level2 doc-section doc-section-parameters">\n'
-                f'<h2 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h2>\n'
+                f'<section id="parameters" class="level{lvl} doc-section doc-section-parameters">\n'
+                f'<h{lvl} class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1276,8 +1304,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{rdesc}</p>\n</dd>" if rdesc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="returns" class="level2 doc-section doc-section-returns">\n'
-                f'<h2 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h2>\n'
+                f'<section id="returns" class="level{lvl} doc-section doc-section-returns">\n'
+                f'<h{lvl} class="doc-section doc-section-returns">{_t("returns", "Returns")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1289,8 +1317,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{desc}</p>\n</dd>" if desc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="raises" class="level2 doc-section doc-section-raises">\n'
-                f'<h2 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h2>\n'
+                f'<section id="raises" class="level{lvl} doc-section doc-section-raises">\n'
+                f'<h{lvl} class="doc-section doc-section-raises">{_t("raises", "Raises")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1404,6 +1432,7 @@ def translate_google_fields(html_content):
         section = m.group("section")
         body = (m.group("body") or "").strip()
         pre_body = m.group("pre_body").strip() if m.group("pre_body") else None
+        lvl = _fallback_section_level(html_content, m.start())
 
         # ── Args / Parameters ─────────────────────────────────────────
         if section in _PARAM_SECTIONS:
@@ -1421,8 +1450,8 @@ def translate_google_fields(html_content):
                 dd = f"<dd>\n<p>{pdesc}</p>\n</dd>" if pdesc else "<dd></dd>"
                 items.append(f"{dt}\n{dd}")
             return (
-                '<section id="parameters" class="level2 doc-section doc-section-parameters">\n'
-                f'<h2 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h2>\n'
+                f'<section id="parameters" class="level{lvl} doc-section doc-section-parameters">\n'
+                f'<h{lvl} class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1435,8 +1464,8 @@ def translate_google_fields(html_content):
                 parts.append(_pre_to_html(pre_body))
             content = "\n".join(parts)
             return (
-                '<section id="returns" class="level2 doc-section doc-section-returns">\n'
-                f'<h2 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h2>\n'
+                f'<section id="returns" class="level{lvl} doc-section doc-section-returns">\n'
+                f'<h{lvl} class="doc-section doc-section-returns">{_t("returns", "Returns")}</h{lvl}>\n'
                 f"{content}\n</section>"
             )
 
@@ -1453,8 +1482,8 @@ def translate_google_fields(html_content):
                 dd = f"<dd>\n<p>{desc}</p>\n</dd>" if desc else "<dd></dd>"
                 items.append(f"{dt}\n{dd}")
             return (
-                '<section id="raises" class="level2 doc-section doc-section-raises">\n'
-                f'<h2 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h2>\n'
+                f'<section id="raises" class="level{lvl} doc-section doc-section-raises">\n'
+                f'<h{lvl} class="doc-section doc-section-raises">{_t("raises", "Raises")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1467,8 +1496,8 @@ def translate_google_fields(html_content):
                 code_parts.append(pre_body)
             code = "\n".join(code_parts)
             return (
-                '<section id="examples" class="level2 doc-section doc-section-examples">\n'
-                f'<h2 class="doc-section doc-section-examples">{_t("examples", "Examples")}</h2>\n'
+                f'<section id="examples" class="level{lvl} doc-section doc-section-examples">\n'
+                f'<h{lvl} class="doc-section doc-section-examples">{_t("examples", "Examples")}</h{lvl}>\n'
                 f"<pre><code>{code}</code></pre>\n</section>"
             )
 
@@ -1491,8 +1520,8 @@ def translate_google_fields(html_content):
         full = _dbl_bt(full)
         content = f"<p>{full}</p>" if full else ""
         return (
-            f'<section id="{slug}" class="level2 doc-section doc-section-{slug}">\n'
-            f'<h2 class="doc-section doc-section-{slug}">{display}</h2>\n'
+            f'<section id="{slug}" class="level{lvl} doc-section doc-section-{slug}">\n'
+            f'<h{lvl} class="doc-section doc-section-{slug}">{display}</h{lvl}>\n'
             f"{content}\n</section>"
         )
 
@@ -1599,9 +1628,10 @@ def translate_bold_section_headers(html_content):
         slug = _SECTION_NAMES.get(name, name.lower().replace(" ", "-"))
         i18n_key = _BOLD_I18N_KEY.get(name)
         display = _t(i18n_key, name) if i18n_key else name
+        lvl = _fallback_section_level(html_content, m.start())
         return (
-            f'<section id="{slug}" class="level2 doc-section doc-section-{slug}">\n'
-            f'<h2 class="doc-section doc-section-{slug}">{display}</h2>'
+            f'<section id="{slug}" class="level{lvl} doc-section doc-section-{slug}">\n'
+            f'<h{lvl} class="doc-section doc-section-{slug}">{display}</h{lvl}>'
         )
 
     html_content = re.sub(

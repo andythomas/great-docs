@@ -1,13 +1,16 @@
 """
-gdtest_ref_sectioned — Reference with 4 named sections.
+Reference configuration with titled and subtitled sections
 
 Dimensions: P5
-Focus: Reference config with four distinct named sections, each containing two functions.
+Focus: Exercise four titled sections and one subtitled section.
 """
 
 SPEC = {
     "name": "gdtest_ref_sectioned",
-    "description": "Reference with 4 named sections, each containing two functions.",
+    "description": (
+        "Four titled reference sections with two functions each, plus one "
+        "subtitled section."
+    ),
     "dimensions": ["P5"],
     "pyproject_toml": {
         "project": {
@@ -54,10 +57,17 @@ SPEC = {
                     {"name": "from_string"},
                 ],
             },
+            {
+                "subtitle": "Miscellaneous",
+                "desc": "Odds and ends",
+                "contents": [
+                    {"name": "format_label"},
+                ],
+            },
         ],
     },
     "files": {
-        "gdtest_ref_sectioned/__init__.py": '"""Test package for reference with 4 named sections."""\n\nfrom .constructors import create_layout, create_widget\nfrom .transformers import resize, rotate\nfrom .validators import check_bounds, check_type\nfrom .utilities import from_string, to_string\n\n__all__ = [\n    "check_bounds", "check_type", "create_layout", "create_widget",\n    "from_string", "resize", "rotate", "to_string",\n]\n',
+        "gdtest_ref_sectioned/__init__.py": '"""Synthetic package with four titled and one subtitled reference section"""\n\nfrom .constructors import create_layout, create_widget\nfrom .transformers import resize, rotate\nfrom .validators import check_bounds, check_type\nfrom .utilities import from_string, to_string\nfrom .misc import format_label\n\n__all__ = [\n    "check_bounds", "check_type", "create_layout", "create_widget",\n    "format_label", "from_string", "resize", "rotate", "to_string",\n]\n',
         "gdtest_ref_sectioned/constructors.py": '''
             """Constructor functions for creating widgets and layouts."""
 
@@ -257,6 +267,32 @@ SPEC = {
                     except ValueError:
                         return text
         ''',
+        "gdtest_ref_sectioned/misc.py": '''
+            """Helpers grouped under the subtitled reference section"""
+
+
+            def format_label(name: str, upper: bool = False) -> str:
+                """
+                Format a display label
+
+                Parameters
+                ----------
+                name
+                    Name to format.
+                upper
+                    Convert the label to uppercase.
+
+                Returns
+                -------
+                Formatted label.
+
+                Examples
+                --------
+                >>> format_label("widget")
+                'widget'
+                """
+                return name.upper() if upper else name
+        ''',
         "README.md": ("# gdtest-ref-sectioned\n\nTest reference with 4 named sections.\n"),
     },
     "expected": {
@@ -268,12 +304,13 @@ SPEC = {
             "check_type",
             "create_layout",
             "create_widget",
+            "format_label",
             "from_string",
             "resize",
             "rotate",
             "to_string",
         ],
-        "num_exports": 8,
+        "num_exports": 9,
         "coverage_exclude": ["nodoc", "bigcl", "ug", "supp", "sechdg", "sbsec", "hdg"],
     },
 }
