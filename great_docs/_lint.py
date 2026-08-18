@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ._builtin.directives import DIRECTIVES
-from ._utils import parse_seealso
+from ._utils import is_in_great_docs_build_dir, parse_seealso
 
 
 @dataclass
@@ -629,7 +629,7 @@ def _check_stale_versions(project_root: Path, result: LintResult) -> None:
         parts = rel.parts
         if any(p.startswith("_") or p.startswith(".") for p in parts):
             continue
-        if parts and (parts[0] == "great-docs" or parts[0].startswith("great-docs-")):
+        if is_in_great_docs_build_dir(parts):
             continue
         qmd_files.append(qmd)
 

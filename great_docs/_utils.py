@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 _SEEALSO_RE = re.compile(
@@ -109,3 +110,23 @@ def is_great_docs_build_dir(path: Path) -> bool:
     except (OSError, UnicodeDecodeError):
         return False
     return _QUARTO_YML_MARKER in head
+
+
+def is_in_great_docs_build_dir(parts: Sequence[str]) -> bool:
+    """
+    Check whether a project-relative path is inside Great Docs build output
+
+    Treat a root `great-docs/` or `great-docs-<tag>/` component as temporary
+    build output. Check only the first component so nested project directories,
+    such as `docs/great-docs-examples/`, remain source content.
+
+    Parameters
+    ----------
+    parts
+        Components of a path relative to the project root.
+
+    Returns
+    -------
+    Whether the first component names a Great Docs build directory.
+    """
+    return bool(parts) and (parts[0] == "great-docs" or parts[0].startswith("great-docs-"))

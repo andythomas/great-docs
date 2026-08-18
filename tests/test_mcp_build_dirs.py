@@ -1,8 +1,12 @@
+import asyncio
 import shutil
 from pathlib import Path
 
+import pytest
+from mcp.types import CompletionArgument, ResourceTemplateReference
+
 from great_docs._utils import QUARTO_YML_HEADER
-from great_docs.mcp import _sibling_build_dirs
+from great_docs.mcp import _sibling_build_dirs, handle_completion
 
 
 class TestSiblingBuildDirs:
@@ -66,3 +70,54 @@ class TestCleanRemovesSiblings:
         assert (tmp_path / "great-docs" / "index.html").exists()
         assert unmarked.is_dir()
         assert (unmarked / "notes.txt").read_text(encoding="utf-8") == "keep me"
+
+
+class TestPageCompletionExcludesBuildDirs:
+    """
+    Coverage for page completion over project sources
+
+    Build directories contain regenerated copies of `.qmd` files. Page
+    completion must list the original source paths without those duplicates.
+    """
+
+    def _complete(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str = ""):
+        monkeypatch.chdir(tmp_path)
+        ref = ResourceTemplateReference(type="ref/resource", uri="great-docs://page/{path}")
+        argument = CompletionArgument(name="path", value=value)
+        result = asyncio.run(handle_completion(ref, argument))
+        return result.values if result is not None else []
+
+    def test_excludes_pages_under_latest_build_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        (tmp_path / "great-docs").mkdir()
+        (tmp_path / "great-docs" / "index.qmd").write_text("", encoding="utf-8")
+        (tmp_path / "own-page.qmd").write_text("", encoding="utf-8")
+
+        values = self._complete(tmp_path, monkeypatch)
+
+        assert "own-page.qmd" in values
+        assert not any(v.startswith("great-docs/") for v in values)
+
+    def test_excludes_pages_under_versioned_build_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        (tmp_path / "great-docs-0.2").mkdir()
+        (tmp_path / "great-docs-0.2" / "index.qmd").write_text("", encoding="utf-8")
+        (tmp_path / "own-page.qmd").write_text("", encoding="utf-8")
+
+        values = self._complete(tmp_path, monkeypatch)
+
+        assert "own-page.qmd" in values
+        assert not any(v.startswith("great-docs-0.2/") for v in values)
+
+    def test_includes_nested_user_dir_with_similar_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        nested = tmp_path / "docs" / "great-docs-examples"
+        nested.mkdir(parents=True)
+        (nested / "page.qmd").write_text("", encoding="utf-8")
+
+        values = self._complete(tmp_path, monkeypatch)
+
+        assert "docs/great-docs-examples/page.qmd" in values

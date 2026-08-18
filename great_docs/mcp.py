@@ -31,7 +31,7 @@ from mcp.types import (
 )
 from pydantic import AnyUrl
 
-from ._utils import is_great_docs_build_dir
+from ._utils import is_great_docs_build_dir, is_in_great_docs_build_dir
 
 server = Server("great-docs")
 
@@ -1275,9 +1275,12 @@ async def handle_completion(
                 return None
 
         if "page" in str(ref.uri) and argument.name == "path":
-            # List .qmd files in the project
+            # List source pages without their generated build copies.
             root = Path.cwd()
-            qmd_files = sorted(str(p.relative_to(root)) for p in root.rglob("*.qmd"))
+            rel_paths = (p.relative_to(root) for p in root.rglob("*.qmd"))
+            qmd_files = sorted(
+                str(rel) for rel in rel_paths if not is_in_great_docs_build_dir(rel.parts)
+            )
             filtered = [f for f in qmd_files if value.lower() in f.lower()]
             return Completion(values=filtered[:20], hasMore=len(filtered) > 20)
 

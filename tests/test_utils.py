@@ -1,6 +1,6 @@
 import pytest
 
-from great_docs._utils import fenced_lines
+from great_docs._utils import fenced_lines, is_in_great_docs_build_dir
 
 
 def test_fenced_lines_without_markers_returns_lines_and_clear_mask():
@@ -32,3 +32,27 @@ def test_fenced_lines_requires_a_matching_long_enough_closer():
 @pytest.mark.parametrize("text", ["a `code` span", "value ~ default"])
 def test_fenced_lines_ignores_non_fence_characters(text: str):
     assert fenced_lines(text) == ([text], [False])
+
+
+@pytest.mark.parametrize(
+    "parts",
+    [
+        ("great-docs", "index.qmd"),
+        ("great-docs-0.2", "index.qmd"),
+        ("great-docs-0.2",),
+    ],
+)
+def test_is_in_great_docs_build_dir_matches_build_output(parts: tuple[str, ...]):
+    assert is_in_great_docs_build_dir(parts) is True
+
+
+@pytest.mark.parametrize(
+    "parts",
+    [
+        (),
+        ("docs", "great-docs-examples", "index.qmd"),
+        ("great_docs_notes", "index.qmd"),
+    ],
+)
+def test_is_in_great_docs_build_dir_ignores_nested_or_unrelated_dirs(parts: tuple[str, ...]):
+    assert is_in_great_docs_build_dir(parts) is False
