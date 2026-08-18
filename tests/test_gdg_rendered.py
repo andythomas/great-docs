@@ -585,6 +585,28 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
     assert checked > 0, f"{pkg_name}: no docstring sections or members were checked"
 
 
+@requires_bs4
+@pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google"])
+def test_r4_reference_index_heading_levels(pkg_name: str):
+    """Verify that reference index group headings are `h2` elements"""
+    index = _ref_dir(pkg_name) / "index.html"
+    if not index.exists():
+        pytest.skip(f"No reference index for {pkg_name}")
+
+    soup = _load_html(index)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, "reference index is missing its h1.title"
+
+    groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
+    assert groups, "reference index contains no group headings"
+    for heading in groups:
+        assert heading.name == "h2", (
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
+            f"found {heading.name}"
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # R2: Docstring Rendering — parameters, returns, raises, examples
 # ═══════════════════════════════════════════════════════════════════════════════
