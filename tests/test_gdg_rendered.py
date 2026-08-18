@@ -3940,10 +3940,11 @@ def test_copy_page_widget_does_not_overlap_long_titles():
             f"{page.name}: title text too short ({title_text!r}), expected long name"
         )
 
-        # The title should render in monospace font (code convention for API names)
-        style = title_el.get("style", "")
-        assert "monospace" in style or "SFMono" in style, (
-            f"{page.name}: title should use monospace font for code-like names"
+        # `span.doc-object-name` applies the title's code style; inline styles
+        # do not.
+        name_span = title_el.select_one("span.doc-object-name")
+        assert name_span is not None, (
+            f"{page.name}: title is missing span.doc-object-name for code styling"
         )
 
 
