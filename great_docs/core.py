@@ -424,9 +424,7 @@ class GreatDocs:
                             html = index_html.read_text(encoding="utf-8")
                             if _MARIMO_AUTORUN_MARKER not in html:
                                 index_html.write_text(
-                                    html.replace(
-                                        "</body>", _MARIMO_AUTORUN_SCRIPT + "</body>", 1
-                                    ),
+                                    html.replace("</body>", _MARIMO_AUTORUN_SCRIPT + "</body>", 1),
                                     encoding="utf-8",
                                 )
                 finally:
@@ -8817,7 +8815,11 @@ class GreatDocs:
             if section_contents:
                 sections.append(
                     {
-                        **({"subtitle": subtitle} if subtitle is not None else {"title": title or "Untitled"}),
+                        **(
+                            {"subtitle": subtitle}
+                            if subtitle is not None
+                            else {"title": title or "Untitled"}
+                        ),
                         "desc": desc,
                         "contents": section_contents,
                     }
@@ -13565,7 +13567,7 @@ anchor-sections: true
 
         # Process each section
         for section in sections:
-            section_title = section.get("title", "")
+            section_title = section.get("title") or section.get("subtitle") or ""
             section_desc = section.get("desc", "")
 
             # Add section header as a comment or sub-heading if there are multiple sections
@@ -13714,7 +13716,7 @@ anchor-sections: true
 
         # Process each section
         for section in sections:
-            section_title = section.get("title", "")
+            section_title = section.get("title") or section.get("subtitle") or ""
             section_desc = section.get("desc", "")
 
             # Add section header
@@ -13978,7 +13980,7 @@ anchor-sections: true
             lines.append("")
 
             for section in sections:
-                section_title = section.get("title", "")
+                section_title = section.get("title") or section.get("subtitle") or ""
                 section_desc = section.get("desc", "")
 
                 if section_title:
