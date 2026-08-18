@@ -807,7 +807,9 @@ def _generate_tool_page(tool: dict[str, Any], server_name: str, language: str = 
         lines.append(":::")
         lines.append("")
 
-    # Parameters section — uses definition list format matching Python API style
+    # Match the Python API's definition-list format. Write this heading at `###`
+    # because MCP pages keep the site-wide shift. Disabling that shift prevents
+    # Quarto from hoisting the `.title` heading and creates a duplicate title.
     if properties:
         lines.append(f"### {get_translation('mcp_parameters', language)} {{.doc-parameters}}")
         lines.append("")
