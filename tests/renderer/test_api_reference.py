@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from great_docs._apiref import spec
 from great_docs._apiref.api_reference import APIReference, Settings
 
@@ -61,6 +63,26 @@ def test_options_stored_as_is():
     opts = {"include_private": True}
     ref = APIReference({"api-reference": {"package": "pkg", "options": opts}})
     assert ref.options == opts
+
+
+def test_toc_depth_reads_generated_quarto_config(tmp_path: Path):
+    config = tmp_path / "_quarto.yml"
+    config.write_text(
+        "api-reference:\n  package: pkg\nformat:\n  html:\n    toc-depth: 4\n",
+        encoding="utf-8",
+    )
+    ref = APIReference(config)
+    assert ref.site_toc_depth == 4
+
+
+def test_toc_depth_reads_source_config():
+    ref = APIReference(
+        {
+            "api-reference": {"package": "pkg"},
+            "site": {"toc-depth": 5},
+        }
+    )
+    assert ref.site_toc_depth == 5
 
 
 def test_settings_defaults():

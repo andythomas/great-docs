@@ -703,6 +703,29 @@ def test_reference_index_subtitle_renders_as_h3_in_toc():
     )
 
 
+@requires_bs4
+def test_class_page_toc_lists_members():
+    """
+    Verify that a class page table of contents lists members
+
+    Members render at `h3` and therefore require a table-of-contents depth of
+    3. The Converter fixture supplies three methods to check.
+    """
+    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
+    if not converter.exists():
+        pytest.skip("No Converter page for gdtest_mixed_docs")
+
+    soup = _load_html(converter)
+
+    toc = soup.select_one("nav#TOC")
+    assert toc is not None, "Converter page is missing nav#TOC"
+    toc_entries = {a.get_text(strip=True) for a in toc.select("a")}
+    for member in ("convert()", "is_valid()", "merge()"):
+        assert member in toc_entries, (
+            f"member {member!r} is missing from the Converter page's table of contents"
+        )
+
+
 def _section_body(text: str, heading_prefix: str, title: str, *, source_name: str) -> str:
     """
     Extract the text below a matching heading
