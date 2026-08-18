@@ -135,7 +135,7 @@ def _get_badge_text(soup: "BeautifulSoup") -> str | None:
     The q renderer renders badges as ``<span class="doc-label doc-label-function">``
     inside the title heading.  Returns the badge type lowered, or None.
     """
-    title = soup.select_one("h1.title, h2.title")
+    title = soup.select_one("h1.title")
     if title is None:
         return None
 
@@ -384,7 +384,7 @@ def test_reference_pages_have_title(pkg_name: str):
             continue
 
         soup = _load_html(page)
-        title = soup.select_one("h1.title, h2.title")
+        title = soup.select_one("h1.title")
         assert title is not None, f"{page.name} missing .title heading"
         assert name in title.get_text(), (
             f"{page.name} title doesn't contain {name!r}: {title.get_text()!r}"
@@ -522,6 +522,46 @@ def test_footer_text_not_in_header(pkg_name: str):
         assert "supported by" not in desc_lower, (
             f"{page_path.name}: footer text 'Supported by ...' leaked into doc-description"
         )
+
+
+@requires_bs4
+@pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google", "gdtest_sphinx"])
+def test_r1_reference_page_heading_levels(pkg_name: str):
+    """
+    Verify the reference object-page heading hierarchy
+
+    Each page has one `h1` title, `h2` docstring sections and member groups,
+    and `h3` individual members. These levels must match Quarto's table of
+    contents.
+    """
+    ref = _ref_dir(pkg_name)
+    if not ref.exists():
+        pytest.skip(f"No reference dir for {pkg_name}")
+
+    pages = [p for p in ref.glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg_name}: no reference object pages"
+
+    checked = 0
+    for page in pages:
+        soup = _load_html(page)
+
+        title = soup.select_one("h1.title")
+        assert title is not None, (
+            f"{page.name}: missing h1.title page title"
+        )
+        assert soup.select_one("h2.title") is None, (
+            f"{page.name}: page title was shifted to h2.title"
+        )
+
+        for section in soup.select("section.doc-parameters, section.doc-methods"):
+            heading = section.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: section has no heading"
+            assert heading.name == "h2", (
+                f"{page.name}: expected h2 section heading, found {heading.name}"
+            )
+            checked += 1
+
+    assert checked > 0, f"{pkg_name}: no docstring sections were checked"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3932,7 +3972,7 @@ def test_copy_page_widget_does_not_overlap_long_titles():
         assert "copy-page.js" in content, f"{page.name}: copy-page.js script missing"
 
         # Title should exist and contain the object name
-        title_el = soup.select_one("h2.title, h1.title")
+        title_el = soup.select_one("h1.title")
         assert title_el is not None, f"{page.name}: no title element found"
 
         title_text = title_el.get_text(strip=True)

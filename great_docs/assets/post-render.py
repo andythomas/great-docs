@@ -2051,12 +2051,6 @@ for html_file in html_files:
 
     content = content_str.splitlines(keepends=True)
 
-    # Turn all h3 tags into h4 tags
-    content = [line.replace("<h3", "<h4").replace("</h3>", "</h4>") for line in content]
-
-    # Turn all h2 tags into h3 tags
-    content = [line.replace("<h2", "<h3").replace("</h2>", "</h3>") for line in content]
-
     # Add separator lines between class details and individual members,
     # and between individual member sections.
     # - Thin solid line after the Methods/Attributes summary table (before first member section)
@@ -2116,15 +2110,23 @@ for html_file in html_files:
     content_str = re.sub(breadcrumb_pattern, _ref_title_html, content_str, count=1, flags=re.DOTALL)
     content_str = re.sub(breadcrumb_pattern, "", content_str, flags=re.DOTALL)
 
-    # Shift all heading levels down by 1 within <main> content so that
-    # reference page titles use <h2> instead of <h1>, differentiating them
-    # from the top-level "Reference" heading on the index page.
+    # Quarto's global heading shift promotes the renderer's section markup to
+    # the same level as the page title. Move those sections down so the title
+    # remains the only `<h1>` and its sections and members nest beneath it.
     main_start = content_str.find("<main")
     main_end = content_str.find("</main>")
     if main_start != -1 and main_end != -1:
         before = content_str[:main_start]
         main_content = content_str[main_start : main_end + len("</main>")]
         after = content_str[main_end + len("</main>") :]
+
+        # Exclude the title while shifting the remaining headings.
+        title_pattern = re.compile(r'(<h1\s+class="title"[^>]*>.*?</h1>)', re.DOTALL)
+        title_placeholder = "<!--TITLE_PLACEHOLDER-->"
+        title_match = title_pattern.search(main_content)
+        if title_match:
+            saved_title = title_match.group(1)
+            main_content = main_content.replace(saved_title, title_placeholder, 1)
 
         # Shift in reverse order (h5→h6, h4→h5, ..., h1→h2) to avoid
         # double-shifting (e.g. h1→h2→h3).
@@ -2136,6 +2138,10 @@ for html_file in html_files:
                 f'class="level{level + 1}',
                 main_content,
             )
+
+        # Restore the title after shifting the remaining headings.
+        if title_match:
+            main_content = main_content.replace(title_placeholder, saved_title, 1)
 
         content_str = before + main_content + after
 
