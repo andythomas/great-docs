@@ -689,6 +689,71 @@ def test_reference_index_subtitle_renders_as_h3_in_toc():
     )
 
 
+def _section_body(text: str, heading_prefix: str, title: str, *, source_name: str) -> str:
+    """
+    Extract the text below a matching heading
+
+    Stop at the next heading of the same level so tests can distinguish an
+    entry in the expected section from one in an adjacent section.
+
+    Parameters
+    ----------
+    text
+        Complete Markdown document.
+    heading_prefix
+        Markdown heading marker, including its trailing space.
+    title
+        Heading text that starts the section.
+    source_name
+        Document name for assertion failures.
+
+    Returns
+    -------
+    Text between the matching heading and the next peer heading.
+    """
+    pattern = re.compile(rf"^{re.escape(heading_prefix)}(.+)$", re.MULTILINE)
+    matches = list(pattern.finditer(text))
+    starts = {match.group(1).strip(): match.end() for match in matches}
+    assert title in starts, f"{source_name}: missing {heading_prefix!r}{title} heading"
+    start = starts[title]
+    later_starts = [match.start() for match in matches if match.start() > start]
+    end = min(later_starts) if later_starts else len(text)
+    return text[start:end]
+
+
+@requires_bs4
+def test_subtitle_only_section_heading_in_llms_outputs():
+    """
+    Verify subtitle-only headings in machine-readable outputs
+
+    The Miscellaneous section uses `subtitle` instead of `title`. Its
+    `format_label` entry must appear below that heading, not below the preceding
+    Utilities heading, in `llms.txt`, `llms-full.txt` and `skill.md`.
+    """
+    site = _RENDERED_DIR / "gdtest_ref_sectioned" / "great-docs" / "_site"
+    llms_txt = site / "llms.txt"
+    llms_full = site / "llms-full.txt"
+    skill_md = site / "skill.md"
+    for path in (llms_txt, llms_full, skill_md):
+        if not path.exists():
+            pytest.skip(f"{path.name} not built for gdtest_ref_sectioned")
+
+    for path, heading_prefix in (
+        (llms_txt, "#### "),
+        (llms_full, "## "),
+        (skill_md, "### "),
+    ):
+        text = path.read_text(encoding="utf-8")
+        misc_body = _section_body(text, heading_prefix, "Miscellaneous", source_name=path.name)
+        utilities_body = _section_body(text, heading_prefix, "Utilities", source_name=path.name)
+        assert "format_label" in misc_body, (
+            f"{path.name}: format_label is missing below the Miscellaneous heading"
+        )
+        assert "format_label" not in utilities_body, (
+            f"{path.name}: format_label appears in the preceding Utilities section"
+        )
+
+
 @requires_bs4
 def test_fallback_docstring_section_nested_in_member_renders_as_h4():
     """
@@ -759,6 +824,44 @@ def test_chained_fallback_translators_stay_at_h4_in_member():
         )
     section_names = {h.get_text(strip=True) for h in fallback_headings}
     assert "Notes" in section_names, "merge's chained Notes section is missing"
+
+
+@requires_bs4
+@pytest.mark.parametrize(
+    ("pkg_name", "page_name"),
+    [("gdtest_mixed_docs", "Converter.html"), ("gdtest_sphinx", "Timer.html")],
+)
+def test_member_separator_rules_present(pkg_name: str, page_name: str):
+    """
+    Verify class member separators
+
+    Class pages contain one solid rule after the member summary and one dotted
+    rule between each pair of `level3` members. Derive the expected count from
+    the rendered members so fixtures can add methods without changing the test.
+    """
+    page = _ref_dir(pkg_name) / page_name
+    if not page.exists():
+        pytest.skip(f"No {page_name} page for {pkg_name}")
+
+    soup = _load_html(page)
+    members = soup.select(
+        "section.doc-methods section.level3, section.doc-attributes section.level3"
+    )
+    if not members:
+        pytest.skip(f"{page_name}: no member sections to check")
+
+    rules = soup.select("hr")
+    solid_rules = [r for r in rules if "solid" in (r.get("style") or "")]
+    dotted_rules = [r for r in rules if "dotted" in (r.get("style") or "")]
+
+    assert len(solid_rules) == 1, (
+        f"{page_name}: expected exactly one solid rule after the members "
+        f"summary table, found {len(solid_rules)}"
+    )
+    assert len(dotted_rules) == len(members) - 1, (
+        f"{page_name}: expected {len(members) - 1} dotted rules between "
+        f"{len(members)} members, found {len(dotted_rules)}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
