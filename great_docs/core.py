@@ -70,6 +70,58 @@ def _ensure_quarto_installed() -> None:
     )
 
 
+def _migrate_legacy_gitignore_entry(content: str) -> str:
+    """
+    Anchor a standalone legacy `great-docs/` ignore entry
+
+    Earlier releases omitted the leading `/`, so Git matched a directory of
+    that name anywhere in the project. Replace only a complete `great-docs/`
+    line, without changing related patterns or negations.
+
+    Parameters
+    ----------
+    content
+        Contents of a project `.gitignore` file.
+
+    Returns
+    -------
+    Updated contents, or the original contents when no legacy entry exists.
+    """
+    lines = content.splitlines(keepends=True)
+    migrated = False
+    new_lines = []
+    for line in lines:
+        body = line.rstrip("\r\n")
+        line_ending = line[len(body) :]
+        if body.rstrip() == "great-docs/":
+            new_lines.append("/great-docs/" + line_ending)
+            migrated = True
+        else:
+            new_lines.append(line)
+    return "".join(new_lines) if migrated else content
+
+
+def _gitignore_has_entry(content: str, entry: str) -> bool:
+    """
+    Check whether `entry` appears as a complete line in `content`
+
+    Whole-line matching prevents an entry such as `/great-docs/` from also
+    matching a negated path such as `!skills/great-docs/`.
+
+    Parameters
+    ----------
+    content
+        Contents of a project `.gitignore` file.
+    entry
+        Gitignore pattern to look for as a standalone line.
+
+    Returns
+    -------
+    Whether any line equals `entry` after stripping surrounding whitespace.
+    """
+    return entry in (line.strip() for line in content.splitlines())
+
+
 class GreatDocs:
     """
     GreatDocs class for creating beautiful API documentation sites.
@@ -760,7 +812,7 @@ class GreatDocs:
         gitignore_path = self.project_root / ".gitignore"
 
         # Entry to add
-        entry = "# Great Docs build directory (ephemeral, do not commit)\ngreat-docs/\n"
+        entry = "# Great Docs build directory (ephemeral, do not commit)\n/great-docs/\n"
 
         # Versioning build artifacts (added when versions are configured)
         versioning_entries = [
@@ -770,23 +822,35 @@ class GreatDocs:
             ".great-docs/",
         ]
 
-        # Check if already present
+        # Inspect without writing. Migration requires the same consent as any
+        # other `.gitignore` edit.
         has_main = False
         missing_versioning = list(versioning_entries)
+        needs_migration = False
         if gitignore_path.exists():
             with open(gitignore_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            has_main = "great-docs/" in content
-            missing_versioning = [e for e in versioning_entries if e not in content]
+            migrated_content = _migrate_legacy_gitignore_entry(content)
+            needs_migration = migrated_content != content
+            check_content = migrated_content if needs_migration else content
 
-            if has_main and not missing_versioning:
+            has_main = _gitignore_has_entry(check_content, "/great-docs/")
+            missing_versioning = [
+                e for e in versioning_entries if not _gitignore_has_entry(check_content, e)
+            ]
+
+            if has_main and not missing_versioning and not needs_migration:
                 # All entries present, nothing to do
                 return
 
-        # If force=True, skip the prompt
-        if force:
+        migration_only = needs_migration and has_main and not missing_versioning
+
+        def apply_changes() -> None:
             if gitignore_path.exists():
+                if needs_migration:
+                    with open(gitignore_path, "w", encoding="utf-8") as f:
+                        f.write(migrated_content)
                 # Append to existing .gitignore
                 with open(gitignore_path, "a", encoding="utf-8") as f:
                     if not has_main:
@@ -795,7 +859,10 @@ class GreatDocs:
                         f.write("\n# Great Docs versioned-build artifacts\n")
                         for ve in missing_versioning:
                             f.write(ve + "\n")
-                print("✅ Updated .gitignore to exclude great-docs/ directory")
+                if migration_only:
+                    print("✅ Anchored the great-docs/ entry to the project root as /great-docs/")
+                else:
+                    print("✅ Updated .gitignore to ignore Great Docs build output")
             else:
                 # Create new .gitignore
                 with open(gitignore_path, "w", encoding="utf-8") as f:
@@ -803,38 +870,26 @@ class GreatDocs:
                     f.write("\n# Great Docs versioned-build artifacts\n")
                     for ve in versioning_entries:
                         f.write(ve + "\n")
-                print("✅ Created .gitignore to exclude great-docs/ directory")
+                print("✅ Created .gitignore to ignore Great Docs build output")
+
+        # If force=True, skip the prompt
+        if force:
+            apply_changes()
             return
 
         # Ask for permission in interactive mode
-        print("\nThe great-docs/ directory is ephemeral and should not be committed to git.")
-        response = (
-            input("Add 'great-docs/' to .gitignore? [Y/n]: ").strip().lower()
-        )  # pragma: no cover
+        if migration_only:
+            print("\nThe great-docs/ entry in .gitignore matches directories at any depth.")
+            prompt = "Anchor it to the project root as /great-docs/? [Y/n]: "
+        else:
+            print("\nThe great-docs/ build directory is temporary and should not be committed.")
+            prompt = "Add '/great-docs/' to .gitignore? [Y/n]: "
+        response = input(prompt).strip().lower()  # pragma: no cover
 
         if response in ("", "y", "yes"):  # pragma: no cover
-            if gitignore_path.exists():
-                # Append to existing .gitignore
-                with open(gitignore_path, "a", encoding="utf-8") as f:
-                    if not has_main:
-                        f.write("\n" + entry)
-                    if missing_versioning:
-                        f.write("\n# Great Docs versioned-build artifacts\n")
-                        for ve in missing_versioning:
-                            f.write(ve + "\n")
-                print("✅ Updated .gitignore to exclude great-docs/ directory")
-            else:
-                # Create new .gitignore
-                with open(gitignore_path, "w", encoding="utf-8") as f:
-                    f.write(entry)
-                    f.write("\n# Great Docs versioned-build artifacts\n")
-                    for ve in versioning_entries:
-                        f.write(ve + "\n")
-                print("✅ Created .gitignore to exclude great-docs/ directory")
+            apply_changes()
         else:
-            print(
-                "⚠️  Skipped .gitignore update. Remember to exclude great-docs/ from version control."
-            )
+            print("⚠️  Skipped .gitignore update. Remember to ignore /great-docs/.")
 
     def _detect_package_name(self) -> str | None:
         """

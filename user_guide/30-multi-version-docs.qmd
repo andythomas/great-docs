@@ -613,7 +613,7 @@ A project configured with a single version, marked `latest: true`, creates no `g
 Add these to your `.gitignore`. Great Docs does this automatically when you run `great-docs init`, but if you set up versioning on an existing project you can add them manually:
 
 ```{.text filename=".gitignore"}
-great-docs/
+/great-docs/
 /great-docs-*/
 .great-docs-build/
 .great-docs-cache/

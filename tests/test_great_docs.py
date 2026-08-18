@@ -8151,7 +8151,7 @@ def test_update_gitignore_skip_when_already_present():
     with tempfile.TemporaryDirectory() as tmp_dir:
         gitignore = Path(tmp_dir) / ".gitignore"
         gitignore.write_text(
-            "great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
+            "/great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
         )
 
         docs = GreatDocs(project_path=tmp_dir)
@@ -8161,11 +8161,148 @@ def test_update_gitignore_skip_when_already_present():
         content = gitignore.read_text()
         lines = content.splitlines()
 
-        assert lines.count("great-docs/") == 1
+        assert lines.count("/great-docs/") == 1
         assert lines.count("/great-docs-*/") == 1
         assert lines.count(".great-docs-build/") == 1
         assert lines.count(".great-docs-cache/") == 1
         assert lines.count(".great-docs/") == 1
+
+
+def test_update_gitignore_main_entry_is_anchored():
+    """
+    Keep the main build pattern at the project root
+
+    Without the leading `/`, Git would also ignore a project's nested
+    `great-docs/` directory.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        content = (Path(tmp_dir) / ".gitignore").read_text()
+
+        assert "/great-docs/" in content
+        assert "\ngreat-docs/" not in content
+
+
+def test_update_gitignore_migrates_legacy_unanchored_entry():
+    """
+    Replace the legacy unanchored main build pattern
+
+    Projects initialised by earlier releases retain a standalone
+    `great-docs/` line until the next approved update.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        gitignore.write_text("*.pyc\ngreat-docs/\n.great-docs/\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        lines = gitignore.read_text().splitlines()
+
+        assert lines.count("/great-docs/") == 1
+        assert lines.count("great-docs/") == 0
+
+
+def test_update_gitignore_migration_preserves_similar_lines():
+    """
+    Change only the complete legacy main-build line
+
+    Cache patterns, historical build patterns, and negations contain similar
+    text but have separate meanings.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        original = (
+            "great-docs/\n/great-docs-*/\n.great-docs-build/\n"
+            ".great-docs-cache/\n.great-docs/\n!skills/great-docs/\n"
+        )
+        gitignore.write_text(original)
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        content = gitignore.read_text()
+
+        assert "/great-docs-*/" in content
+        assert ".great-docs-build/" in content
+        assert ".great-docs-cache/" in content
+        assert ".great-docs/" in content
+        assert "!skills/great-docs/" in content
+
+
+def test_update_gitignore_migration_is_idempotent():
+    """Leave an anchored entry unchanged on repeated updates"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        gitignore.write_text("great-docs/\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+        first_pass = gitignore.read_text()
+
+        docs._update_project_gitignore(force=True)
+        second_pass = gitignore.read_text()
+
+        assert first_pass == second_pass
+        assert first_pass.splitlines().count("/great-docs/") == 1
+
+
+def test_update_gitignore_does_not_mistake_negation_for_main_entry():
+    """
+    Do not treat a negated nested path as the main build rule
+
+    A substring check would find `/great-docs/` within
+    `!skills/great-docs/` and fail to add the actual build rule.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        gitignore.write_text("!skills/great-docs/\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        content = gitignore.read_text()
+
+        assert "!skills/great-docs/" in content
+        assert content.splitlines().count("/great-docs/") == 1
+
+
+def test_update_gitignore_no_duplicate_when_anchored_entry_present():
+    """Leave a complete anchored ignore block unchanged"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        gitignore.write_text(
+            "/great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n"
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=True)
+
+        content = gitignore.read_text()
+
+        assert content.splitlines().count("/great-docs/") == 1
+
+
+def test_update_gitignore_migration_requires_consent(monkeypatch):
+    """
+    Require consent before migrating the legacy line
+
+    Without `force=True`, migration follows the same prompt contract as a new
+    entry. Declining must preserve the file.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        original = "great-docs/\n"
+        gitignore.write_text(original)
+
+        monkeypatch.setattr("builtins.input", lambda _: "n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._update_project_gitignore(force=False)
+
+        assert gitignore.read_text() == original
 
 
 def test_update_gitignore_versioning_pattern_is_anchored():
@@ -25810,7 +25947,7 @@ def test_update_gitignore_already_present():
     with tempfile.TemporaryDirectory() as tmp_dir:
         gitignore = Path(tmp_dir) / ".gitignore"
         gitignore.write_text(
-            "great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
+            "/great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
             encoding="utf-8",
         )
 
@@ -25820,7 +25957,7 @@ def test_update_gitignore_already_present():
         content = gitignore.read_text()
         lines = content.splitlines()
         # Should not have doubled any entry
-        assert lines.count("great-docs/") == 1
+        assert lines.count("/great-docs/") == 1
         assert lines.count("/great-docs-*/") == 1
         assert lines.count(".great-docs-build/") == 1
         assert lines.count(".great-docs-cache/") == 1
