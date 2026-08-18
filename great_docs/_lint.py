@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -345,45 +346,78 @@ def _check_cross_references(
             pass
 
 
-# Patterns for detecting docstring styles
-_NUMPY_SECTION = re.compile(
-    r"^\s*(Parameters|Returns|Yields|Raises|Examples|Attributes|Methods|"
-    r"See Also|Notes|References|Warnings)\s*\n\s*-{3,}",
-    re.MULTILINE,
-)
-
-_GOOGLE_SECTION = re.compile(
-    r"^\s*(Args|Arguments|Returns|Yields|Raises|Examples|Attributes|"
-    r"Note|Notes|Todo|Warning|Warnings):\s*$",
-    re.MULTILINE,
-)
-
-_SPHINX_FIELD = re.compile(
-    r"^\s*:(param|type|returns|rtype|raises|var|ivar|cvar)\s",
-    re.MULTILINE,
-)
+_STYLES = ("numpy", "google", "sphinx")
+"""The docstring styles a project can be configured for"""
 
 
-def _detect_style_of_docstring(docstring: str) -> str | None:
-    """Detect which style a single docstring uses. Returns None if no sections found."""
-    has_numpy = bool(_NUMPY_SECTION.search(docstring))
-    has_google = bool(_GOOGLE_SECTION.search(docstring)) and not has_numpy
-    has_sphinx = bool(_SPHINX_FIELD.search(docstring))
+def _section_kinds(docstring: str, style: str) -> set[str]:
+    """
+    Return the kinds of structured section a style's parser finds in a docstring
 
-    styles_found = []
-    if has_numpy:
-        styles_found.append("numpy")
-    if has_google:
-        styles_found.append("google")
-    if has_sphinx:
-        styles_found.append("sphinx")
+    Plain text is not a structured section, so a docstring that a parser cannot
+    read at all yields the empty set. The docstring is parsed detached from any
+    object: with a parent, griffe additionally reports mismatches against the
+    signature, which are not this check's concern.
 
-    if len(styles_found) == 1:
-        return styles_found[0]
-    if len(styles_found) > 1:
-        # Mixed styles — return the first detected for reporting
-        return styles_found[0]
-    return None
+    The check parses each docstring under styles it was not written in, so
+    griffe's complaints about the text it cannot read are expected and stay
+    silenced rather than reaching the user as lint output.
+
+    Parameters
+    ----------
+    docstring
+        The docstring text.
+    style
+        The style whose parser reads the text.
+
+    Returns
+    -------
+    The section kinds found, named as griffe names them.
+    """
+    import griffe
+
+    logger = logging.getLogger("griffe")
+    previous_disabled = logger.disabled
+    previous_propagate = logger.propagate
+    # disabled suppresses records sent directly to this logger; propagate=False
+    # stops child-logger records from reaching root handlers via propagation.
+    logger.disabled = True
+    logger.propagate = False
+    try:
+        parsed = griffe.Docstring(  # pyright: ignore[reportArgumentType]
+            docstring, parser=style
+        ).parsed
+    finally:
+        logger.disabled = previous_disabled
+        logger.propagate = previous_propagate
+    return {section.kind.value for section in parsed if section.kind.value != "text"}
+
+
+def _lost_sections(docstring: str, config_style: str) -> dict[str, set[str]]:
+    """
+    Find the structure the configured parser drops but another parser would read
+
+    Parameters
+    ----------
+    docstring
+        The docstring text.
+    config_style
+        The style the project is configured for.
+
+    Returns
+    -------
+    Each rival style mapped to the section kinds it finds and the configured
+    style misses, empty when the configured style reads everything.
+    """
+    configured = _section_kinds(docstring, config_style)
+    lost: dict[str, set[str]] = {}
+    for style in _STYLES:
+        if style == config_style:
+            continue
+        missed = _section_kinds(docstring, style) - configured
+        if missed:
+            lost[style] = missed
+    return lost
 
 
 def _check_docstring_style(
@@ -394,24 +428,38 @@ def _check_docstring_style(
     result: LintResult,
 ) -> None:
     """Enforce consistent docstring style across all exports."""
+    if config_style not in _STYLES:
+        result.issues.append(
+            LintIssue(
+                check="config",
+                severity="error",
+                symbol="great-docs.yml",
+                message=(
+                    f"parser: {config_style!r} is not one of {', '.join(_STYLES)}, "
+                    f"so docstring style cannot be checked."
+                ),
+            )
+        )
+        return
 
     def _check_one(symbol: str, docstring: str) -> None:
-        detected = _detect_style_of_docstring(docstring)
-        if detected is None:
-            # No structured sections found — skip (short docstrings are fine)
+        lost = _lost_sections(docstring, config_style)
+        if not lost:
             return
-        if detected != config_style:
-            result.issues.append(
-                LintIssue(
-                    check="style-mismatch",
-                    severity="warning",
-                    symbol=symbol,
-                    message=(
-                        f"Docstring appears to use '{detected}' style "
-                        f"but project is configured for '{config_style}'."
-                    ),
-                )
+        detail = "; ".join(
+            f"{style} reads {', '.join(sorted(kinds))}" for style, kinds in sorted(lost.items())
+        )
+        result.issues.append(
+            LintIssue(
+                check="style-mismatch",
+                severity="warning",
+                symbol=symbol,
+                message=(
+                    f"The '{config_style}' parser does not read some of this "
+                    f"docstring's structure: {detail}."
+                ),
             )
+        )
 
     for name in exports:
         if name not in pkg.members:

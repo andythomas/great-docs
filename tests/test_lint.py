@@ -11,7 +11,8 @@ from great_docs._lint import (
     _check_directive_consistency,
     _check_docstring_style,
     _check_missing_docstrings,
-    _detect_style_of_docstring,
+    _lost_sections,
+    _section_kinds,
     run_lint,
 )
 
@@ -78,9 +79,7 @@ class TestLintResult:
         assert len(d["issues"]) == 2
 
 
-class TestDetectStyleOfDocstring:
-    def test_numpy_style(self):
-        doc = """\
+NUMPY_DOC = """\
 Short description.
 
 Parameters
@@ -88,33 +87,86 @@ Parameters
 x : int
     The value.
 """
-        assert _detect_style_of_docstring(doc) == "numpy"
 
-    def test_google_style(self):
-        doc = """\
+GOOGLE_DOC = """\
 Short description.
 
 Args:
     x: The value.
 """
-        assert _detect_style_of_docstring(doc) == "google"
 
-    def test_sphinx_style(self):
-        doc = """\
+SPHINX_DOC = """\
 Short description.
 
 :param x: The value.
 :returns: Something.
 """
-        assert _detect_style_of_docstring(doc) == "sphinx"
 
-    def test_no_sections(self):
-        doc = "Just a short description."
 
-        assert _detect_style_of_docstring(doc) is None
+class TestSectionKinds:
+    @pytest.mark.parametrize(
+        ("doc", "style"),
+        [(NUMPY_DOC, "numpy"), (GOOGLE_DOC, "google"), (SPHINX_DOC, "sphinx")],
+    )
+    def test_own_parser_reads_the_parameters(self, doc: str, style: str):
+        assert "parameters" in _section_kinds(doc, style)
+
+    @pytest.mark.parametrize(
+        ("doc", "style"),
+        [(NUMPY_DOC, "google"), (GOOGLE_DOC, "numpy"), (SPHINX_DOC, "numpy")],
+    )
+    def test_foreign_parser_reads_nothing(self, doc: str, style: str):
+        assert _section_kinds(doc, style) == set()
+
+    def test_prose_has_no_structure_under_any_parser(self):
+        for style in ("numpy", "google", "sphinx"):
+            assert _section_kinds("Just a short description.", style) == set()
 
     def test_empty_string(self):
-        assert _detect_style_of_docstring("") is None
+        assert _section_kinds("", "numpy") == set()
+
+
+class TestLostSections:
+    @pytest.mark.parametrize(
+        ("doc", "style"),
+        [(NUMPY_DOC, "numpy"), (GOOGLE_DOC, "google"), (SPHINX_DOC, "sphinx")],
+    )
+    def test_docstring_in_the_configured_style_loses_nothing(self, doc: str, style: str):
+        assert _lost_sections(doc, style) == {}
+
+    def test_prose_loses_nothing(self):
+        assert _lost_sections("Just a short description.", "numpy") == {}
+
+    def test_numpy_examples_alone_is_not_reported_as_foreign(self):
+        """
+        An `Examples` section is plain rST, so it must not look like another style
+
+        griffe's own style inference omits `Examples` from its numpy patterns for
+        this reason: the section appears in docstrings of every style.
+        """
+        doc = "Short description.\n\nExamples\n--------\n>>> f(1)\n"
+
+        assert _lost_sections(doc, "numpy") == {}
+
+    def test_google_sections_under_the_numpy_parser_are_reported(self):
+        assert _lost_sections(GOOGLE_DOC, "numpy") == {"google": {"parameters"}}
+
+    def test_singular_example_header_is_reported(self):
+        """
+        `Example:` reaches the reader as an admonition only under the Google parser
+
+        The header is not one that a section-name pattern would list, which is why
+        the check asks the parsers instead of matching headers.
+        """
+        doc = "Short description.\n\nExample:\n    >>> f(1)\n    1\n"
+
+        assert _lost_sections(doc, "numpy") == {"google": {"admonition"}}
+
+    def test_a_foreign_section_beside_native_ones_is_reported(self):
+        """A docstring is not excused by the configured parser reading part of it"""
+        doc = NUMPY_DOC + "\nExamples:\n    >>> f(1)\n"
+
+        assert _lost_sections(doc, "numpy") == {"google": {"examples"}}
 
 
 def _make_griffe_obj(kind="function", docstring=None, members=None):
@@ -431,6 +483,7 @@ class TestRunLint:
         mock_gd._resolve_importable_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a", "func_b"]
         mock_gd._config.get.return_value = "numpy"
+        mock_gd._config.__getitem__.return_value = "numpy"
         mock_gd_cls.return_value = mock_gd
 
         func_a = _make_griffe_obj(docstring="Documented.\n\nParameters\n----------\nx : int\n")
@@ -461,6 +514,7 @@ class TestRunLint:
         mock_gd._resolve_importable_name.return_value = "actual_module"
         mock_gd._get_package_exports.return_value = ["func_a"]
         mock_gd._config.get.return_value = "numpy"
+        mock_gd._config.__getitem__.return_value = "numpy"
         mock_gd_cls.return_value = mock_gd
 
         func_a = _make_griffe_obj(docstring="Documented.\n\nParameters\n----------\nx : int\n")
@@ -485,6 +539,7 @@ class TestRunLint:
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a"]
         mock_gd._config.get.return_value = "numpy"
+        mock_gd._config.__getitem__.return_value = "numpy"
         mock_gd_cls.return_value = mock_gd
 
         # func_a has Google-style docstring (triggers style-mismatch) and no xref issues
@@ -513,6 +568,7 @@ class TestRunLint:
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = None
         mock_gd._config.get.return_value = "numpy"
+        mock_gd._config.__getitem__.return_value = "numpy"
         mock_gd_cls.return_value = mock_gd
 
         mock_pkg = MagicMock()
@@ -571,6 +627,7 @@ class TestRunLintQuiet:
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a"]
         mock_gd._config.get.return_value = "numpy"
+        mock_gd._config.__getitem__.return_value = "numpy"
         mock_gd_cls.return_value = mock_gd
 
         func_a = _make_griffe_obj(docstring="Documented.")
@@ -837,9 +894,24 @@ class TestCheckCrossReferencesEdgeCases:
         _check_cross_references(pkg, "mypkg", ["MyClass", "something"], result)
 
 
-class TestDetectStyleEdgeCases:
-    def test_mixed_numpy_and_sphinx(self):
-        """Docstring with both numpy and sphinx markers returns numpy (first found)."""
+class TestMixedStyleDocstrings:
+    """
+    A docstring mixing two styles reports whichever structure the build loses
+
+    The previous header-matching check reported one winning style per docstring
+    and so stayed silent whenever the configured style was among those matched.
+    """
+
+    def test_a_stray_field_of_a_kind_already_present_goes_unreported(self):
+        """
+        Two styles contributing the same section kind cancel out
+
+        The check compares which kinds each parser reads, not what each one puts
+        in them, so a `:param:` beside a numpy `Parameters` section is invisible:
+        both parsers report `parameters`. Naming the lost parameter would mean
+        comparing section contents per kind, which buys little for how rarely a
+        docstring mixes styles within one kind.
+        """
         doc = """\
 Short description.
 
@@ -849,11 +921,9 @@ x : int
 
 :param y: Another param.
 """
-        result = _detect_style_of_docstring(doc)
-        assert result == "numpy"
+        assert _lost_sections(doc, "numpy") == {}
 
-    def test_mixed_google_and_sphinx(self):
-        """Docstring with google and sphinx markers."""
+    def test_sphinx_field_with_a_google_section(self):
         doc = """\
 Short description.
 
@@ -862,12 +932,10 @@ Short description.
 Args:
     y: Another param.
 """
-        # sphinx detected first in code order
-        result = _detect_style_of_docstring(doc)
-
-        # Both google and sphinx detected; but numpy takes precedence over google
-        # and sphinx is also found, so styles_found has both
-        assert result in ("google", "sphinx")
+        assert _lost_sections(doc, "numpy") == {
+            "google": {"parameters"},
+            "sphinx": {"parameters"},
+        }
 
 
 class TestCheckDocstringStyleEdgeCases:
