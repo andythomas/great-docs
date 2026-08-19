@@ -1166,7 +1166,8 @@ def _fallback_section_level(html_content, pos):
     Select the heading level for a fallback docstring section
 
     Top-level sections render at `h2`. Sections within an `h3` member render
-    at `h4`. The nearest preceding heading determines which level applies.
+    at `h4`. A preceding `h4` also indicates member context because fallback
+    translators run in sequence over the same content.
 
     Parameters
     ----------
@@ -1177,12 +1178,12 @@ def _fallback_section_level(html_content, pos):
 
     Returns
     -------
-    `4` after an `h3` member heading; otherwise `2`.
+    `4` after an `h3` or deeper heading; otherwise `2`.
     """
     last_level = None
     for m in _HEADING_TAG_RE.finditer(html_content, 0, pos):
         last_level = int(m.group(1))
-    return 4 if last_level == 3 else 2
+    return 4 if last_level and last_level >= 3 else 2
 
 
 def translate_sphinx_fields(html_content):

@@ -726,6 +726,41 @@ def test_fallback_docstring_section_nested_in_member_renders_as_h4():
         assert top_level_headings, "validate has no top-level h2 fallback sections"
 
 
+@requires_bs4
+def test_chained_fallback_translators_stay_at_h4_in_member():
+    """
+    Verify that chained fallback sections remain nested
+
+    `Converter.merge` triggers field and bold-section fallbacks in sequence.
+    The first emits an `h4`; the second must treat that heading as member
+    context and emit another `h4`.
+    """
+    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
+    if not converter.exists():
+        pytest.skip("No Converter page for gdtest_mixed_docs")
+
+    soup = _load_html(converter)
+
+    merge_section = soup.select_one("section#merge")
+    assert merge_section is not None, "merge member section is missing"
+    assert merge_section.get("class") and "level3" in merge_section["class"], (
+        "merge member section is not level3"
+    )
+
+    fallback_headings = merge_section.select(
+        "section.doc-section h1, section.doc-section h2, "
+        "section.doc-section h3, section.doc-section h4"
+    )
+    assert fallback_headings, "merge has no fallback sections to check"
+    for heading in fallback_headings:
+        assert heading.name == "h4", (
+            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
+            f"inside merge, found {heading.name}"
+        )
+    section_names = {h.get_text(strip=True) for h in fallback_headings}
+    assert "Notes" in section_names, "merge's chained Notes section is missing"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # R2: Docstring Rendering — parameters, returns, raises, examples
 # ═══════════════════════════════════════════════════════════════════════════════
