@@ -414,6 +414,8 @@ ALL_PACKAGES: list[str] = [
     "gdtest_complete_docstrings",  # 205
     # 206: Marimo notebook islands showcase
     "gdtest_marimo",  # 206
+    # 207: API reference pages without breadcrumbs
+    "gdtest_no_breadcrumbs",  # 207
 ]
 
 
@@ -2311,6 +2313,11 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "description, and relevant sections (Notes, Examples, Returns, %seealso). "
         "On the Reference page you should see Constants, Classes, and Functions "
         "sections with rich rendered docstrings throughout."
+    ),
+    "gdtest_no_breadcrumbs": (
+        "Mirror gdtest_minimal with two functions and NumPy docstrings. Disable "
+        "breadcrumbs site-wide through the `site` passthrough. Reference object "
+        "pages and the index must still show the API title bar and exactly one h1."
     ),
 }
 

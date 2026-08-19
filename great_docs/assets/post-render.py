@@ -1158,6 +1158,40 @@ def strip_colgroup_tags(html_content):
     return colgroup_pattern.sub(_replace_if_not_gt, html_content)
 
 
+_BREADCRUMB_NAV_RE = re.compile(
+    r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>', re.DOTALL
+)
+_NO_BREADCRUMBS_NAV_TITLE_RE = re.compile(
+    r'<h1 class="quarto-secondary-nav-title no-breadcrumbs[^"]*">.*?</h1>', re.DOTALL
+)
+
+
+def replace_secondary_nav_title(html_content: str, label_html: str) -> str:
+    """
+    Replace Quarto's secondary navigation title
+
+    Quarto uses a breadcrumb `nav` when breadcrumbs are enabled and a bare
+    `h1` when they are disabled. Replace either form with the supplied `h5`
+    navigation label and remove any duplicate breadcrumb in the title block.
+
+    Parameters
+    ----------
+    html_content
+        Complete page HTML.
+    label_html
+        Navigation label markup.
+
+    Returns
+    -------
+    HTML with the secondary navigation title replaced.
+    """
+    new_content, replaced = _BREADCRUMB_NAV_RE.subn(label_html, html_content, count=1)
+    if not replaced:
+        new_content, replaced = _NO_BREADCRUMBS_NAV_TITLE_RE.subn(label_html, html_content, count=1)
+    # Remove a second breadcrumb that Quarto may place in the title block.
+    return _BREADCRUMB_NAV_RE.sub("", new_content)
+
+
 _HEADING_TAG_RE = re.compile(r"<h([1-9])(?:\s[^>]*)?>")
 
 
@@ -2136,11 +2170,7 @@ for html_file in html_files:
         f'<span class="gd-ref-title-name">{html.escape(_display_name)}</span>'
         f"</h5>"
     )
-    breadcrumb_pattern = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
-    # Replace only the first breadcrumb (in the secondary nav bar, outside <main>);
-    # a second breadcrumb may exist inside the title-block-header — remove it.
-    content_str = re.sub(breadcrumb_pattern, _ref_title_html, content_str, count=1, flags=re.DOTALL)
-    content_str = re.sub(breadcrumb_pattern, "", content_str, flags=re.DOTALL)
+    content_str = replace_secondary_nav_title(content_str, _ref_title_html)
 
     content = content_str.splitlines(keepends=True)
 
@@ -2210,8 +2240,7 @@ if os.path.exists(index_file):
         '<span class="gd-ref-title-name">Index</span>'
         "</h5>"
     )
-    _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
-    content = re.sub(_bc_pat, _ref_idx_title, content, flags=re.DOTALL)
+    content = replace_secondary_nav_title(content, _ref_idx_title)
 
     with open(index_file, "w", encoding="utf-8") as file:
         file.write(content)
@@ -2236,8 +2265,7 @@ if os.path.exists(mcp_index_file):
         '<span class="gd-ref-title-name">Index</span>'
         "</h5>"
     )
-    _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
-    content = re.sub(_bc_pat, _mcp_idx_title, content, flags=re.DOTALL)
+    content = replace_secondary_nav_title(content, _mcp_idx_title)
 
     with open(mcp_index_file, "w", encoding="utf-8") as file:
         file.write(content)
@@ -2277,10 +2305,8 @@ if mcp_html_files:
             f"</h5>"
         )
 
-        # MCP pages use bread-crumbs: false, so Quarto renders the title inside
-        # an h1.quarto-secondary-nav-title.no-breadcrumbs element
-        _h1_pat = r'<h1 class="quarto-secondary-nav-title no-breadcrumbs[^"]*">.*?</h1>'
-        content = re.sub(_h1_pat, _mcp_title_html, content, count=1, flags=re.DOTALL)
+        # MCP pages disable breadcrumbs, so replace Quarto's bare `h1` form.
+        content = replace_secondary_nav_title(content, _mcp_title_html)
 
         with open(html_file, "w", encoding="utf-8") as file:
             file.write(content)
@@ -2594,7 +2620,6 @@ def process_cli_reference_pages():
 
         # Replace breadcrumb with a "CLI / great-docs cmd" title bar label
         _cli_label = _t("cli", "CLI")
-        _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
         # Keep the navigation label below the page's `h1` title.
         if cmd_name != "index":
             # Extract full command name from the page title (e.g., "great-docs init")
@@ -2616,7 +2641,7 @@ def process_cli_reference_pages():
                 f'<span class="gd-ref-title-name">Index</span>'
                 f"</h5>"
             )
-        content = re.sub(_bc_pat, _cli_title_html, content, flags=re.DOTALL)
+        content = replace_secondary_nav_title(content, _cli_title_html)
 
         with open(html_file, "w", encoding="utf-8") as file:
             file.write(content)

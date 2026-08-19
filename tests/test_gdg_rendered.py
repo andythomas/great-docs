@@ -526,15 +526,16 @@ def test_footer_text_not_in_header(pkg_name: str):
 
 @requires_bs4
 @pytest.mark.parametrize(
-    "pkg_name", ["gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs"]
+    "pkg_name",
+    ["gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs", "gdtest_no_breadcrumbs"],
 )
 def test_reference_page_heading_levels(pkg_name: str):
     """
     Verify the reference object-page heading hierarchy
 
     Each page has one `h1` title, `h2` docstring sections and member groups,
-    and `h3` individual members. These levels must match Quarto's table of
-    contents.
+    and `h3` individual members. The no-breadcrumb fixture also verifies that
+    Quarto's bare navigation `h1` is demoted to `h5`.
     """
     ref = _ref_dir(pkg_name)
     if not ref.exists():
@@ -557,11 +558,15 @@ def test_reference_page_heading_levels(pkg_name: str):
         )
 
         # Require one document-level `h1`: the page title. The navigation label
-        # must remain `h5`.
+        # must remain `h5`, even when breadcrumbs are disabled.
         page_h1s = soup.select("h1")
         assert len(page_h1s) == 1, (
             f"{page.name}: expected exactly one h1 in the whole document, "
             f"found {len(page_h1s)}"
+        )
+        nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
+        assert nav_title is not None, (
+            f"{page.name}: missing h5.gd-ref-title navigation label"
         )
 
         main = soup.select_one("main")
@@ -632,7 +637,7 @@ def test_reference_page_heading_levels_exercises_member_check():
 
 
 @requires_bs4
-@pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google"])
+@pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google", "gdtest_no_breadcrumbs"])
 def test_reference_index_heading_levels(pkg_name: str):
     """Verify that reference index group headings are `h2` elements"""
     index = _ref_dir(pkg_name) / "index.html"
@@ -643,6 +648,15 @@ def test_reference_index_heading_levels(pkg_name: str):
 
     title = soup.select_one("h1.title")
     assert title is not None, "reference index is missing its h1.title"
+
+    # Require one page title and an `h5` navigation label with or without
+    # breadcrumbs.
+    page_h1s = soup.select("h1")
+    assert len(page_h1s) == 1, (
+        f"reference index: expected exactly one h1, found {len(page_h1s)}"
+    )
+    nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
+    assert nav_title is not None, "reference index is missing its h5.gd-ref-title label"
 
     groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
     assert groups, "reference index contains no group headings"
