@@ -556,8 +556,14 @@ def test_reference_page_heading_levels(pkg_name: str):
             f"{page.name}: page title was shifted to h2.title"
         )
 
-        # Limit the structural check to page content; navigation headings sit
-        # outside `<main>`.
+        # Require one document-level `h1`: the page title. The navigation label
+        # must remain `h5`.
+        page_h1s = soup.select("h1")
+        assert len(page_h1s) == 1, (
+            f"{page.name}: expected exactly one h1 in the whole document, "
+            f"found {len(page_h1s)}"
+        )
+
         main = soup.select_one("main")
         assert main is not None, f"{page.name}: no <main> element"
         main_h1s = main.select("h1")
