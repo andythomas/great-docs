@@ -553,6 +553,17 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
             f"{page.name}: page title was shifted to h2.title"
         )
 
+        # Check `<main>` separately because the navigation title is another
+        # `h1` at this stage.
+        main = soup.select_one("main")
+        assert main is not None, f"{page.name}: no <main> element"
+        main_h1s = main.select("h1")
+        title_h1s = [h for h in main_h1s if "title" in (h.get("class") or [])]
+        assert len(title_h1s) == 1, (
+            f"{page.name}: expected exactly one h1.title inside <main>, "
+            f"found {len(title_h1s)} (of {len(main_h1s)} h1 elements total)"
+        )
+
         for section in soup.select("section.doc-parameters, section.doc-methods"):
             heading = section.select_one("h1, h2, h3, h4, h5, h6")
             assert heading is not None, f"{page.name}: section has no heading"
@@ -561,7 +572,17 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
             )
             checked += 1
 
-    assert checked > 0, f"{pkg_name}: no docstring sections were checked"
+        for member in soup.select(
+            "section.doc-methods section.level3, section.doc-attributes section.level3"
+        ):
+            heading = member.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: member has no heading"
+            assert heading.name == "h3", (
+                f"{page.name}: expected h3 member heading, found {heading.name}"
+            )
+            checked += 1
+
+    assert checked > 0, f"{pkg_name}: no docstring sections or members were checked"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

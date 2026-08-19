@@ -72,7 +72,7 @@ class __RenderAPIPage(RenderPageMixin, RenderBase):
         return Meta(
             {
                 "title": f"{title}",
-                "body-classes": "doc-api-page",
+                "body-classes": "doc-api-page doc-py-reference",
             }
         )
 

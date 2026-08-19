@@ -2120,8 +2120,11 @@ for html_file in html_files:
         main_content = content_str[main_start : main_end + len("</main>")]
         after = content_str[main_end + len("</main>") :]
 
-        # Exclude the title while shifting the remaining headings.
-        title_pattern = re.compile(r'(<h1\s+class="title"[^>]*>.*?</h1>)', re.DOTALL)
+        # Exclude the title while shifting the remaining headings. Match
+        # `title` within a longer class list because Quarto adds display classes.
+        title_pattern = re.compile(
+            r'(<h1[^>]*\bclass="[^"]*\btitle\b[^"]*"[^>]*>.*?</h1>)', re.DOTALL
+        )
         title_placeholder = "<!--TITLE_PLACEHOLDER-->"
         title_match = title_pattern.search(main_content)
         if title_match:
