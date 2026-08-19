@@ -4542,7 +4542,7 @@ class GreatDocs:
         # --- Front matter (mirrors the API reference index) ---
         lines.append("---")
         lines.append(f'title: "{title}"')
-        lines.append("body-classes: doc-reference doc-cli-reference doc-reference-index")
+        lines.append("body-classes: doc-reference doc-cli-reference")
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
@@ -4707,7 +4707,7 @@ class GreatDocs:
         lines.append(
             f'title: "[{title}]{{.doc-object-name .doc-function .doc-label .{label_class}}}"'
         )
-        lines.append("body-classes: doc-api-page doc-cli-reference")
+        lines.append("body-classes: doc-api-page doc-cli-api-page")
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")

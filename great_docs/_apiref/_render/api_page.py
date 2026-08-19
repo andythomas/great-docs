@@ -84,7 +84,7 @@ class __RenderAPIPage(RenderPageMixin, RenderBase):
         title = obj._title  # pyright: ignore[reportPrivateUsage]
         metadata: dict[str, object] = {
             "title": f"{title}",
-            "body-classes": "doc-api-page doc-py-reference",
+            "body-classes": "doc-api-page doc-py-api-page",
             "shift-heading-level-by": 0,
         }
         # Add a page override only when the site depth excludes members.

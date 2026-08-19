@@ -814,9 +814,8 @@ html.theme-loading body {
 /* General heading weight -- handled by SCSS @extend .fw-medium */
 
 /* Keep reference object titles compact. The desktop `h1.title` rule otherwise
-   gives 1.25rem text a 2.3rem line height. Require both classes because the
-   reference index shares `doc-py-reference` but keeps the standard title size. */
-.doc-api-page.doc-py-reference h1.title {
+   gives 1.25rem text a 2.3rem line height. */
+.doc-py-api-page h1.title {
     margin-top: 0.5rem;
     border-bottom: none;
     padding-bottom: 0;
@@ -1480,8 +1479,13 @@ a.sidebar-item-text.sidebar-link.text-start > span {
 
 /* CLI reference: present command groups (e.g. SKILL, TERMSHOW) as small uppercase
    pills so they read as command groups, distinct from leaf commands. Scoped to the
-   CLI reference pages via the doc-cli-reference body class. */
+   CLI reference pages via the doc-cli-reference and doc-cli-api-page body
+   classes. */
 body.doc-cli-reference #quarto-sidebar .sidebar-item-section
+    > .sidebar-item-container
+    > .sidebar-item-text
+    .menu-text,
+body.doc-cli-api-page #quarto-sidebar .sidebar-item-section
     > .sidebar-item-container
     > .sidebar-item-text
     .menu-text {
@@ -1499,7 +1503,8 @@ body.doc-cli-reference #quarto-sidebar .sidebar-item-section
 }
 
 /* Give each CLI command group a little breathing room above its pill. */
-body.doc-cli-reference #quarto-sidebar .sidebar-item-section {
+body.doc-cli-reference #quarto-sidebar .sidebar-item-section,
+body.doc-cli-api-page #quarto-sidebar .sidebar-item-section {
     margin-top: 0.4rem;
 }
 
@@ -1507,6 +1512,10 @@ body.doc-cli-reference #quarto-sidebar .sidebar-item-section {
    padding-bottom above it), so it needs extra top margin to match the gap that
    later groups (e.g. TERMSHOW) get from the preceding group's padding-bottom. */
 body.doc-cli-reference
+    #quarto-sidebar
+    li.sidebar-item:not(.sidebar-item-section)
+    + li.sidebar-item-section,
+body.doc-cli-api-page
     #quarto-sidebar
     li.sidebar-item:not(.sidebar-item-section)
     + li.sidebar-item-section {

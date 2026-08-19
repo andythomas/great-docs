@@ -59,7 +59,7 @@ class __RenderReferencePage(RenderPageMixin, RenderBase):
     def render_metadata(self) -> BlockContent:
         metadata: dict[str, object] = {
             "title": self.api_ref.title,
-            "body-classes": "doc-reference doc-reference-index doc-py-reference",
+            "body-classes": "doc-reference doc-py-reference",
             "page-navigation": False,
             "html-table-processing": "none",
             "shift-heading-level-by": 0,
