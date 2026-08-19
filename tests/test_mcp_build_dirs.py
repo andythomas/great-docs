@@ -103,6 +103,9 @@ class TestPageCompletionExcludesBuildDirs:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         (tmp_path / "great-docs-0.2").mkdir()
+        (tmp_path / "great-docs-0.2" / "_quarto.yml").write_text(
+            QUARTO_YML_HEADER, encoding="utf-8"
+        )
         (tmp_path / "great-docs-0.2" / "index.qmd").write_text("", encoding="utf-8")
         (tmp_path / "own-page.qmd").write_text("", encoding="utf-8")
 
@@ -110,6 +113,17 @@ class TestPageCompletionExcludesBuildDirs:
 
         assert "own-page.qmd" in values
         assert not any(v.startswith("great-docs-0.2/") for v in values)
+
+    def test_includes_pages_in_unmarked_build_like_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        notes = tmp_path / "great-docs-notes"
+        notes.mkdir()
+        (notes / "page.qmd").write_text("", encoding="utf-8")
+
+        values = self._complete(tmp_path, monkeypatch)
+
+        assert "great-docs-notes/page.qmd" in values
 
     def test_includes_nested_user_dir_with_similar_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

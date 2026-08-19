@@ -629,7 +629,7 @@ def _check_stale_versions(project_root: Path, result: LintResult) -> None:
         parts = rel.parts
         if any(p.startswith("_") or p.startswith(".") for p in parts):
             continue
-        if is_in_great_docs_build_dir(parts):
+        if is_in_great_docs_build_dir(parts, project_root):
             continue
         qmd_files.append(qmd)
 

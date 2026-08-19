@@ -15,6 +15,7 @@ from great_docs._lint import (
     _section_kinds,
     run_lint,
 )
+from great_docs._utils import QUARTO_YML_HEADER
 
 
 class TestLintIssue:
@@ -1270,11 +1271,33 @@ class TestCheckStaleVersions:
                 ),
             },
         )
+        (tmp_path / "great-docs-0.6" / "_quarto.yml").write_text(
+            QUARTO_YML_HEADER,
+            encoding="utf-8",
+        )
         result = LintResult()
         _check_stale_versions(tmp_path, result)
         stale = [i for i in result.issues if i.check == "stale-badge"]
         assert len(stale) == 1
         assert "great-docs-examples" in stale[0].symbol
+
+    def test_checks_unmarked_root_directory_with_build_like_name(self, tmp_path):
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {
+                "great-docs-notes/page.qmd": ("---\ntitle: Test\n---\n\n[version-badge new 0.1]\n"),
+            },
+        )
+
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+
+        stale = [i for i in result.issues if i.check == "stale-badge"]
+        assert len(stale) == 1
+        assert "great-docs-notes" in stale[0].symbol
 
     def test_line_numbers_correct(self, tmp_path):
         from great_docs._lint import _check_stale_versions

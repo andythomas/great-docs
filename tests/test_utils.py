@@ -1,6 +1,6 @@
 import pytest
 
-from great_docs._utils import fenced_lines, is_in_great_docs_build_dir
+from great_docs._utils import QUARTO_YML_HEADER, fenced_lines, is_in_great_docs_build_dir
 
 
 def test_fenced_lines_without_markers_returns_lines_and_clear_mask():
@@ -38,12 +38,18 @@ def test_fenced_lines_ignores_non_fence_characters(text: str):
     "parts",
     [
         ("great-docs", "index.qmd"),
-        ("great-docs-0.2", "index.qmd"),
-        ("great-docs-0.2",),
     ],
 )
-def test_is_in_great_docs_build_dir_matches_build_output(parts: tuple[str, ...]):
-    assert is_in_great_docs_build_dir(parts) is True
+def test_is_in_great_docs_build_dir_recognises_current_build(parts: tuple[str, ...], tmp_path):
+    assert is_in_great_docs_build_dir(parts, tmp_path) is True
+
+
+def test_is_in_great_docs_build_dir_recognises_historical_build(tmp_path):
+    build_dir = tmp_path / "great-docs-0.2"
+    build_dir.mkdir()
+    (build_dir / "_quarto.yml").write_text(QUARTO_YML_HEADER, encoding="utf-8")
+
+    assert is_in_great_docs_build_dir((build_dir.name, "index.qmd"), tmp_path) is True
 
 
 @pytest.mark.parametrize(
@@ -52,7 +58,11 @@ def test_is_in_great_docs_build_dir_matches_build_output(parts: tuple[str, ...])
         (),
         ("docs", "great-docs-examples", "index.qmd"),
         ("great_docs_notes", "index.qmd"),
+        ("great-docs-notes", "index.qmd"),
     ],
 )
-def test_is_in_great_docs_build_dir_ignores_nested_or_unrelated_dirs(parts: tuple[str, ...]):
-    assert is_in_great_docs_build_dir(parts) is False
+def test_is_in_great_docs_build_dir_rejects_non_build_paths(parts: tuple[str, ...], tmp_path):
+    if parts:
+        (tmp_path / parts[0]).mkdir(exist_ok=True)
+
+    assert is_in_great_docs_build_dir(parts, tmp_path) is False

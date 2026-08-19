@@ -1887,6 +1887,12 @@ def run_versioned_build(
         ver_dir = _version_build_dir(source_dir, entry, latest_tag)
         if ver_dir == source_dir:
             continue
+        if ver_dir.is_symlink():
+            raise ValueError(
+                f"Version {entry.tag!r} cannot use {ver_dir} as its build directory "
+                "because the path is a symlink. Remove the symlink or replace it with "
+                "a directory before building."
+            )
         if ver_dir.exists() and not is_great_docs_build_dir(ver_dir):
             raise ValueError(
                 f"Version {entry.tag!r} would build into {ver_dir}, which already exists "

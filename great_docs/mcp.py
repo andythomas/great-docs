@@ -1279,7 +1279,7 @@ async def handle_completion(
             root = Path.cwd()
             rel_paths = (p.relative_to(root) for p in root.rglob("*.qmd"))
             qmd_files = sorted(
-                str(rel) for rel in rel_paths if not is_in_great_docs_build_dir(rel.parts)
+                str(rel) for rel in rel_paths if not is_in_great_docs_build_dir(rel.parts, root)
             )
             filtered = [f for f in qmd_files if value.lower() in f.lower()]
             return Completion(values=filtered[:20], hasMore=len(filtered) > 20)

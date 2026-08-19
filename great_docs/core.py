@@ -15315,10 +15315,12 @@ anchor-sections: true
 
     def uninstall(self) -> None:
         """
-        Remove great-docs configuration and build directory from the project.
+        Remove Great Docs configuration and generated build directories
 
-        This method deletes the great-docs.yml configuration file and the great-docs/
-        build directory (if it exists).
+        Delete `great-docs.yml` and the current `great-docs/` build directory.
+        Also delete each historical `great-docs-<tag>/` directory that is not a
+        symlink and contains the complete generated-file header. Preserve
+        symlinks and historical directories without this header.
 
         ::: {.callout-note}
         In practice, you would normally use the `great-docs uninstall` CLI command
@@ -15352,10 +15354,22 @@ anchor-sections: true
             config_path.unlink()
             print(f"Removed {config_path.relative_to(self.project_root)}")
 
-        # Remove the great-docs/ build directory if it exists
+        # Great Docs owns the configured build path.
         if self.project_path.exists():
             shutil.rmtree(self.project_path)
             print(f"Removed {self.project_path.relative_to(self.project_root)}/ directory")
+
+        # Only a generated header proves ownership of a historical directory.
+        # Symlinks can point outside the project root.
+        for build_dir in sorted(self.project_root.glob(f"{self.docs_dir.name}-*")):
+            if (
+                not build_dir.is_dir()
+                or build_dir.is_symlink()
+                or not is_great_docs_build_dir(build_dir)
+            ):
+                continue
+            shutil.rmtree(build_dir)
+            print(f"Removed {build_dir.relative_to(self.project_root)}/ directory")
 
         print("✅ Great-docs uninstalled successfully!")
 
