@@ -814,8 +814,9 @@ html.theme-loading body {
 /* General heading weight -- handled by SCSS @extend .fw-medium */
 
 /* Keep reference object titles compact. The desktop `h1.title` rule otherwise
-   gives 1.25rem text a 2.3rem line height. */
-.doc-py-reference h1.title {
+   gives 1.25rem text a 2.3rem line height. Require both classes because the
+   reference index shares `doc-py-reference` but keeps the standard title size. */
+.doc-api-page.doc-py-reference h1.title {
     margin-top: 0.5rem;
     border-bottom: none;
     padding-bottom: 0;
@@ -8415,8 +8416,9 @@ body.quarto-dark {
     vertical-align: middle;
 }
 
-// Smaller icon in the mobile secondary nav title
-h1.quarto-secondary-nav-title .gd-upcoming-icon svg {
+// Keep this selector independent of heading level. Reference, CLI and MCP nav
+// titles use `h5`; other pages use `h1`.
+.quarto-secondary-nav-title .gd-upcoming-icon svg {
     width: 16px;
     height: 16px;
 }

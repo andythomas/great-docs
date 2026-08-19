@@ -60,7 +60,7 @@ class __RenderReferencePage(RenderPageMixin, RenderBase):
         return Meta(
             {
                 "title": self.api_ref.title,
-                "body-classes": "doc-reference doc-reference-index",
+                "body-classes": "doc-reference doc-reference-index doc-py-reference",
                 "page-navigation": False,
                 "html-table-processing": "none",
             }

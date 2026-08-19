@@ -189,8 +189,8 @@
       ' .05 5 .05"/></svg>';
     titleEl.appendChild(icon);
 
-    // Also apply to mobile secondary nav title (visible at narrow widths)
-    var mobileTitle = document.querySelector("h1.quarto-secondary-nav-title");
+    // Apply the icon to the mobile nav title at either heading level.
+    var mobileTitle = document.querySelector(".quarto-secondary-nav-title");
     if (mobileTitle && mobileTitle !== titleEl) {
       mobileTitle.classList.add("gd-upcoming-title");
       var mobileIcon = icon.cloneNode(true);

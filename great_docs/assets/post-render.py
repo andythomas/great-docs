@@ -1866,6 +1866,62 @@ def translate_rst_references(html_content):
     return html_content
 
 
+# Match the page title even when Quarto adds display classes, so the heading
+# shift can exclude it.
+_TITLE_HEADING_PATTERN = re.compile(r'(<h1[^>]*\bclass="[^"]*\btitle\b[^"]*"[^>]*>.*?</h1>)', re.DOTALL)
+
+
+def _shift_main_headings_below_title(content_str):
+    """
+    Shift headings inside `<main>` below the page title
+
+    Quarto's site-wide heading shift promotes rendered docstring sections and
+    members to the title's level. Move them down one level while preserving
+    the `h1.title` heading.
+
+    Parameters
+    ----------
+    content_str
+        Complete page HTML.
+
+    Returns
+    -------
+        Page HTML with main-content headings shifted down one level. Return the
+        input unchanged when it has no `<main>` element.
+    """
+    main_start = content_str.find("<main")
+    main_end = content_str.find("</main>")
+    if main_start == -1 or main_end == -1:
+        return content_str
+
+    before = content_str[:main_start]
+    main_content = content_str[main_start : main_end + len("</main>")]
+    after = content_str[main_end + len("</main>") :]
+
+    # Replace the title temporarily so only the remaining headings shift.
+    title_placeholder = "<!--TITLE_PLACEHOLDER-->"
+    title_match = _TITLE_HEADING_PATTERN.search(main_content)
+    if title_match:
+        saved_title = title_match.group(1)
+        main_content = main_content.replace(saved_title, title_placeholder, 1)
+
+    # Process `h5` first so each heading moves exactly one level.
+    for level in range(5, 0, -1):
+        main_content = main_content.replace(f"<h{level}", f"<h{level + 1}")
+        main_content = main_content.replace(f"</h{level}>", f"</h{level + 1}>")
+        main_content = re.sub(
+            rf'\bclass="level{level}\b',
+            f'class="level{level + 1}',
+            main_content,
+        )
+
+    # Restore the title after shifting the remaining headings.
+    if title_match:
+        main_content = main_content.replace(title_placeholder, saved_title, 1)
+
+    return before + main_content + after
+
+
 def fix_dataclass_attributes(content_str):
     """Rebuild the Attributes table for dataclass pages using *_dataclass_attrs.json* metadata.
 
@@ -2097,12 +2153,13 @@ for html_file in html_files:
     _api_label = _t("api", "API")
     _obj_name_match = re.search(r'<span class="doc-object-name[^"]*">([^<]+)</span>', content_str)
     _display_name = _obj_name_match.group(1) if _obj_name_match else item_name_from_file
+    # Use `h5` because this label is navigation; the page content owns `h1`.
     _ref_title_html = (
-        f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
         f'<span class="gd-ref-title-prefix">{_api_label}</span>'
         f'<span class="gd-ref-title-sep">/</span>'
         f'<span class="gd-ref-title-name">{html.escape(_display_name)}</span>'
-        f"</h1>"
+        f"</h5>"
     )
     breadcrumb_pattern = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
     # Replace only the first breadcrumb (in the secondary nav bar, outside <main>);
@@ -2110,43 +2167,8 @@ for html_file in html_files:
     content_str = re.sub(breadcrumb_pattern, _ref_title_html, content_str, count=1, flags=re.DOTALL)
     content_str = re.sub(breadcrumb_pattern, "", content_str, flags=re.DOTALL)
 
-    # Quarto's global heading shift promotes the renderer's section markup to
-    # the same level as the page title. Move those sections down so the title
-    # remains the only `<h1>` and its sections and members nest beneath it.
-    main_start = content_str.find("<main")
-    main_end = content_str.find("</main>")
-    if main_start != -1 and main_end != -1:
-        before = content_str[:main_start]
-        main_content = content_str[main_start : main_end + len("</main>")]
-        after = content_str[main_end + len("</main>") :]
-
-        # Exclude the title while shifting the remaining headings. Match
-        # `title` within a longer class list because Quarto adds display classes.
-        title_pattern = re.compile(
-            r'(<h1[^>]*\bclass="[^"]*\btitle\b[^"]*"[^>]*>.*?</h1>)', re.DOTALL
-        )
-        title_placeholder = "<!--TITLE_PLACEHOLDER-->"
-        title_match = title_pattern.search(main_content)
-        if title_match:
-            saved_title = title_match.group(1)
-            main_content = main_content.replace(saved_title, title_placeholder, 1)
-
-        # Shift in reverse order (h5→h6, h4→h5, ..., h1→h2) to avoid
-        # double-shifting (e.g. h1→h2→h3).
-        for level in range(5, 0, -1):
-            main_content = main_content.replace(f"<h{level}", f"<h{level + 1}")
-            main_content = main_content.replace(f"</h{level}>", f"</h{level + 1}>")
-            main_content = re.sub(
-                rf'\bclass="level{level}\b',
-                f'class="level{level + 1}',
-                main_content,
-            )
-
-        # Restore the title after shifting the remaining headings.
-        if title_match:
-            main_content = main_content.replace(title_placeholder, saved_title, 1)
-
-        content_str = before + main_content + after
+    # Nest docstring sections and members below the page title.
+    content_str = _shift_main_headings_below_title(content_str)
 
     content = content_str.splitlines(keepends=True)
 
@@ -2201,50 +2223,20 @@ if os.path.exists(index_file):
     # Clean up Sphinx cross-reference roles in index descriptions
     content = translate_sphinx_roles(content)
 
-    # Shift section headings down by 1 within <main> so that category headings
-    # (Classes, Methods, etc.) render as <h2>, visually subordinate to the
-    # <h1> "Reference" page title.  Skip the page title itself (class="title").
-    main_start = content.find("<main")
-    main_end = content.find("</main>")
-    if main_start != -1 and main_end != -1:
-        before = content[:main_start]
-        main_content = content[main_start : main_end + len("</main>")]
-        after = content[main_end + len("</main>") :]
-
-        # Protect the title heading from being shifted by replacing it with a
-        # temporary placeholder, then shifting everything else, then restoring.
-        title_pattern = re.compile(r'(<h1\s+class="title"[^>]*>.*?</h1>)', re.DOTALL)
-        title_placeholder = "<!--TITLE_PLACEHOLDER-->"
-        title_match = title_pattern.search(main_content)
-        if title_match:
-            saved_title = title_match.group(1)
-            main_content = main_content.replace(saved_title, title_placeholder, 1)
-
-        for level in range(5, 0, -1):
-            main_content = main_content.replace(f"<h{level}", f"<h{level + 1}")
-            main_content = main_content.replace(f"</h{level}>", f"</h{level + 1}>")
-            main_content = re.sub(
-                rf'\bclass="level{level}\b',
-                f'class="level{level + 1}',
-                main_content,
-            )
-
-        # Restore the title heading
-        if title_match:
-            main_content = main_content.replace(title_placeholder, saved_title, 1)
-
-        content = before + main_content + after
+    # Render category headings at `h2`, below the `h1` Reference title.
+    content = _shift_main_headings_below_title(content)
 
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
 
     # Replace breadcrumb with an "API / Index" title bar label
+    # Keep the navigation label below the page's `h1` title.
     _ref_idx_title = (
-        '<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        '<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
         '<span class="gd-ref-title-prefix">API</span>'
         '<span class="gd-ref-title-sep">/</span>'
         '<span class="gd-ref-title-name">Index</span>'
-        "</h1>"
+        "</h5>"
     )
     _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
     content = re.sub(_bc_pat, _ref_idx_title, content, flags=re.DOTALL)
@@ -2264,12 +2256,13 @@ if os.path.exists(mcp_index_file):
     with open(mcp_index_file, "r", encoding="utf-8") as file:
         content = file.read()
 
+    # Keep the navigation label below the page's `h1` title.
     _mcp_idx_title = (
-        '<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        '<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
         '<span class="gd-ref-title-prefix">MCP</span>'
         '<span class="gd-ref-title-sep">/</span>'
         '<span class="gd-ref-title-name">Index</span>'
-        "</h1>"
+        "</h5>"
     )
     _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
     content = re.sub(_bc_pat, _mcp_idx_title, content, flags=re.DOTALL)
@@ -2303,12 +2296,13 @@ if mcp_html_files:
             else os.path.basename(html_file).replace(".html", "")
         )
 
+        # Keep the navigation label below the page's `h1` title.
         _mcp_title_html = (
-            f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+            f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
             f'<span class="gd-ref-title-prefix">MCP</span>'
             f'<span class="gd-ref-title-sep">/</span>'
             f'<span class="gd-ref-title-name">{html.escape(_mcp_name)}</span>'
-            f"</h1>"
+            f"</h5>"
         )
 
         # MCP pages use bread-crumbs: false, so Quarto renders the title inside
@@ -2629,25 +2623,26 @@ def process_cli_reference_pages():
         # Replace breadcrumb with a "CLI / great-docs cmd" title bar label
         _cli_label = _t("cli", "CLI")
         _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
+        # Keep the navigation label below the page's `h1` title.
         if cmd_name != "index":
             # Extract full command name from the page title (e.g., "great-docs init")
             _title_match = re.search(r'<h1 class="title[^"]*">([^<]+)</h1>', content)
             _full_cmd = _title_match.group(1).strip() if _title_match else f"great-docs {cmd_name}"
             _cli_title_html = (
-                f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+                f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
                 f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
                 f'<span class="gd-ref-title-sep">/</span>'
                 f'<span class="gd-ref-title-name">{html.escape(_full_cmd)}</span>'
-                f"</h1>"
+                f"</h5>"
             )
         else:
             # CLI index: show "CLI / Index" to mirror the API reference index ("API / Index").
             _cli_title_html = (
-                f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+                f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
                 f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
                 f'<span class="gd-ref-title-sep">/</span>'
                 f'<span class="gd-ref-title-name">Index</span>'
-                f"</h1>"
+                f"</h5>"
             )
         content = re.sub(_bc_pat, _cli_title_html, content, flags=re.DOTALL)
 
