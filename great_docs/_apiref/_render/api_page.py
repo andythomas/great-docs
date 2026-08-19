@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, cast
 
@@ -22,10 +23,22 @@ if TYPE_CHECKING:
     from .doc import RenderDoc
 
 
+# Member headings render at `h3`, so the table of contents must reach depth 3
+# to list them.
+_MIN_MEMBER_TOC_DEPTH = 3
+
+# Use the default site depth when the caller does not provide the merged value.
+_DEFAULT_SITE_TOC_DEPTH = 2
+
+
+@dataclass
 class __RenderAPIPage(RenderPageMixin, RenderBase):
     """
     Render an API page object (`content.Page`)
     """
+
+    toc_depth: int = _DEFAULT_SITE_TOC_DEPTH
+    """Merged site `toc-depth` used to select a page override"""
 
     def __post_init__(self):
         self.page = cast("Page", self.node)
@@ -69,12 +82,15 @@ class __RenderAPIPage(RenderPageMixin, RenderBase):
         # Derive the title of the page from the first (top-level) object
         obj = self.render_objs[0]
         title = obj._title  # pyright: ignore[reportPrivateUsage]
-        return Meta(
-            {
-                "title": f"{title}",
-                "body-classes": "doc-api-page",
-            }
-        )
+        metadata: dict[str, object] = {
+            "title": f"{title}",
+            "body-classes": "doc-api-page doc-py-api-page",
+            "shift-heading-level-by": 0,
+        }
+        # Add a page override only when the site depth excludes members.
+        if self.toc_depth < _MIN_MEMBER_TOC_DEPTH:
+            metadata["toc-depth"] = _MIN_MEMBER_TOC_DEPTH
+        return Meta(metadata)
 
     def render_body(self) -> BlockContent:
         """

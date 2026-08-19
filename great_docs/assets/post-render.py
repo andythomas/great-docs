@@ -1158,6 +1158,68 @@ def strip_colgroup_tags(html_content):
     return colgroup_pattern.sub(_replace_if_not_gt, html_content)
 
 
+_BREADCRUMB_NAV_RE = re.compile(
+    r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>', re.DOTALL
+)
+_NO_BREADCRUMBS_NAV_TITLE_RE = re.compile(
+    r'<h1 class="quarto-secondary-nav-title no-breadcrumbs[^"]*">.*?</h1>', re.DOTALL
+)
+
+
+def replace_secondary_nav_title(html_content: str, label_html: str) -> str:
+    """
+    Replace Quarto's secondary navigation title
+
+    Quarto uses a breadcrumb `nav` when breadcrumbs are enabled and a bare
+    `h1` when they are disabled. Replace either form with the supplied `h5`
+    navigation label and remove any duplicate breadcrumb in the title block.
+
+    Parameters
+    ----------
+    html_content
+        Complete page HTML.
+    label_html
+        Navigation label markup.
+
+    Returns
+    -------
+    HTML with the secondary navigation title replaced.
+    """
+    new_content, replaced = _BREADCRUMB_NAV_RE.subn(label_html, html_content, count=1)
+    if not replaced:
+        new_content, replaced = _NO_BREADCRUMBS_NAV_TITLE_RE.subn(label_html, html_content, count=1)
+    # Remove a second breadcrumb that Quarto may place in the title block.
+    return _BREADCRUMB_NAV_RE.sub("", new_content)
+
+
+_HEADING_TAG_RE = re.compile(r"<h([1-9])(?:\s[^>]*)?>")
+
+
+def _fallback_section_level(html_content, pos):
+    """
+    Select the heading level for a fallback docstring section
+
+    Top-level sections render at `h2`. Sections within an `h3` member render
+    at `h4`. A preceding `h4` also indicates member context because fallback
+    translators run in sequence over the same content.
+
+    Parameters
+    ----------
+    html_content
+        Complete page HTML.
+    pos
+        Character offset where the fallback section starts.
+
+    Returns
+    -------
+    `4` after an `h3` or deeper heading; otherwise `2`.
+    """
+    last_level = None
+    for m in _HEADING_TAG_RE.finditer(html_content, 0, pos):
+        last_level = int(m.group(1))
+    return 4 if last_level and last_level >= 3 else 2
+
+
 def translate_sphinx_fields(html_content):
     """
     Convert Sphinx field-list directives into structured doc sections.
@@ -1229,6 +1291,7 @@ def translate_sphinx_fields(html_content):
                 raises.append((name, body))
 
         parts = []
+        lvl = _fallback_section_level(html_content, m.start())
 
         # ── Parameters section ───────────────────────────────────────────
         if params:
@@ -1252,8 +1315,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{pdesc}</p>\n</dd>" if pdesc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="parameters" class="level1 doc-section doc-section-parameters">\n'
-                f'<h1 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h1>\n'
+                f'<section id="parameters" class="level{lvl} doc-section doc-section-parameters">\n'
+                f'<h{lvl} class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1276,8 +1339,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{rdesc}</p>\n</dd>" if rdesc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="returns" class="level1 doc-section doc-section-returns">\n'
-                f'<h1 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h1>\n'
+                f'<section id="returns" class="level{lvl} doc-section doc-section-returns">\n'
+                f'<h{lvl} class="doc-section doc-section-returns">{_t("returns", "Returns")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1289,8 +1352,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{desc}</p>\n</dd>" if desc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="raises" class="level1 doc-section doc-section-raises">\n'
-                f'<h1 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h1>\n'
+                f'<section id="raises" class="level{lvl} doc-section doc-section-raises">\n'
+                f'<h{lvl} class="doc-section doc-section-raises">{_t("raises", "Raises")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1312,9 +1375,9 @@ def translate_google_fields(html_content):
         <p>Raises: ValueError: desc. TypeError: desc.</p>
         <p>Note: text</p>
 
-    Indented continuation text renders as `<pre><code>` blocks adjacent to the section `<p>`.  This
-    function detects both patterns and emits the same `<section>`/`<h1>`/`<dl>`/`<dt>`/`<dd>` markup
-    that the renderer produces for NumPy-style sections.
+    Indented continuation text renders as `<pre><code>` blocks adjacent to the section `<p>`.
+    Translate both forms to the renderer's `<section>` and `<h2>` structure,
+    using definition-list markup for fields.
     """
 
     _PARAM_SECTIONS = {"Args", "Arguments", "Parameters", "Params"}
@@ -1404,6 +1467,7 @@ def translate_google_fields(html_content):
         section = m.group("section")
         body = (m.group("body") or "").strip()
         pre_body = m.group("pre_body").strip() if m.group("pre_body") else None
+        lvl = _fallback_section_level(html_content, m.start())
 
         # ── Args / Parameters ─────────────────────────────────────────
         if section in _PARAM_SECTIONS:
@@ -1421,8 +1485,8 @@ def translate_google_fields(html_content):
                 dd = f"<dd>\n<p>{pdesc}</p>\n</dd>" if pdesc else "<dd></dd>"
                 items.append(f"{dt}\n{dd}")
             return (
-                '<section id="parameters" class="level1 doc-section doc-section-parameters">\n'
-                f'<h1 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h1>\n'
+                f'<section id="parameters" class="level{lvl} doc-section doc-section-parameters">\n'
+                f'<h{lvl} class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1435,8 +1499,8 @@ def translate_google_fields(html_content):
                 parts.append(_pre_to_html(pre_body))
             content = "\n".join(parts)
             return (
-                '<section id="returns" class="level1 doc-section doc-section-returns">\n'
-                f'<h1 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h1>\n'
+                f'<section id="returns" class="level{lvl} doc-section doc-section-returns">\n'
+                f'<h{lvl} class="doc-section doc-section-returns">{_t("returns", "Returns")}</h{lvl}>\n'
                 f"{content}\n</section>"
             )
 
@@ -1453,8 +1517,8 @@ def translate_google_fields(html_content):
                 dd = f"<dd>\n<p>{desc}</p>\n</dd>" if desc else "<dd></dd>"
                 items.append(f"{dt}\n{dd}")
             return (
-                '<section id="raises" class="level1 doc-section doc-section-raises">\n'
-                f'<h1 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h1>\n'
+                f'<section id="raises" class="level{lvl} doc-section doc-section-raises">\n'
+                f'<h{lvl} class="doc-section doc-section-raises">{_t("raises", "Raises")}</h{lvl}>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1467,8 +1531,8 @@ def translate_google_fields(html_content):
                 code_parts.append(pre_body)
             code = "\n".join(code_parts)
             return (
-                '<section id="examples" class="level1 doc-section doc-section-examples">\n'
-                f'<h1 class="doc-section doc-section-examples">{_t("examples", "Examples")}</h1>\n'
+                f'<section id="examples" class="level{lvl} doc-section doc-section-examples">\n'
+                f'<h{lvl} class="doc-section doc-section-examples">{_t("examples", "Examples")}</h{lvl}>\n'
                 f"<pre><code>{code}</code></pre>\n</section>"
             )
 
@@ -1491,8 +1555,8 @@ def translate_google_fields(html_content):
         full = _dbl_bt(full)
         content = f"<p>{full}</p>" if full else ""
         return (
-            f'<section id="{slug}" class="level1 doc-section doc-section-{slug}">\n'
-            f'<h1 class="doc-section doc-section-{slug}">{display}</h1>\n'
+            f'<section id="{slug}" class="level{lvl} doc-section doc-section-{slug}">\n'
+            f'<h{lvl} class="doc-section doc-section-{slug}">{display}</h{lvl}>\n'
             f"{content}\n</section>"
         )
 
@@ -1564,8 +1628,8 @@ def translate_bold_section_headers(html_content):
 
         <p><strong>Examples</strong>:</p>
 
-    This function converts those into the same `<section>`/`<h1>` structure that the renderer uses
-    for NumPy-style sections so the page has a consistent look.
+    Translate these headings to the renderer's `<section>` and `<h2>`
+    structure so all docstring styles share the same layout.
     """
 
     # Map of recognized section names → CSS id / class suffix
@@ -1599,9 +1663,10 @@ def translate_bold_section_headers(html_content):
         slug = _SECTION_NAMES.get(name, name.lower().replace(" ", "-"))
         i18n_key = _BOLD_I18N_KEY.get(name)
         display = _t(i18n_key, name) if i18n_key else name
+        lvl = _fallback_section_level(html_content, m.start())
         return (
-            f'<section id="{slug}" class="level1 doc-section doc-section-{slug}">\n'
-            f'<h1 class="doc-section doc-section-{slug}">{display}</h1>'
+            f'<section id="{slug}" class="level{lvl} doc-section doc-section-{slug}">\n'
+            f'<h{lvl} class="doc-section doc-section-{slug}">{display}</h{lvl}>'
         )
 
     html_content = re.sub(
@@ -1981,93 +2046,6 @@ for html_file in html_files:
     # Convert back to lines for line-by-line processing
     content = content.splitlines(keepends=True)
 
-    # Determine the classification of each h1 tag based on its content
-    # Remove the literal text `Validate.` from the h1 tag
-    # TODO: Add line below stating the class name for the method
-    content = [
-        line.replace(
-            '<h1 class="title">Validate.',
-            '<h1 class="title">',
-        )
-        for line in content
-    ]
-
-    # Add `()` only to functions and methods in the h1 title
-    # Uses object_types metadata when available, otherwise falls back to heuristics
-    _CALLABLE_TYPES = {"function", "method"}
-
-    for i, line in enumerate(content):
-        # Use regex to find h1 tags (both class="title" and styled versions)
-        h1_match = re.search(r'<h1\s+class="title">', line)
-
-        if not h1_match:
-            h1_match = re.search(r'<h1\s+style="[^"]*">', line)
-
-        if h1_match:
-            # Extract the content of the h1 tag
-            start = h1_match.end()
-            end = line.find("</h1>", start)
-            h1_content = line[start:end].strip()
-
-            # Determine whether this item should get ()
-            obj_type = object_types.get(item_name_from_file)
-
-            # Replace the h1 tag with the modified content
-            content[i] = line[:start] + h1_content + line[end:]
-
-    # Wrap bare h1 tags (those with style attribute but no quarto-title wrapper) in proper structure
-    for i, line in enumerate(content):
-        # Look for h1 tags with style attribute that aren't already wrapped
-        if "<h1 style=" in line and "SFMono-Regular" in line:
-            # Check if this h1 is already wrapped in quarto-title div
-            # Look at previous lines to see if there's a quarto-title div
-            is_wrapped = False
-            for j in range(max(0, i - 5), i):
-                if 'class="quarto-title"' in content[j]:
-                    is_wrapped = True
-                    break
-
-            # If not wrapped, wrap it
-            if not is_wrapped:
-                # Extract the h1 content
-                h1_content = line.strip()
-
-                # Replace the line with the wrapped version
-                wrapped_h1 = f'<div class="quarto-title">\n{h1_content}\n</div>\n'
-                content[i] = wrapped_h1
-
-    # Add a style attribute to the h1 tag to use a monospace font for code-like appearance
-    content = [
-        line.replace(
-            '<h1 class="title">',
-            "<h1 class=\"title\" style=\"font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 1.25rem;\">",
-        )
-        for line in content
-    ]
-
-    # Some h1 tags may not have a class attribute, so we handle that case too
-    # But skip "Attributes" and "Methods" section headings — they should look like
-    # the Parameters section label (doc-section style), not code font.
-    _SECTION_HEADINGS = {"Attributes", "Methods"}
-    new_content = []
-    for line in content:
-        if "<h1>" in line:
-            # Check if this is a section heading like Attributes or Methods
-            h1_text_match = re.search(r"<h1>(.*?)</h1>", line)
-            if h1_text_match and h1_text_match.group(1).strip() in _SECTION_HEADINGS:
-                # Style like Parameters: use doc-section class instead of code font
-                line = line.replace(
-                    "<h1>",
-                    '<h1 class="doc-section">',
-                )
-            else:
-                line = line.replace(
-                    "<h1>",
-                    "<h1 style=\"font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 1.25rem;\">",
-                )
-        new_content.append(line)
-    content = new_content
-
     # Fix return value formatting in individual function pages, removing the `:` before the
     # return value and adjusting the style of the parameter annotation separator
     content_str = "".join(content)
@@ -2138,21 +2116,15 @@ for html_file in html_files:
 
     content = content_str.splitlines(keepends=True)
 
-    # Turn all h3 tags into h4 tags
-    content = [line.replace("<h3", "<h4").replace("</h3>", "</h4>") for line in content]
-
-    # Turn all h2 tags into h3 tags
-    content = [line.replace("<h2", "<h3").replace("</h2>", "</h3>") for line in content]
-
     # Add separator lines between class details and individual members,
     # and between individual member sections.
     # - Thin solid line after the Methods/Attributes summary table (before first member section)
     # - Dotted line between each individual member section
     for i, line in enumerate(content):
-        # Detect <section class="level2"> — these are individual member sections
-        if "<section id=" in line and 'class="level2"' in line:
+        # Individual members render as `level3` sections.
+        if "<section id=" in line and 'class="level3"' in line:
             # Check if the previous non-blank line ends a table (</table> in </section>)
-            # or is another level2 section close
+            # or closes another member section
             for j in range(i - 1, max(0, i - 5), -1):
                 prev = content[j].strip()
                 if not prev:
@@ -2190,41 +2162,15 @@ for html_file in html_files:
     _api_label = _t("api", "API")
     _obj_name_match = re.search(r'<span class="doc-object-name[^"]*">([^<]+)</span>', content_str)
     _display_name = _obj_name_match.group(1) if _obj_name_match else item_name_from_file
+    # Use `h5` because this label is navigation; the page content owns `h1`.
     _ref_title_html = (
-        f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
         f'<span class="gd-ref-title-prefix">{_api_label}</span>'
         f'<span class="gd-ref-title-sep">/</span>'
         f'<span class="gd-ref-title-name">{html.escape(_display_name)}</span>'
-        f"</h1>"
+        f"</h5>"
     )
-    breadcrumb_pattern = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
-    # Replace only the first breadcrumb (in the secondary nav bar, outside <main>);
-    # a second breadcrumb may exist inside the title-block-header — remove it.
-    content_str = re.sub(breadcrumb_pattern, _ref_title_html, content_str, count=1, flags=re.DOTALL)
-    content_str = re.sub(breadcrumb_pattern, "", content_str, flags=re.DOTALL)
-
-    # Shift all heading levels down by 1 within <main> content so that
-    # reference page titles use <h2> instead of <h1>, differentiating them
-    # from the top-level "Reference" heading on the index page.
-    main_start = content_str.find("<main")
-    main_end = content_str.find("</main>")
-    if main_start != -1 and main_end != -1:
-        before = content_str[:main_start]
-        main_content = content_str[main_start : main_end + len("</main>")]
-        after = content_str[main_end + len("</main>") :]
-
-        # Shift in reverse order (h5→h6, h4→h5, ..., h1→h2) to avoid
-        # double-shifting (e.g. h1→h2→h3).
-        for level in range(5, 0, -1):
-            main_content = main_content.replace(f"<h{level}", f"<h{level + 1}")
-            main_content = main_content.replace(f"</h{level}>", f"</h{level + 1}>")
-            main_content = re.sub(
-                rf'\bclass="level{level}\b',
-                f'class="level{level + 1}',
-                main_content,
-            )
-
-        content_str = before + main_content + after
+    content_str = replace_secondary_nav_title(content_str, _ref_title_html)
 
     content = content_str.splitlines(keepends=True)
 
@@ -2272,60 +2218,29 @@ if os.path.exists(index_file):
 
     # Remove redundant "API Reference" top-level nav item
     # Find the nav structure and flatten it by removing the top-level wrapper
-    nav_pattern = r'(<nav[^>]*>.*?<h2[^>]*>.*?</h2>\s*<ul>\s*)<li><a[^>]*href="[^"]*#api-reference"[^>]*>API Reference</a>\s*<ul[^>]*>(.*?)</ul></li>\s*(</ul>\s*</nav>)'
+    nav_pattern = (
+        r'(<nav[^>]*>.*?<h2[^>]*>.*?</h2>\s*<ul>\s*)<li><a[^>]*href="[^"]*#api-reference"[^>]*>'
+        r'API Reference</a>\s*<ul[^>]*>(.*?)</ul></li>\s*(</ul>\s*</nav>)'
+    )
     nav_replacement = r"\1\2\3"
     content = re.sub(nav_pattern, nav_replacement, content, flags=re.DOTALL)
 
     # Clean up Sphinx cross-reference roles in index descriptions
     content = translate_sphinx_roles(content)
 
-    # Shift section headings down by 1 within <main> so that category headings
-    # (Classes, Methods, etc.) render as <h2>, visually subordinate to the
-    # <h1> "Reference" page title.  Skip the page title itself (class="title").
-    main_start = content.find("<main")
-    main_end = content.find("</main>")
-    if main_start != -1 and main_end != -1:
-        before = content[:main_start]
-        main_content = content[main_start : main_end + len("</main>")]
-        after = content[main_end + len("</main>") :]
-
-        # Protect the title heading from being shifted by replacing it with a
-        # temporary placeholder, then shifting everything else, then restoring.
-        title_pattern = re.compile(r'(<h1\s+class="title"[^>]*>.*?</h1>)', re.DOTALL)
-        title_placeholder = "<!--TITLE_PLACEHOLDER-->"
-        title_match = title_pattern.search(main_content)
-        if title_match:
-            saved_title = title_match.group(1)
-            main_content = main_content.replace(saved_title, title_placeholder, 1)
-
-        for level in range(5, 0, -1):
-            main_content = main_content.replace(f"<h{level}", f"<h{level + 1}")
-            main_content = main_content.replace(f"</h{level}>", f"</h{level + 1}>")
-            main_content = re.sub(
-                rf'\bclass="level{level}\b',
-                f'class="level{level + 1}',
-                main_content,
-            )
-
-        # Restore the title heading
-        if title_match:
-            main_content = main_content.replace(title_placeholder, saved_title, 1)
-
-        content = before + main_content + after
-
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
 
     # Replace breadcrumb with an "API / Index" title bar label
+    # Keep the navigation label below the page's `h1` title.
     _ref_idx_title = (
-        '<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        '<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
         '<span class="gd-ref-title-prefix">API</span>'
         '<span class="gd-ref-title-sep">/</span>'
         '<span class="gd-ref-title-name">Index</span>'
-        "</h1>"
+        "</h5>"
     )
-    _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
-    content = re.sub(_bc_pat, _ref_idx_title, content, flags=re.DOTALL)
+    content = replace_secondary_nav_title(content, _ref_idx_title)
 
     with open(index_file, "w", encoding="utf-8") as file:
         file.write(content)
@@ -2342,15 +2257,15 @@ if os.path.exists(mcp_index_file):
     with open(mcp_index_file, "r", encoding="utf-8") as file:
         content = file.read()
 
+    # Keep the navigation label below the page's `h1` title.
     _mcp_idx_title = (
-        '<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+        '<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
         '<span class="gd-ref-title-prefix">MCP</span>'
         '<span class="gd-ref-title-sep">/</span>'
         '<span class="gd-ref-title-name">Index</span>'
-        "</h1>"
+        "</h5>"
     )
-    _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
-    content = re.sub(_bc_pat, _mcp_idx_title, content, flags=re.DOTALL)
+    content = replace_secondary_nav_title(content, _mcp_idx_title)
 
     with open(mcp_index_file, "w", encoding="utf-8") as file:
         file.write(content)
@@ -2381,18 +2296,17 @@ if mcp_html_files:
             else os.path.basename(html_file).replace(".html", "")
         )
 
+        # Keep the navigation label below the page's `h1` title.
         _mcp_title_html = (
-            f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+            f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
             f'<span class="gd-ref-title-prefix">MCP</span>'
             f'<span class="gd-ref-title-sep">/</span>'
             f'<span class="gd-ref-title-name">{html.escape(_mcp_name)}</span>'
-            f"</h1>"
+            f"</h5>"
         )
 
-        # MCP pages use bread-crumbs: false, so Quarto renders the title inside
-        # an h1.quarto-secondary-nav-title.no-breadcrumbs element
-        _h1_pat = r'<h1 class="quarto-secondary-nav-title no-breadcrumbs[^"]*">.*?</h1>'
-        content = re.sub(_h1_pat, _mcp_title_html, content, count=1, flags=re.DOTALL)
+        # MCP pages disable breadcrumbs, so replace Quarto's bare `h1` form.
+        content = replace_secondary_nav_title(content, _mcp_title_html)
 
         with open(html_file, "w", encoding="utf-8") as file:
             file.write(content)
@@ -2685,7 +2599,7 @@ def process_cli_reference_pages():
     This adds the 'cli-title' class to h1 elements in CLI reference pages so they match the
     monospaced font style of API reference pages.
     """
-    cli_html_files = glob.glob("_site/reference/cli/*.html")
+    cli_html_files = glob.glob("_site/reference/cli/**/*.html", recursive=True)
 
     if not cli_html_files:
         return
@@ -2706,28 +2620,32 @@ def process_cli_reference_pages():
 
         # Replace breadcrumb with a "CLI / great-docs cmd" title bar label
         _cli_label = _t("cli", "CLI")
-        _bc_pat = r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>'
+        # Keep the navigation label below the page's `h1` title.
         if cmd_name != "index":
-            # Extract full command name from the page title (e.g., "great-docs init")
-            _title_match = re.search(r'<h1 class="title[^"]*">([^<]+)</h1>', content)
-            _full_cmd = _title_match.group(1).strip() if _title_match else f"great-docs {cmd_name}"
+            # Read all text inside the title because the command name may be
+            # nested in a `span`.
+            _title_match = re.search(r'<h1 class="title[^"]*">(.*?)</h1>', content, re.DOTALL)
+            if _title_match:
+                _full_cmd = html.unescape(re.sub(r"<[^>]+>", "", _title_match.group(1))).strip()
+            else:
+                _full_cmd = f"great-docs {cmd_name}"
             _cli_title_html = (
-                f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+                f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
                 f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
                 f'<span class="gd-ref-title-sep">/</span>'
                 f'<span class="gd-ref-title-name">{html.escape(_full_cmd)}</span>'
-                f"</h1>"
+                f"</h5>"
             )
         else:
             # CLI index: show "CLI / Index" to mirror the API reference index ("API / Index").
             _cli_title_html = (
-                f'<h1 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
+                f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
                 f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
                 f'<span class="gd-ref-title-sep">/</span>'
                 f'<span class="gd-ref-title-name">Index</span>'
-                f"</h1>"
+                f"</h5>"
             )
-        content = re.sub(_bc_pat, _cli_title_html, content, flags=re.DOTALL)
+        content = replace_secondary_nav_title(content, _cli_title_html)
 
         with open(html_file, "w", encoding="utf-8") as file:
             file.write(content)

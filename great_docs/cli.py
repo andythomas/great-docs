@@ -811,7 +811,7 @@ def scan(project_path: str | None, docs_dir: str | None, verbose: bool) -> None:
             click.echo(f"\n✅ Found in great-docs.yml ({len(reference_config)} section(s))")
             if verbose:
                 for section in reference_config:
-                    title = section.get("title", "Untitled")
+                    title = section.get("title") or section.get("subtitle") or "Untitled"
                     contents = section.get("contents", [])
                     click.echo(f"    • {title}: {len(contents)} item(s)")
         else:

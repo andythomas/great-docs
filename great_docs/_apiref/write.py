@@ -312,6 +312,7 @@ def write_pages(
     rewrite_all_pages: bool,
     header_level: int,
     page_filter: str,
+    site_toc_depth: int,
 ) -> None:
     """Write API doc pages to `<dir>/<page.path><out_page_suffix>`
 
@@ -335,6 +336,9 @@ def write_pages(
     page_filter :
         Glob pattern; pages whose path does not match are neither rendered
         nor written. `"*"` writes all pages.
+    site_toc_depth :
+        Merged site table-of-contents depth. A page overrides it only when
+        member headings require a greater depth.
     """
     from ._render.api_page import RenderAPIPage
 
@@ -344,7 +348,7 @@ def write_pages(
             continue
 
         _log.info(f"Rendering {page.path}")
-        rendered = str(RenderAPIPage(page, header_level))
+        rendered = str(RenderAPIPage(page, header_level, toc_depth=site_toc_depth))
 
         rendered = merge_frontmatter(
             rendered, {"page-navigation": False, "html-table-processing": "none"}

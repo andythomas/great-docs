@@ -424,9 +424,7 @@ class GreatDocs:
                             html = index_html.read_text(encoding="utf-8")
                             if _MARIMO_AUTORUN_MARKER not in html:
                                 index_html.write_text(
-                                    html.replace(
-                                        "</body>", _MARIMO_AUTORUN_SCRIPT + "</body>", 1
-                                    ),
+                                    html.replace("</body>", _MARIMO_AUTORUN_SCRIPT + "</body>", 1),
                                     encoding="utf-8",
                                 )
                 finally:
@@ -4544,10 +4542,11 @@ class GreatDocs:
         # --- Front matter (mirrors the API reference index) ---
         lines.append("---")
         lines.append(f'title: "{title}"')
-        lines.append("body-classes: doc-reference doc-cli-reference doc-reference-index")
+        lines.append("body-classes: doc-reference doc-cli-reference")
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
+        lines.append("shift-heading-level-by: 0")
         lines.append("---")
         lines.append("")
 
@@ -4708,15 +4707,14 @@ class GreatDocs:
         lines.append(
             f'title: "[{title}]{{.doc-object-name .doc-function .doc-label .{label_class}}}"'
         )
-        lines.append("body-classes: doc-api-page doc-cli-reference")
+        lines.append("body-classes: doc-api-page doc-cli-api-page")
         lines.append("sidebar: cli-reference")
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
+        # Front matter provides the page's only `h1`; render body sections at
+        # their written levels.
+        lines.append("shift-heading-level-by: 0")
         lines.append("---")
-        lines.append("")
-
-        # --- Heading ---
-        lines.append(f"# [{title}]{{.doc-object-name .doc-function .doc-label .{label_class}}}")
         lines.append("")
 
         # --- Description ---
@@ -8773,7 +8771,8 @@ class GreatDocs:
         for section_config in reference_config:
             if not isinstance(section_config, dict):
                 continue
-            title = section_config.get("title", "Untitled")
+            title = section_config.get("title")
+            subtitle = section_config.get("subtitle")
             desc = section_config.get("desc", "")
             contents_config = section_config.get("contents", [])
 
@@ -8816,7 +8815,11 @@ class GreatDocs:
             if section_contents:
                 sections.append(
                     {
-                        "title": title,
+                        **(
+                            {"subtitle": subtitle}
+                            if subtitle is not None
+                            else {"title": title or "Untitled"}
+                        ),
                         "desc": desc,
                         "contents": section_contents,
                     }
@@ -9137,7 +9140,8 @@ class GreatDocs:
         for section_config in reference_config:
             if not isinstance(section_config, dict):
                 continue  # pragma: no cover
-            title = section_config.get("title", "Untitled")
+            title = section_config.get("title")
+            subtitle = section_config.get("subtitle")
             desc = section_config.get("desc", "")
             contents_config = section_config.get("contents", [])
 
@@ -9200,7 +9204,11 @@ class GreatDocs:
             if section_contents:
                 sections.append(
                     {
-                        "title": title,
+                        **(
+                            {"subtitle": subtitle}
+                            if subtitle is not None
+                            else {"title": title or "Untitled"}
+                        ),
                         "desc": desc,
                         "contents": section_contents,
                     }
@@ -13419,7 +13427,8 @@ anchor-sections: true
 
         # Build sidebar structure from sections
         for section in sections:
-            section_entry = {"section": section["title"], "contents": []}
+            heading = section.get("title") or section.get("subtitle") or ""
+            section_entry = {"section": heading, "contents": []}
 
             # Add each item in the section
             for item in section.get("contents", []):
@@ -13558,7 +13567,7 @@ anchor-sections: true
 
         # Process each section
         for section in sections:
-            section_title = section.get("title", "")
+            section_title = section.get("title") or section.get("subtitle") or ""
             section_desc = section.get("desc", "")
 
             # Add section header as a comment or sub-heading if there are multiple sections
@@ -13707,7 +13716,7 @@ anchor-sections: true
 
         # Process each section
         for section in sections:
-            section_title = section.get("title", "")
+            section_title = section.get("title") or section.get("subtitle") or ""
             section_desc = section.get("desc", "")
 
             # Add section header
@@ -13971,7 +13980,7 @@ anchor-sections: true
             lines.append("")
 
             for section in sections:
-                section_title = section.get("title", "")
+                section_title = section.get("title") or section.get("subtitle") or ""
                 section_desc = section.get("desc", "")
 
                 if section_title:

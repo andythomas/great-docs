@@ -598,7 +598,7 @@ def _generate_mcp_index_page(
     # Front matter
     lines.append("---")
     lines.append(f'title: "{get_translation("mcp_reference", language)}"')
-    lines.append("body-classes: doc-reference doc-mcp-reference doc-reference-index")
+    lines.append("body-classes: doc-reference doc-mcp-reference")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
@@ -750,7 +750,7 @@ def _generate_tool_page(tool: dict[str, Any], server_name: str, language: str = 
     lines.append(f'title: "{name}"')
     lines.append("title-block-style: none")
     lines.append("bread-crumbs: false")
-    lines.append("body-classes: doc-api-page")
+    lines.append("body-classes: doc-api-page doc-mcp-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
@@ -807,9 +807,11 @@ def _generate_tool_page(tool: dict[str, Any], server_name: str, language: str = 
         lines.append(":::")
         lines.append("")
 
-    # Parameters section — uses definition list format matching Python API style
+    # Match the Python API's definition-list format. Write this heading at `###`
+    # because MCP pages keep the site-wide shift. Disabling that shift prevents
+    # Quarto from hoisting the `.title` heading and creates a duplicate title.
     if properties:
-        lines.append(f"## {get_translation('mcp_parameters', language)} {{.doc-parameters}}")
+        lines.append(f"### {get_translation('mcp_parameters', language)} {{.doc-parameters}}")
         lines.append("")
         lines.append("::: {.doc-definition-items}")
         for param_name, param_info in properties.items():
@@ -863,7 +865,7 @@ def _generate_resource_page(
     lines.append(f'title: "{name}"')
     lines.append("title-block-style: none")
     lines.append("bread-crumbs: false")
-    lines.append("body-classes: doc-api-page")
+    lines.append("body-classes: doc-api-page doc-mcp-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
@@ -878,7 +880,7 @@ def _generate_resource_page(
         lines.append(":::")
         lines.append("")
 
-    lines.append(f"## {get_translation('mcp_details', language)} {{.doc-parameters}}")
+    lines.append(f"### {get_translation('mcp_details', language)} {{.doc-parameters}}")
     lines.append("")
     lines.append(f"**URI:** `{uri}`")
     lines.append("")
@@ -903,7 +905,7 @@ def _generate_resource_template_page(
     lines.append(f'title: "{name}"')
     lines.append("title-block-style: none")
     lines.append("bread-crumbs: false")
-    lines.append("body-classes: doc-api-page")
+    lines.append("body-classes: doc-api-page doc-mcp-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
@@ -920,7 +922,7 @@ def _generate_resource_template_page(
         lines.append(":::")
         lines.append("")
 
-    lines.append(f"## {get_translation('mcp_details', language)} {{.doc-parameters}}")
+    lines.append(f"### {get_translation('mcp_details', language)} {{.doc-parameters}}")
     lines.append("")
     lines.append(f"**URI Template:** `{uri_template}`")
     lines.append("")
@@ -934,7 +936,7 @@ def _generate_resource_template_page(
     variables = _re.findall(r"\{(\w+)\}", uri_template)
     if variables:
         lines.append(
-            f"## {get_translation('mcp_template_variables', language)} {{.doc-parameters}}"
+            f"### {get_translation('mcp_template_variables', language)} {{.doc-parameters}}"
         )
         lines.append("")
         lines.append("::: {.doc-definition-items}")
@@ -966,7 +968,7 @@ def _generate_prompt_page(prompt: dict[str, Any], server_name: str, language: st
     lines.append(f'title: "{name}"')
     lines.append("title-block-style: none")
     lines.append("bread-crumbs: false")
-    lines.append("body-classes: doc-api-page")
+    lines.append("body-classes: doc-api-page doc-mcp-api-page")
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
@@ -982,7 +984,7 @@ def _generate_prompt_page(prompt: dict[str, Any], server_name: str, language: st
         lines.append("")
 
     if arguments:
-        lines.append(f"## {get_translation('mcp_arguments', language)} {{.doc-parameters}}")
+        lines.append(f"### {get_translation('mcp_arguments', language)} {{.doc-parameters}}")
         lines.append("")
         lines.append("::: {.doc-definition-items}")
         for arg in arguments:
@@ -1010,7 +1012,7 @@ def _generate_prompt_page(prompt: dict[str, Any], server_name: str, language: st
 
     # Prompt message content
     if messages:
-        lines.append(f"## {get_translation('mcp_prompt_text', language)}")
+        lines.append(f"### {get_translation('mcp_prompt_text', language)}")
         lines.append("")
         for msg in messages:
             role = msg.get("role", "user")

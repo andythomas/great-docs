@@ -58,6 +58,30 @@ SPEC = {
                     """
                     return data
 
+                def is_valid(self, data: str) -> bool:
+                    """Return whether this converter accepts the data
+
+                    Args:
+                        data: Data string to validate.
+
+                    Returns:
+                        Whether `data` is non-empty.
+                    """
+                    return len(data) > 0
+
+                def merge(self, other: "Converter") -> "Converter":
+                    """
+                    Merge settings from another converter
+
+                    :param other: Converter whose settings to copy.
+                    :returns: New converter with the copied format.
+
+                    **Notes**::
+
+                    The format from `other` replaces the current format.
+                    """
+                    return Converter(fmt=other.fmt)
+
 
             def encode(data: str, encoding: str = "utf-8") -> bytes:
                 """

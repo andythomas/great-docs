@@ -57,14 +57,17 @@ class __RenderReferencePage(RenderPageMixin, RenderBase):
         )
 
     def render_metadata(self) -> BlockContent:
-        return Meta(
-            {
-                "title": self.api_ref.title,
-                "body-classes": "doc-reference doc-reference-index",
-                "page-navigation": False,
-                "html-table-processing": "none",
-            }
-        )
+        metadata: dict[str, object] = {
+            "title": self.api_ref.title,
+            "body-classes": "doc-reference doc-py-reference",
+            "page-navigation": False,
+            "html-table-processing": "none",
+            "shift-heading-level-by": 0,
+        }
+        # Subtitle headings render at `h3`; preserve any deeper site setting.
+        if self.api_ref.site_toc_depth < 3:
+            metadata["toc-depth"] = 3
+        return Meta(metadata)
 
     def render_body(self) -> BlockContent:
         """

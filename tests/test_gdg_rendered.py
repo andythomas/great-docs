@@ -135,7 +135,7 @@ def _get_badge_text(soup: "BeautifulSoup") -> str | None:
     The q renderer renders badges as ``<span class="doc-label doc-label-function">``
     inside the title heading.  Returns the badge type lowered, or None.
     """
-    title = soup.select_one("h1.title, h2.title")
+    title = soup.select_one("h1.title")
     if title is None:
         return None
 
@@ -384,7 +384,7 @@ def test_reference_pages_have_title(pkg_name: str):
             continue
 
         soup = _load_html(page)
-        title = soup.select_one("h1.title, h2.title")
+        title = soup.select_one("h1.title")
         assert title is not None, f"{page.name} missing .title heading"
         assert name in title.get_text(), (
             f"{page.name} title doesn't contain {name!r}: {title.get_text()!r}"
@@ -522,6 +522,383 @@ def test_footer_text_not_in_header(pkg_name: str):
         assert "supported by" not in desc_lower, (
             f"{page_path.name}: footer text 'Supported by ...' leaked into doc-description"
         )
+
+
+@requires_bs4
+@pytest.mark.parametrize(
+    "pkg_name",
+    ["gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs", "gdtest_no_breadcrumbs"],
+)
+def test_reference_page_heading_levels(pkg_name: str):
+    """
+    Verify the reference object-page heading hierarchy
+
+    Each page has one `h1` title, `h2` docstring sections and member groups,
+    and `h3` individual members. The no-breadcrumb fixture also verifies that
+    Quarto's bare navigation `h1` is demoted to `h5`.
+    """
+    ref = _ref_dir(pkg_name)
+    if not ref.exists():
+        pytest.skip(f"No reference dir for {pkg_name}")
+
+    pages = [p for p in ref.glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg_name}: no reference object pages"
+
+    sections_checked = 0
+    members_checked = 0
+    for page in pages:
+        soup = _load_html(page)
+
+        title = soup.select_one("h1.title")
+        assert title is not None, (
+            f"{page.name}: missing h1.title page title"
+        )
+        assert soup.select_one("h2.title") is None, (
+            f"{page.name}: page title was shifted to h2.title"
+        )
+
+        # Require one document-level `h1`: the page title. The navigation label
+        # must remain `h5`, even when breadcrumbs are disabled.
+        page_h1s = soup.select("h1")
+        assert len(page_h1s) == 1, (
+            f"{page.name}: expected exactly one h1 in the whole document, "
+            f"found {len(page_h1s)}"
+        )
+        nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
+        assert nav_title is not None, (
+            f"{page.name}: missing h5.gd-ref-title navigation label"
+        )
+
+        main = soup.select_one("main")
+        assert main is not None, f"{page.name}: no <main> element"
+        main_h1s = main.select("h1")
+        title_h1s = [h for h in main_h1s if "title" in (h.get("class") or [])]
+        assert len(title_h1s) == 1, (
+            f"{page.name}: expected exactly one h1.title inside <main>, "
+            f"found {len(title_h1s)} (of {len(main_h1s)} h1 elements total)"
+        )
+
+        # Check only page-level sections. A member's own Parameters or Returns
+        # section is correctly nested at `level4` within its `level3` member.
+        for section in soup.select("section.level2.doc-parameters, section.level2.doc-methods"):
+            heading = section.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: section has no heading"
+            assert heading.name == "h2", (
+                f"{page.name}: expected h2 section heading, found {heading.name}"
+            )
+            sections_checked += 1
+
+        for member in soup.select(
+            "section.doc-methods section.level3, section.doc-attributes section.level3"
+        ):
+            heading = member.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: member has no heading"
+            assert heading.name == "h3", (
+                f"{page.name}: expected h3 member heading, found {heading.name}"
+            )
+            members_checked += 1
+
+    assert sections_checked > 0, f"{pkg_name}: no docstring sections were checked"
+    # Packages without classes may contain no member sections. Skip them here;
+    # the companion test verifies member coverage across the full fixture set.
+    if members_checked == 0:
+        pytest.skip(f"{pkg_name}: no member sections to check")
+
+
+@requires_bs4
+def test_reference_page_heading_levels_exercises_member_check():
+    """
+    Verify that the fixture set exercises member heading checks
+
+    This fails if every parametrised package loses its class members and the
+    `h3` member assertion stops running.
+    """
+    found_members = False
+    for pkg_name in ("gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs"):
+        ref = _ref_dir(pkg_name)
+        if not ref.exists():
+            continue
+        for page in ref.glob("*.html"):
+            if page.name == "index.html":
+                continue
+            soup = _load_html(page)
+            if soup.select(
+                "section.doc-methods section.level3, section.doc-attributes section.level3"
+            ):
+                found_members = True
+                break
+        if found_members:
+            break
+
+    assert found_members, (
+        "no parametrised package has a member section; the h3 member-heading "
+        "assertion is not exercised"
+    )
+
+
+@requires_bs4
+@pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google", "gdtest_no_breadcrumbs"])
+def test_reference_index_heading_levels(pkg_name: str):
+    """Verify that reference index group headings are `h2` elements"""
+    index = _ref_dir(pkg_name) / "index.html"
+    if not index.exists():
+        pytest.skip(f"No reference index for {pkg_name}")
+
+    soup = _load_html(index)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, "reference index is missing its h1.title"
+
+    # Require one page title and an `h5` navigation label with or without
+    # breadcrumbs.
+    page_h1s = soup.select("h1")
+    assert len(page_h1s) == 1, (
+        f"reference index: expected exactly one h1, found {len(page_h1s)}"
+    )
+    nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
+    assert nav_title is not None, "reference index is missing its h5.gd-ref-title label"
+
+    groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
+    assert groups, "reference index contains no group headings"
+    for heading in groups:
+        assert heading.name == "h2", (
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
+            f"found {heading.name}"
+        )
+
+
+@requires_bs4
+def test_reference_index_subtitle_renders_as_h3_in_toc():
+    """
+    Verify subtitle-only reference sections in the index
+
+    The fixture's final section has `subtitle` instead of `title`. It must
+    render as `h3.doc-group` and appear in the table of contents beside the
+    `h2` titled sections.
+    """
+    index = _ref_dir("gdtest_ref_sectioned") / "index.html"
+    if not index.exists():
+        pytest.skip("No reference index for gdtest_ref_sectioned")
+
+    soup = _load_html(index)
+
+    subtitle_heading = soup.select_one("h3.doc-group")
+    assert subtitle_heading is not None, "subtitled section has no h3.doc-group heading"
+    assert subtitle_heading.get_text(strip=True) == "Miscellaneous"
+
+    # Titled sections remain at `h2`.
+    title_headings = soup.select("h2.doc-group")
+    assert {h.get_text(strip=True) for h in title_headings} == {
+        "Constructors",
+        "Transformers",
+        "Validators",
+        "Utilities",
+    }
+
+    toc = soup.select_one("nav#TOC")
+    assert toc is not None, "reference index is missing nav#TOC"
+    toc_entries = {a.get_text(strip=True) for a in toc.select("a")}
+    assert "Miscellaneous" in toc_entries, (
+        "subtitled section is missing from the table of contents"
+    )
+
+
+@requires_bs4
+def test_class_page_toc_lists_members():
+    """
+    Verify that a class page table of contents lists members
+
+    Members render at `h3` and therefore require a table-of-contents depth of
+    3. The Converter fixture supplies three methods to check.
+    """
+    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
+    if not converter.exists():
+        pytest.skip("No Converter page for gdtest_mixed_docs")
+
+    soup = _load_html(converter)
+
+    toc = soup.select_one("nav#TOC")
+    assert toc is not None, "Converter page is missing nav#TOC"
+    toc_entries = {a.get_text(strip=True) for a in toc.select("a")}
+    for member in ("convert()", "is_valid()", "merge()"):
+        assert member in toc_entries, (
+            f"member {member!r} is missing from the Converter page's table of contents"
+        )
+
+
+def _section_body(text: str, heading_prefix: str, title: str, *, source_name: str) -> str:
+    """
+    Extract the text below a matching heading
+
+    Stop at the next heading of the same level so tests can distinguish an
+    entry in the expected section from one in an adjacent section.
+
+    Parameters
+    ----------
+    text
+        Complete Markdown document.
+    heading_prefix
+        Markdown heading marker, including its trailing space.
+    title
+        Heading text that starts the section.
+    source_name
+        Document name for assertion failures.
+
+    Returns
+    -------
+    Text between the matching heading and the next peer heading.
+    """
+    pattern = re.compile(rf"^{re.escape(heading_prefix)}(.+)$", re.MULTILINE)
+    matches = list(pattern.finditer(text))
+    starts = {match.group(1).strip(): match.end() for match in matches}
+    assert title in starts, f"{source_name}: missing {heading_prefix!r}{title} heading"
+    start = starts[title]
+    later_starts = [match.start() for match in matches if match.start() > start]
+    end = min(later_starts) if later_starts else len(text)
+    return text[start:end]
+
+
+@requires_bs4
+def test_subtitle_only_section_heading_in_llms_outputs():
+    """
+    Verify subtitle-only headings in machine-readable outputs
+
+    The Miscellaneous section uses `subtitle` instead of `title`. Its
+    `format_label` entry must appear below that heading, not below the preceding
+    Utilities heading, in `llms.txt`, `llms-full.txt` and `skill.md`.
+    """
+    site = _RENDERED_DIR / "gdtest_ref_sectioned" / "great-docs" / "_site"
+    llms_txt = site / "llms.txt"
+    llms_full = site / "llms-full.txt"
+    skill_md = site / "skill.md"
+    for path in (llms_txt, llms_full, skill_md):
+        if not path.exists():
+            pytest.skip(f"{path.name} not built for gdtest_ref_sectioned")
+
+    for path, heading_prefix in (
+        (llms_txt, "#### "),
+        (llms_full, "## "),
+        (skill_md, "### "),
+    ):
+        text = path.read_text(encoding="utf-8")
+        misc_body = _section_body(text, heading_prefix, "Miscellaneous", source_name=path.name)
+        utilities_body = _section_body(text, heading_prefix, "Utilities", source_name=path.name)
+        assert "format_label" in misc_body, (
+            f"{path.name}: format_label is missing below the Miscellaneous heading"
+        )
+        assert "format_label" not in utilities_body, (
+            f"{path.name}: format_label appears in the preceding Utilities section"
+        )
+
+
+@requires_bs4
+def test_fallback_docstring_section_nested_in_member_renders_as_h4():
+    """
+    Verify that fallback sections follow member nesting
+
+    `Converter.is_valid` renders at `h3`, so its fallback Parameters and
+    Returns sections must render at `h4`. The top-level `validate` function's
+    fallback sections remain at `h2`.
+    """
+    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
+    if not converter.exists():
+        pytest.skip("No Converter page for gdtest_mixed_docs")
+
+    soup = _load_html(converter)
+
+    is_valid_section = soup.select_one("section#is_valid")
+    assert is_valid_section is not None, "is_valid member section is missing"
+    assert is_valid_section.get("class") and "level3" in is_valid_section["class"], (
+        "is_valid member section is not level3"
+    )
+
+    fallback_headings = is_valid_section.select("section.doc-section h1, "
+        "section.doc-section h2, section.doc-section h3, section.doc-section h4")
+    assert fallback_headings, "is_valid has no fallback sections to check"
+    for heading in fallback_headings:
+        assert heading.name == "h4", (
+            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
+            f"inside is_valid, found {heading.name}"
+        )
+
+    validate_page = _ref_dir("gdtest_mixed_docs") / "validate.html"
+    if validate_page.exists():
+        validate_soup = _load_html(validate_page)
+        top_level_headings = validate_soup.select("section.doc-section h2")
+        assert top_level_headings, "validate has no top-level h2 fallback sections"
+
+
+@requires_bs4
+def test_chained_fallback_translators_stay_at_h4_in_member():
+    """
+    Verify that chained fallback sections remain nested
+
+    `Converter.merge` triggers field and bold-section fallbacks in sequence.
+    The first emits an `h4`; the second must treat that heading as member
+    context and emit another `h4`.
+    """
+    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
+    if not converter.exists():
+        pytest.skip("No Converter page for gdtest_mixed_docs")
+
+    soup = _load_html(converter)
+
+    merge_section = soup.select_one("section#merge")
+    assert merge_section is not None, "merge member section is missing"
+    assert merge_section.get("class") and "level3" in merge_section["class"], (
+        "merge member section is not level3"
+    )
+
+    fallback_headings = merge_section.select(
+        "section.doc-section h1, section.doc-section h2, "
+        "section.doc-section h3, section.doc-section h4"
+    )
+    assert fallback_headings, "merge has no fallback sections to check"
+    for heading in fallback_headings:
+        assert heading.name == "h4", (
+            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
+            f"inside merge, found {heading.name}"
+        )
+    section_names = {h.get_text(strip=True) for h in fallback_headings}
+    assert "Notes" in section_names, "merge's chained Notes section is missing"
+
+
+@requires_bs4
+@pytest.mark.parametrize(
+    ("pkg_name", "page_name"),
+    [("gdtest_mixed_docs", "Converter.html"), ("gdtest_sphinx", "Timer.html")],
+)
+def test_member_separator_rules_present(pkg_name: str, page_name: str):
+    """
+    Verify class member separators
+
+    Class pages contain one solid rule after the member summary and one dotted
+    rule between each pair of `level3` members. Derive the expected count from
+    the rendered members so fixtures can add methods without changing the test.
+    """
+    page = _ref_dir(pkg_name) / page_name
+    if not page.exists():
+        pytest.skip(f"No {page_name} page for {pkg_name}")
+
+    soup = _load_html(page)
+    members = soup.select(
+        "section.doc-methods section.level3, section.doc-attributes section.level3"
+    )
+    if not members:
+        pytest.skip(f"{page_name}: no member sections to check")
+
+    rules = soup.select("hr")
+    solid_rules = [r for r in rules if "solid" in (r.get("style") or "")]
+    dotted_rules = [r for r in rules if "dotted" in (r.get("style") or "")]
+
+    assert len(solid_rules) == 1, (
+        f"{page_name}: expected exactly one solid rule after the members "
+        f"summary table, found {len(solid_rules)}"
+    )
+    assert len(dotted_rules) == len(members) - 1, (
+        f"{page_name}: expected {len(members) - 1} dotted rules between "
+        f"{len(members)} members, found {len(dotted_rules)}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1734,6 +2111,111 @@ def test_cli_sidebar_has_cli_section():
 
 
 @pytest.mark.dedicated
+@requires_bs4
+@pytest.mark.parametrize("pkg_name", ["gdtest_cli_click", "gdtest_cli_nested"])
+def test_cli_command_page_heading_levels(pkg_name: str):
+    """
+    Verify the CLI command-page heading hierarchy
+
+    Front matter provides one `h1` title. Arguments, Options and Commands
+    sections render at `h2`. The nested fixture covers group and leaf commands.
+    """
+    cli_dir = _ref_dir(pkg_name) / "cli"
+    if not cli_dir.exists():
+        pytest.skip(f"No reference/cli/ directory for {pkg_name}")
+
+    pages = [p for p in cli_dir.rglob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg_name}: no CLI command pages"
+
+    sections_checked = 0
+    for page in pages:
+        soup = _load_html(page)
+
+        title = soup.select_one("h1.title")
+        assert title is not None, f"{page.name}: missing h1.title page title"
+
+        page_h1s = soup.select("h1")
+        assert len(page_h1s) == 1, (
+            f"{page.name}: expected exactly one h1 in the whole document, "
+            f"found {len(page_h1s)}"
+        )
+
+        for section in soup.select("section.level2.doc-parameters"):
+            heading = section.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: section has no heading"
+            assert heading.name == "h2", (
+                f"{page.name}: expected h2 section heading, found {heading.name}"
+            )
+            sections_checked += 1
+
+    assert sections_checked > 0, f"{pkg_name}: no CLI command sections were checked"
+
+
+@pytest.mark.dedicated
+@requires_bs4
+@pytest.mark.parametrize(
+    ("pkg_name", "page_rel_path"),
+    [
+        ("gdtest_cli_click", "gdtest_cli.html"),
+        ("gdtest_cli_nested", "config/get.html"),
+    ],
+)
+def test_cli_title_bar_label_matches_command_name(pkg_name: str, page_rel_path: str):
+    """
+    Verify that CLI navigation labels use full command names
+
+    Compare the `h5` navigation label with the marked-up `h1` title on flat
+    and nested command pages.
+    """
+    cli_dir = _ref_dir(pkg_name) / "cli"
+    page = cli_dir / page_rel_path
+    if not page.exists():
+        pytest.skip(f"No {page_rel_path} for {pkg_name}")
+
+    soup = _load_html(page)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, f"{page_rel_path}: missing h1.title page title"
+    command_name = title.get_text(strip=True)
+
+    label = soup.select_one("h5.gd-ref-title .gd-ref-title-name")
+    assert label is not None, f"{page_rel_path}: navigation label is missing"
+
+    assert label.get_text(strip=True) == command_name, (
+        f"{page_rel_path}: title bar label {label.get_text(strip=True)!r} "
+        f"does not match the command name {command_name!r}"
+    )
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_cli_index_heading_levels():
+    """Verify that CLI index group headings are `h2` elements"""
+    pkg = "gdtest_cli_nested"
+    index = _ref_dir(pkg) / "cli" / "index.html"
+    if not index.exists():
+        pytest.skip(f"No CLI index for {pkg}")
+
+    soup = _load_html(index)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, "CLI reference index is missing its h1.title"
+
+    page_h1s = soup.select("h1")
+    assert len(page_h1s) == 1, (
+        f"CLI reference index: expected exactly one h1, found {len(page_h1s)}"
+    )
+
+    groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
+    assert groups, "CLI reference index contains no group headings"
+    for heading in groups:
+        assert heading.name == "h2", (
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
+            f"found {heading.name}"
+        )
+
+
+@pytest.mark.dedicated
 def test_cli_sidebar_structure_flat():
     """Flat CLI sidebar in _quarto.yml should contain only path strings."""
     pkg = "gdtest_cli_click"
@@ -1755,8 +2237,8 @@ def test_cli_sidebar_structure_flat():
 
     contents = cli_section.get("contents", [])
     assert len(contents) >= 1
-    # All items should be plain path strings — no section dicts
-    for item in contents:
+    # The first item is the labelled CLI index; the remaining items are paths.
+    for item in contents[1:]:
         assert isinstance(item, str), f"Flat CLI sidebar should only have path strings, got: {item}"
 
 
@@ -1783,9 +2265,9 @@ def test_cli_sidebar_structure_nested():
     contents = cli_section.get("contents", [])
     assert len(contents) >= 3, f"Expected at least 3 items (index + 2 groups), got {len(contents)}"
 
-    # First item should be the main CLI index page
-    assert contents[0] == "reference/cli/index.qmd", (
-        f"First sidebar item should be the CLI index, got: {contents[0]}"
+    # Require the labelled CLI index as the first item.
+    assert contents[0] == {"text": "CLI Index", "href": "reference/cli/index.qmd"}, (
+        f"First sidebar item should be the labelled CLI index link, got: {contents[0]}"
     )
 
     # Remaining items for groups should be section dicts
@@ -1856,6 +2338,94 @@ def test_cli_sidebar_no_raw_qmd_paths_in_nested():
         assert stem not in known_subcommands, (
             f"Subcommand path {path!r} is at the top level of the CLI sidebar — "
             f"it should be nested inside its group section"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# R4: MCP documentation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_mcp_page_heading_levels():
+    """
+    Verify the MCP object-page heading hierarchy
+
+    Quarto hoists each `.title` heading into the page header. The result must
+    contain one `h1`, with object details and parameters at `h2`.
+    """
+    pkg = "gdtest_mcp"
+    mcp_dir = _ref_dir(pkg) / "mcp"
+    if not mcp_dir.exists():
+        pytest.skip(f"No reference/mcp/ directory for {pkg}")
+
+    expected_pages = {
+        "gd_build.html": "mcp-tool",
+        "resource_build_log.html": "mcp-resource",
+        "template_reference_symbol.html": "mcp-resource-template",
+        "prompt_setup_docs.html": "mcp-prompt",
+    }
+    for filename, label_class in expected_pages.items():
+        page = mcp_dir / filename
+        assert page.exists(), f"{pkg}: missing {filename}"
+        soup = _load_html(page)
+        assert soup.select_one(f"h1.title .doc-label-{label_class}") is not None, (
+            f"{filename}: missing {label_class} title label"
+        )
+
+    pages = [p for p in mcp_dir.glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg}: no MCP pages"
+
+    sections_checked = 0
+    for page in pages:
+        soup = _load_html(page)
+
+        title = soup.select_one("h1.title")
+        assert title is not None, f"{page.name}: missing h1.title page title"
+
+        page_h1s = soup.select("h1")
+        assert len(page_h1s) == 1, (
+            f"{page.name}: expected exactly one h1 in the whole document, "
+            f"found {len(page_h1s)}"
+        )
+
+        for section in soup.select("section.level2.doc-parameters"):
+            heading = section.select_one("h1, h2, h3, h4, h5, h6")
+            assert heading is not None, f"{page.name}: section has no heading"
+            assert heading.name == "h2", (
+                f"{page.name}: expected h2 section heading, found {heading.name}"
+            )
+            sections_checked += 1
+
+    assert sections_checked > 0, f"{pkg}: no MCP object sections were checked"
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_mcp_index_heading_levels():
+    """Verify that MCP index group headings are `h2` elements"""
+    pkg = "gdtest_mcp"
+    index = _ref_dir(pkg) / "mcp" / "index.html"
+    if not index.exists():
+        pytest.skip(f"No MCP index for {pkg}")
+
+    soup = _load_html(index)
+
+    title = soup.select_one("h1.title")
+    assert title is not None, "MCP reference index is missing its h1.title"
+
+    page_h1s = soup.select("h1")
+    assert len(page_h1s) == 1, (
+        f"MCP reference index: expected exactly one h1, found {len(page_h1s)}"
+    )
+
+    groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
+    assert groups, "MCP reference index contains no group headings"
+    for heading in groups:
+        assert heading.name == "h2", (
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
+            f"found {heading.name}"
         )
 
 
@@ -3932,7 +4502,7 @@ def test_copy_page_widget_does_not_overlap_long_titles():
         assert "copy-page.js" in content, f"{page.name}: copy-page.js script missing"
 
         # Title should exist and contain the object name
-        title_el = soup.select_one("h2.title, h1.title")
+        title_el = soup.select_one("h1.title")
         assert title_el is not None, f"{page.name}: no title element found"
 
         title_text = title_el.get_text(strip=True)
@@ -3940,10 +4510,11 @@ def test_copy_page_widget_does_not_overlap_long_titles():
             f"{page.name}: title text too short ({title_text!r}), expected long name"
         )
 
-        # The title should render in monospace font (code convention for API names)
-        style = title_el.get("style", "")
-        assert "monospace" in style or "SFMono" in style, (
-            f"{page.name}: title should use monospace font for code-like names"
+        # The title's object name is styled as code by `span.doc-object-name`
+        # in great-docs.scss, not by an inline style attribute.
+        name_span = title_el.select_one("span.doc-object-name")
+        assert name_span is not None, (
+            f"{page.name}: title has no span.doc-object-name to style as code"
         )
 
 

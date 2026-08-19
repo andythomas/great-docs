@@ -813,11 +813,13 @@ html.theme-loading body {
 
 /* General heading weight -- handled by SCSS @extend .fw-medium */
 
-/* Reduce top margin on reference page object titles */
-h2.title {
+/* Keep reference object titles compact. The desktop `h1.title` rule otherwise
+   gives 1.25rem text a 2.3rem line height. */
+.doc-py-api-page h1.title {
     margin-top: 0.5rem;
     border-bottom: none;
     padding-bottom: 0;
+    font-size: 1.25rem;
 }
 
 .table a {
@@ -1124,7 +1126,9 @@ dd > ol > li::marker {
 }
 
 /* API reference section headings (Parameters, Returns, Examples, etc.) */
-h2.doc-section {
+/* Fallback sections use `h2` at the top level and `h4` inside members. Style
+   the `doc-section` class at every heading level. */
+:is(h1, h2, h3, h4, h5, h6).doc-section {
     font-size: 22px;
     border-bottom: none;
     padding-bottom: 0;
@@ -1140,8 +1144,8 @@ h2.doc-section {
     margin-left: 0;
 }
 
-/* Warnings section: h2 header above, body in callout box */
-.doc-section-warnings > h2 {
+/* Place the warning heading above its callout body at every nesting depth. */
+.doc-section-warnings > :is(h1, h2, h3, h4, h5, h6) {
     color: Crimson;
     font-weight: 600;
     margin-bottom: 0.5rem;
@@ -1150,7 +1154,7 @@ h2.doc-section {
     padding-left: 0;
 }
 
-.doc-section-warnings > h2::before {
+.doc-section-warnings > :is(h1, h2, h3, h4, h5, h6)::before {
     content: "⚠️ ";
 }
 
@@ -1475,8 +1479,13 @@ a.sidebar-item-text.sidebar-link.text-start > span {
 
 /* CLI reference: present command groups (e.g. SKILL, TERMSHOW) as small uppercase
    pills so they read as command groups, distinct from leaf commands. Scoped to the
-   CLI reference pages via the doc-cli-reference body class. */
+   CLI reference pages via the doc-cli-reference and doc-cli-api-page body
+   classes. */
 body.doc-cli-reference #quarto-sidebar .sidebar-item-section
+    > .sidebar-item-container
+    > .sidebar-item-text
+    .menu-text,
+body.doc-cli-api-page #quarto-sidebar .sidebar-item-section
     > .sidebar-item-container
     > .sidebar-item-text
     .menu-text {
@@ -1494,7 +1503,8 @@ body.doc-cli-reference #quarto-sidebar .sidebar-item-section
 }
 
 /* Give each CLI command group a little breathing room above its pill. */
-body.doc-cli-reference #quarto-sidebar .sidebar-item-section {
+body.doc-cli-reference #quarto-sidebar .sidebar-item-section,
+body.doc-cli-api-page #quarto-sidebar .sidebar-item-section {
     margin-top: 0.4rem;
 }
 
@@ -1502,6 +1512,10 @@ body.doc-cli-reference #quarto-sidebar .sidebar-item-section {
    padding-bottom above it), so it needs extra top margin to match the gap that
    later groups (e.g. TERMSHOW) get from the preceding group's padding-bottom. */
 body.doc-cli-reference
+    #quarto-sidebar
+    li.sidebar-item:not(.sidebar-item-section)
+    + li.sidebar-item-section,
+body.doc-cli-api-page
     #quarto-sidebar
     li.sidebar-item:not(.sidebar-item-section)
     + li.sidebar-item-section {
@@ -2253,6 +2267,7 @@ div.sourceCode:hover > .gd-code-nav .gd-code-copy,
         align-items: center;
         gap: 0;
         padding-top: 0;
+        margin-top: 0 !important;
         padding-left: 0.5rem;
         color: #212529;
         white-space: nowrap;
@@ -4008,7 +4023,7 @@ body.quarto-dark .doc-section-parameters dt code {
 }
 
 /* Warnings section dark mode */
-body.quarto-dark .doc-section-warnings > h2 {
+body.quarto-dark .doc-section-warnings > :is(h1, h2, h3, h4, h5, h6) {
     color: #FCA5A5;
 }
 
@@ -8413,8 +8428,9 @@ body.quarto-dark {
     vertical-align: middle;
 }
 
-// Smaller icon in the mobile secondary nav title
-h1.quarto-secondary-nav-title .gd-upcoming-icon svg {
+// Keep this selector independent of heading level. Reference, CLI and MCP nav
+// titles use `h5`; other pages use `h1`.
+.quarto-secondary-nav-title .gd-upcoming-icon svg {
     width: 16px;
     height: 16px;
 }

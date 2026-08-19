@@ -35,6 +35,10 @@ _log = logging.getLogger(__name__)
 # consumed; dropped before parsing so they neither reach `Settings` nor error.
 _REMOVED_KEYS = {"style", "renderer", "render_interlinks"}
 
+# Use the default site depth when a bare API reference config supplies no site
+# settings.
+_DEFAULT_SITE_TOC_DEPTH = 2
+
 
 @dataclass
 class Settings:
@@ -89,9 +93,12 @@ class APIReference:
     options: SpecOptions | None
     settings: Settings
     items: list[InventoryItem]
+    site_toc_depth: int
 
     def __init__(self, config: dict[str, Any] | str | Path) -> None:
-        block = self._select_block(config)
+        cfg = self._load_config(config)
+        self.site_toc_depth = self._read_site_toc_depth(cfg)
+        block = self._select_block(cfg)
         block = {k: v for k, v in block.items() if k not in _REMOVED_KEYS}
 
         self.settings = Settings.make(block)
@@ -112,13 +119,84 @@ class APIReference:
         self._resolver.current_package = self.package
 
     @staticmethod
-    def _select_block(config: dict[str, Any] | str | Path) -> dict[str, Any]:
-        """Select the `api-reference:` (or legacy `quartodoc:`) mapping from a config dict, file path, or full _quarto.yml"""
-        if isinstance(config, (str, Path)):
-            loaded = read_yaml(str(config))
-            cfg: dict[str, Any] = cast("dict[str, Any]", loaded) if isinstance(loaded, dict) else {}
-        else:
-            cfg = config
+    def _load_config(config: dict[str, Any] | str | Path) -> dict[str, Any]:
+        """
+        Load a configuration mapping
+
+        Return mapping arguments unchanged. Read YAML paths and return an
+        empty mapping when the document's top-level value is not a mapping.
+
+        Parameters
+        ----------
+        config
+            Configuration mapping or YAML file path.
+
+        Returns
+        -------
+        Configuration mapping.
+        """
+        if not isinstance(config, (str, Path)):
+            return config
+        loaded = read_yaml(str(config))
+        return cast("dict[str, Any]", loaded) if isinstance(loaded, dict) else {}
+
+    @staticmethod
+    def _read_site_toc_depth(cfg: dict[str, Any]) -> int:
+        """
+        Read the configured table-of-contents depth
+
+        Use the integer at `format.html.toc-depth` when available, then the
+        integer at `site.toc-depth`. Return the built-in default when neither
+        setting is an integer.
+
+        Parameters
+        ----------
+        cfg
+            Configuration mapping.
+
+        Returns
+        -------
+        Configured depth or the built-in default.
+        """
+        format_config = cfg.get("format")
+        html = (
+            cast("dict[str, Any]", format_config).get("html")
+            if isinstance(format_config, dict)
+            else None
+        )
+        depth = cast("dict[str, Any]", html).get("toc-depth") if isinstance(html, dict) else None
+        if isinstance(depth, int):
+            return depth
+
+        site = cfg.get("site")
+        depth = (
+            cast("dict[str, Any]", site).get("toc-depth") if isinstance(site, dict) else None
+        )
+        return depth if isinstance(depth, int) else _DEFAULT_SITE_TOC_DEPTH
+
+    @staticmethod
+    def _select_block(cfg: dict[str, Any]) -> dict[str, Any]:
+        """
+        Select the API reference configuration
+
+        Select a non-empty `api-reference` mapping before the legacy
+        `quartodoc` mapping. Treat the full configuration as the API reference
+        mapping when both sections are empty or absent.
+
+        Parameters
+        ----------
+        cfg
+            Configuration mapping.
+
+        Returns
+        -------
+        Copy of the selected API reference mapping.
+
+        Raises
+        ------
+        KeyError
+            If the selected value is not a mapping or omits `package`.
+        """
         block = cfg.get("api-reference") or cfg.get("quartodoc") or cfg
         if not isinstance(block, dict) or "package" not in block:
             raise KeyError("No `api-reference:` section found in your _quarto.yml.")
@@ -182,6 +260,7 @@ class APIReference:
             rewrite_all_pages=s.rewrite_all_pages,
             header_level=s.header_level,
             page_filter=page_filter,
+            site_toc_depth=self.site_toc_depth,
         )
         write_typing_information(s.typing_module_paths, self)
 
