@@ -63,6 +63,8 @@ class __RenderReferencePage(RenderPageMixin, RenderBase):
                 "body-classes": "doc-reference doc-reference-index doc-py-reference",
                 "page-navigation": False,
                 "html-table-processing": "none",
+                "shift-heading-level-by": 0,
+                "toc-depth": 3,
             }
         )
 

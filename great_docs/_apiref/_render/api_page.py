@@ -73,6 +73,8 @@ class __RenderAPIPage(RenderPageMixin, RenderBase):
             {
                 "title": f"{title}",
                 "body-classes": "doc-api-page doc-py-reference",
+                "shift-heading-level-by": 0,
+                "toc-depth": 3,
             }
         )
 

@@ -1252,8 +1252,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{pdesc}</p>\n</dd>" if pdesc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="parameters" class="level1 doc-section doc-section-parameters">\n'
-                f'<h1 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h1>\n'
+                '<section id="parameters" class="level2 doc-section doc-section-parameters">\n'
+                f'<h2 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h2>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1276,8 +1276,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{rdesc}</p>\n</dd>" if rdesc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="returns" class="level1 doc-section doc-section-returns">\n'
-                f'<h1 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h1>\n'
+                '<section id="returns" class="level2 doc-section doc-section-returns">\n'
+                f'<h2 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h2>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1289,8 +1289,8 @@ def translate_sphinx_fields(html_content):
                 dd = f"<dd>\n<p>{desc}</p>\n</dd>" if desc else "<dd></dd>"
                 items.append(dt + "\n" + dd)
             parts.append(
-                '<section id="raises" class="level1 doc-section doc-section-raises">\n'
-                f'<h1 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h1>\n'
+                '<section id="raises" class="level2 doc-section doc-section-raises">\n'
+                f'<h2 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h2>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1312,9 +1312,9 @@ def translate_google_fields(html_content):
         <p>Raises: ValueError: desc. TypeError: desc.</p>
         <p>Note: text</p>
 
-    Indented continuation text renders as `<pre><code>` blocks adjacent to the section `<p>`.  This
-    function detects both patterns and emits the same `<section>`/`<h1>`/`<dl>`/`<dt>`/`<dd>` markup
-    that the renderer produces for NumPy-style sections.
+    Indented continuation text renders as `<pre><code>` blocks adjacent to the section `<p>`.
+    Translate both forms to the renderer's `<section>` and `<h2>` structure,
+    using definition-list markup for fields.
     """
 
     _PARAM_SECTIONS = {"Args", "Arguments", "Parameters", "Params"}
@@ -1421,8 +1421,8 @@ def translate_google_fields(html_content):
                 dd = f"<dd>\n<p>{pdesc}</p>\n</dd>" if pdesc else "<dd></dd>"
                 items.append(f"{dt}\n{dd}")
             return (
-                '<section id="parameters" class="level1 doc-section doc-section-parameters">\n'
-                f'<h1 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h1>\n'
+                '<section id="parameters" class="level2 doc-section doc-section-parameters">\n'
+                f'<h2 class="doc-section doc-section-parameters">{_t("parameters", "Parameters")}</h2>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1435,8 +1435,8 @@ def translate_google_fields(html_content):
                 parts.append(_pre_to_html(pre_body))
             content = "\n".join(parts)
             return (
-                '<section id="returns" class="level1 doc-section doc-section-returns">\n'
-                f'<h1 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h1>\n'
+                '<section id="returns" class="level2 doc-section doc-section-returns">\n'
+                f'<h2 class="doc-section doc-section-returns">{_t("returns", "Returns")}</h2>\n'
                 f"{content}\n</section>"
             )
 
@@ -1453,8 +1453,8 @@ def translate_google_fields(html_content):
                 dd = f"<dd>\n<p>{desc}</p>\n</dd>" if desc else "<dd></dd>"
                 items.append(f"{dt}\n{dd}")
             return (
-                '<section id="raises" class="level1 doc-section doc-section-raises">\n'
-                f'<h1 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h1>\n'
+                '<section id="raises" class="level2 doc-section doc-section-raises">\n'
+                f'<h2 class="doc-section doc-section-raises">{_t("raises", "Raises")}</h2>\n'
                 "<dl>\n" + "\n".join(items) + "\n</dl>\n</section>"
             )
 
@@ -1467,8 +1467,8 @@ def translate_google_fields(html_content):
                 code_parts.append(pre_body)
             code = "\n".join(code_parts)
             return (
-                '<section id="examples" class="level1 doc-section doc-section-examples">\n'
-                f'<h1 class="doc-section doc-section-examples">{_t("examples", "Examples")}</h1>\n'
+                '<section id="examples" class="level2 doc-section doc-section-examples">\n'
+                f'<h2 class="doc-section doc-section-examples">{_t("examples", "Examples")}</h2>\n'
                 f"<pre><code>{code}</code></pre>\n</section>"
             )
 
@@ -1491,8 +1491,8 @@ def translate_google_fields(html_content):
         full = _dbl_bt(full)
         content = f"<p>{full}</p>" if full else ""
         return (
-            f'<section id="{slug}" class="level1 doc-section doc-section-{slug}">\n'
-            f'<h1 class="doc-section doc-section-{slug}">{display}</h1>\n'
+            f'<section id="{slug}" class="level2 doc-section doc-section-{slug}">\n'
+            f'<h2 class="doc-section doc-section-{slug}">{display}</h2>\n'
             f"{content}\n</section>"
         )
 
@@ -1564,8 +1564,8 @@ def translate_bold_section_headers(html_content):
 
         <p><strong>Examples</strong>:</p>
 
-    This function converts those into the same `<section>`/`<h1>` structure that the renderer uses
-    for NumPy-style sections so the page has a consistent look.
+    Translate these headings to the renderer's `<section>` and `<h2>`
+    structure so all docstring styles share the same layout.
     """
 
     # Map of recognized section names → CSS id / class suffix
@@ -1600,8 +1600,8 @@ def translate_bold_section_headers(html_content):
         i18n_key = _BOLD_I18N_KEY.get(name)
         display = _t(i18n_key, name) if i18n_key else name
         return (
-            f'<section id="{slug}" class="level1 doc-section doc-section-{slug}">\n'
-            f'<h1 class="doc-section doc-section-{slug}">{display}</h1>'
+            f'<section id="{slug}" class="level2 doc-section doc-section-{slug}">\n'
+            f'<h2 class="doc-section doc-section-{slug}">{display}</h2>'
         )
 
     html_content = re.sub(
@@ -1866,62 +1866,6 @@ def translate_rst_references(html_content):
     return html_content
 
 
-# Match the page title even when Quarto adds display classes, so the heading
-# shift can exclude it.
-_TITLE_HEADING_PATTERN = re.compile(r'(<h1[^>]*\bclass="[^"]*\btitle\b[^"]*"[^>]*>.*?</h1>)', re.DOTALL)
-
-
-def _shift_main_headings_below_title(content_str):
-    """
-    Shift headings inside `<main>` below the page title
-
-    Quarto's site-wide heading shift promotes rendered docstring sections and
-    members to the title's level. Move them down one level while preserving
-    the `h1.title` heading.
-
-    Parameters
-    ----------
-    content_str
-        Complete page HTML.
-
-    Returns
-    -------
-        Page HTML with main-content headings shifted down one level. Return the
-        input unchanged when it has no `<main>` element.
-    """
-    main_start = content_str.find("<main")
-    main_end = content_str.find("</main>")
-    if main_start == -1 or main_end == -1:
-        return content_str
-
-    before = content_str[:main_start]
-    main_content = content_str[main_start : main_end + len("</main>")]
-    after = content_str[main_end + len("</main>") :]
-
-    # Replace the title temporarily so only the remaining headings shift.
-    title_placeholder = "<!--TITLE_PLACEHOLDER-->"
-    title_match = _TITLE_HEADING_PATTERN.search(main_content)
-    if title_match:
-        saved_title = title_match.group(1)
-        main_content = main_content.replace(saved_title, title_placeholder, 1)
-
-    # Process `h5` first so each heading moves exactly one level.
-    for level in range(5, 0, -1):
-        main_content = main_content.replace(f"<h{level}", f"<h{level + 1}")
-        main_content = main_content.replace(f"</h{level}>", f"</h{level + 1}>")
-        main_content = re.sub(
-            rf'\bclass="level{level}\b',
-            f'class="level{level + 1}',
-            main_content,
-        )
-
-    # Restore the title after shifting the remaining headings.
-    if title_match:
-        main_content = main_content.replace(title_placeholder, saved_title, 1)
-
-    return before + main_content + after
-
-
 def fix_dataclass_attributes(content_str):
     """Rebuild the Attributes table for dataclass pages using *_dataclass_attrs.json* metadata.
 
@@ -2112,10 +2056,10 @@ for html_file in html_files:
     # - Thin solid line after the Methods/Attributes summary table (before first member section)
     # - Dotted line between each individual member section
     for i, line in enumerate(content):
-        # Detect <section class="level2"> — these are individual member sections
-        if "<section id=" in line and 'class="level2"' in line:
+        # Individual members render as `level3` sections.
+        if "<section id=" in line and 'class="level3"' in line:
             # Check if the previous non-blank line ends a table (</table> in </section>)
-            # or is another level2 section close
+            # or closes another member section
             for j in range(i - 1, max(0, i - 5), -1):
                 prev = content[j].strip()
                 if not prev:
@@ -2166,9 +2110,6 @@ for html_file in html_files:
     # a second breadcrumb may exist inside the title-block-header — remove it.
     content_str = re.sub(breadcrumb_pattern, _ref_title_html, content_str, count=1, flags=re.DOTALL)
     content_str = re.sub(breadcrumb_pattern, "", content_str, flags=re.DOTALL)
-
-    # Nest docstring sections and members below the page title.
-    content_str = _shift_main_headings_below_title(content_str)
 
     content = content_str.splitlines(keepends=True)
 
@@ -2222,9 +2163,6 @@ if os.path.exists(index_file):
 
     # Clean up Sphinx cross-reference roles in index descriptions
     content = translate_sphinx_roles(content)
-
-    # Render category headings at `h2`, below the `h1` Reference title.
-    content = _shift_main_headings_below_title(content)
 
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
