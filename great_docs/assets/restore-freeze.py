@@ -1,15 +1,30 @@
 import shutil
 from pathlib import Path
 
-# Quarto sets the working directory to the Quarto project directory.
-# In a normal build this is great-docs/ (one level below project root).
-# In a versioned build this is _great_docs_build/<version>/ (two levels below).
-# We find the project root by walking upward until we find great-docs.yml.
+# Quarto runs this hook from `great-docs/` or a historical
+# `great-docs-<tag>/` sibling. Start there so either layout finds the project
+# root through `great-docs.yml`.
 build_dir = Path.cwd()
 
 
 def _find_project_root(start: Path) -> Path:
-    """Walk up from *start* until we find great-docs.yml."""
+    """
+    Find the project root at or above `start`
+
+    Parameters
+    ----------
+    start
+        Directory where the search begins.
+
+    Returns
+    -------
+    Nearest directory containing `great-docs.yml`.
+
+    Raises
+    ------
+    RuntimeError
+        If the search reaches its directory limit without finding the file.
+    """
     current = start
     for _ in range(10):  # safety limit
         if (current / "great-docs.yml").is_file():

@@ -11,6 +11,7 @@ from typing import Any
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 
 from ._subprocess import TEXT_MODE_KWARGS
+from ._utils import QUARTO_YML_HEADER, is_great_docs_build_dir
 from .config import Config, create_default_config
 
 # Injected into marimo `--mode edit` WASM exports (iframe mode). Those load inert
@@ -67,6 +68,58 @@ def _ensure_quarto_installed() -> None:
         "  https://posit-dev.github.io/great-docs/recipes/fix-common-build-errors.html\n\n"
         "Or fetch the binary programmatically by using your OS package (brew, yum, winget)."
     )
+
+
+def _migrate_legacy_gitignore_entry(content: str) -> str:
+    """
+    Anchor a standalone legacy `great-docs/` ignore entry
+
+    Earlier releases omitted the leading `/`, so Git matched a directory of
+    that name anywhere in the project. Replace only a complete `great-docs/`
+    line, without changing related patterns or negations.
+
+    Parameters
+    ----------
+    content
+        Contents of a project `.gitignore` file.
+
+    Returns
+    -------
+    Updated contents, or the original contents when no legacy entry exists.
+    """
+    lines = content.splitlines(keepends=True)
+    migrated = False
+    new_lines = []
+    for line in lines:
+        body = line.rstrip("\r\n")
+        line_ending = line[len(body) :]
+        if body.rstrip() == "great-docs/":
+            new_lines.append("/great-docs/" + line_ending)
+            migrated = True
+        else:
+            new_lines.append(line)
+    return "".join(new_lines) if migrated else content
+
+
+def _gitignore_has_entry(content: str, entry: str) -> bool:
+    """
+    Check whether `entry` appears as a complete line in `content`
+
+    Whole-line matching prevents an entry such as `/great-docs/` from also
+    matching a negated path such as `!skills/great-docs/`.
+
+    Parameters
+    ----------
+    content
+        Contents of a project `.gitignore` file.
+    entry
+        Gitignore pattern to look for as a standalone line.
+
+    Returns
+    -------
+    Whether any line equals `entry` after stripping surrounding whitespace.
+    """
+    return entry in (line.strip() for line in content.splitlines())
 
 
 class GreatDocs:
@@ -759,33 +812,45 @@ class GreatDocs:
         gitignore_path = self.project_root / ".gitignore"
 
         # Entry to add
-        entry = "# Great Docs build directory (ephemeral, do not commit)\ngreat-docs/\n"
+        entry = "# Great Docs build directory (ephemeral, do not commit)\n/great-docs/\n"
 
         # Versioning build artifacts (added when versions are configured)
         versioning_entries = [
-            "_great_docs_build/",
+            "/great-docs-*/",
             ".great-docs-build/",
             ".great-docs-cache/",
             ".great-docs/",
         ]
 
-        # Check if already present
+        # Inspect without writing. Migration requires the same consent as any
+        # other `.gitignore` edit.
         has_main = False
         missing_versioning = list(versioning_entries)
+        needs_migration = False
         if gitignore_path.exists():
             with open(gitignore_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            has_main = "great-docs/" in content
-            missing_versioning = [e for e in versioning_entries if e not in content]
+            migrated_content = _migrate_legacy_gitignore_entry(content)
+            needs_migration = migrated_content != content
+            check_content = migrated_content if needs_migration else content
 
-            if has_main and not missing_versioning:
+            has_main = _gitignore_has_entry(check_content, "/great-docs/")
+            missing_versioning = [
+                e for e in versioning_entries if not _gitignore_has_entry(check_content, e)
+            ]
+
+            if has_main and not missing_versioning and not needs_migration:
                 # All entries present, nothing to do
                 return
 
-        # If force=True, skip the prompt
-        if force:
+        migration_only = needs_migration and has_main and not missing_versioning
+
+        def apply_changes() -> None:
             if gitignore_path.exists():
+                if needs_migration:
+                    with open(gitignore_path, "w", encoding="utf-8") as f:
+                        f.write(migrated_content)
                 # Append to existing .gitignore
                 with open(gitignore_path, "a", encoding="utf-8") as f:
                     if not has_main:
@@ -794,7 +859,10 @@ class GreatDocs:
                         f.write("\n# Great Docs versioned-build artifacts\n")
                         for ve in missing_versioning:
                             f.write(ve + "\n")
-                print("✅ Updated .gitignore to exclude great-docs/ directory")
+                if migration_only:
+                    print("✅ Anchored the great-docs/ entry to the project root as /great-docs/")
+                else:
+                    print("✅ Updated .gitignore to ignore Great Docs build output")
             else:
                 # Create new .gitignore
                 with open(gitignore_path, "w", encoding="utf-8") as f:
@@ -802,38 +870,26 @@ class GreatDocs:
                     f.write("\n# Great Docs versioned-build artifacts\n")
                     for ve in versioning_entries:
                         f.write(ve + "\n")
-                print("✅ Created .gitignore to exclude great-docs/ directory")
+                print("✅ Created .gitignore to ignore Great Docs build output")
+
+        # If force=True, skip the prompt
+        if force:
+            apply_changes()
             return
 
         # Ask for permission in interactive mode
-        print("\nThe great-docs/ directory is ephemeral and should not be committed to git.")
-        response = (
-            input("Add 'great-docs/' to .gitignore? [Y/n]: ").strip().lower()
-        )  # pragma: no cover
+        if migration_only:
+            print("\nThe great-docs/ entry in .gitignore matches directories at any depth.")
+            prompt = "Anchor it to the project root as /great-docs/? [Y/n]: "
+        else:
+            print("\nThe great-docs/ build directory is temporary and should not be committed.")
+            prompt = "Add '/great-docs/' to .gitignore? [Y/n]: "
+        response = input(prompt).strip().lower()  # pragma: no cover
 
         if response in ("", "y", "yes"):  # pragma: no cover
-            if gitignore_path.exists():
-                # Append to existing .gitignore
-                with open(gitignore_path, "a", encoding="utf-8") as f:
-                    if not has_main:
-                        f.write("\n" + entry)
-                    if missing_versioning:
-                        f.write("\n# Great Docs versioned-build artifacts\n")
-                        for ve in missing_versioning:
-                            f.write(ve + "\n")
-                print("✅ Updated .gitignore to exclude great-docs/ directory")
-            else:
-                # Create new .gitignore
-                with open(gitignore_path, "w", encoding="utf-8") as f:
-                    f.write(entry)
-                    f.write("\n# Great Docs versioned-build artifacts\n")
-                    for ve in versioning_entries:
-                        f.write(ve + "\n")
-                print("✅ Created .gitignore to exclude great-docs/ directory")
+            apply_changes()
         else:
-            print(
-                "⚠️  Skipped .gitignore update. Remember to exclude great-docs/ from version control."
-            )
+            print("⚠️  Skipped .gitignore update. Remember to ignore /great-docs/.")
 
     def _detect_package_name(self) -> str | None:
         """
@@ -11521,12 +11577,8 @@ anchor-sections: true
         # Translate navbar labels for i18n
         self._translate_navbar_labels(config)
 
-        header_comment = (
-            "# Generated by Great Docs - Do not modify this file by hand.\n"
-            "# Configure settings in great-docs.yml instead.\n\n"
-        )
         with open(quarto_yml, "w") as f:
-            f.write(header_comment)
+            f.write(QUARTO_YML_HEADER)
             write_yaml(config, f)
 
     def _translate_navbar_labels(self, config: dict) -> None:
@@ -15274,10 +15326,12 @@ anchor-sections: true
 
     def uninstall(self) -> None:
         """
-        Remove great-docs configuration and build directory from the project.
+        Remove Great Docs configuration and generated build directories
 
-        This method deletes the great-docs.yml configuration file and the great-docs/
-        build directory (if it exists).
+        Delete `great-docs.yml` and the current `great-docs/` build directory.
+        Also delete each historical `great-docs-<tag>/` directory that is not a
+        symlink and contains the complete generated-file header. Preserve
+        symlinks and historical directories without this header.
 
         ::: {.callout-note}
         In practice, you would normally use the `great-docs uninstall` CLI command
@@ -15311,35 +15365,53 @@ anchor-sections: true
             config_path.unlink()
             print(f"Removed {config_path.relative_to(self.project_root)}")
 
-        # Remove the great-docs/ build directory if it exists
+        # Great Docs owns the configured build path.
         if self.project_path.exists():
             shutil.rmtree(self.project_path)
             print(f"Removed {self.project_path.relative_to(self.project_root)}/ directory")
 
+        # Only a generated header proves ownership of a historical directory.
+        # Symlinks can point outside the project root.
+        for build_dir in sorted(self.project_root.glob(f"{self.docs_dir.name}-*")):
+            if (
+                not build_dir.is_dir()
+                or build_dir.is_symlink()
+                or not is_great_docs_build_dir(build_dir)
+            ):
+                continue
+            shutil.rmtree(build_dir)
+            print(f"Removed {build_dir.relative_to(self.project_root)}/ directory")
+
         print("✅ Great-docs uninstalled successfully!")
 
     def _persist_freeze_cache(self) -> int | None:
-        """Copy _freeze/ from build directories back to the project root.
+        """
+        Copy every build's freeze cache to the project root
 
-        Handles both single-version builds (freeze in project_path/_freeze)
-        and versioned builds (freeze in _great_docs_build/v__*/_freeze).
+        The latest version and a non-versioned build store their cache in
+        `great-docs/_freeze`. Historical versions store caches in sibling
+        `great-docs-<tag>/_freeze` directories. Merge individual files so a
+        page from one version cannot replace different pages in the same
+        section. When versions cache the same path, the latest version wins.
 
-        Returns the number of cached files, or None if no freeze cache exists.
+        Returns
+        -------
+        Number of cached files, or `None` when no freeze cache exists.
         """
         freeze_sources: list[Path] = []
 
-        # Single-version build
+        # Merge historical caches first so the latest version wins collisions.
+        for ver_dir in sorted(self.project_root.glob(f"{self.docs_dir.name}-*")):
+            if not ver_dir.is_dir() or ver_dir.is_symlink() or not is_great_docs_build_dir(ver_dir):
+                continue
+            candidate = ver_dir / "_freeze"
+            if candidate.is_dir():
+                freeze_sources.append(candidate)
+
+        # The latest version and a non-versioned build share this location.
         single = self.project_path / "_freeze"
         if single.is_dir():
             freeze_sources.append(single)
-
-        # Versioned build
-        versioned_root = self.project_root / "_great_docs_build"
-        if versioned_root.is_dir():
-            for ver_dir in versioned_root.iterdir():
-                candidate = ver_dir / "_freeze"
-                if candidate.is_dir():
-                    freeze_sources.append(candidate)
 
         if not freeze_sources:
             return None
@@ -15349,15 +15421,15 @@ anchor-sections: true
             shutil.rmtree(freeze_dst)
         freeze_dst.mkdir()
 
+        # Copy files individually. Replacing a top-level cache directory would
+        # discard pages contributed by earlier sources.
         for src in freeze_sources:
-            for item in src.iterdir():
-                dest = freeze_dst / item.name
-                if item.is_dir():
-                    if dest.exists():
-                        shutil.rmtree(dest)
-                    shutil.copytree(item, dest)
-                else:
-                    shutil.copy2(item, dest)
+            for item in src.rglob("*"):
+                if not item.is_file():
+                    continue
+                dest = freeze_dst / item.relative_to(src)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, dest)
 
         for js_file in freeze_dst.rglob("*.js"):
             data = js_file.read_bytes()
@@ -16288,6 +16360,9 @@ anchor-sections: true
                     on_renders_done=_on_renders_done,
                     badge_expiry_raw=self._config["new_is_old"],
                 )
+
+                for warning in vb_result.get("warnings", []):
+                    log.warn(warning)
 
                 if not vb_result["success"]:
                     for err in vb_result["errors"]:

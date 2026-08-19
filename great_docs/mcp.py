@@ -31,6 +31,8 @@ from mcp.types import (
 )
 from pydantic import AnyUrl
 
+from ._utils import is_great_docs_build_dir, is_in_great_docs_build_dir
+
 server = Server("great-docs")
 
 # ---------------------------------------------------------------------------
@@ -91,6 +93,52 @@ def _get_project_root(project_path: str | None = None) -> Path:
             raise FileNotFoundError(f"Project path does not exist: {p}")
         return p
     return Path.cwd()
+
+
+def _sibling_build_dirs(root: Path) -> list[Path]:
+    """
+    Return historical Great Docs build directories under `root`
+
+    Include only directories whose `_quarto.yml` contains the Great Docs
+    marker. Ignore symlinks and unmarked matches because they may contain user
+    files.
+
+    Parameters
+    ----------
+    root
+        Project root containing the build directories.
+
+    Returns
+    -------
+    Marked sibling directories in name order.
+    """
+    dirs: list[Path] = []
+    for candidate in sorted(root.glob("great-docs-*")):
+        if not candidate.is_dir() or candidate.is_symlink():
+            continue
+        if is_great_docs_build_dir(candidate):
+            dirs.append(candidate)
+    return dirs
+
+
+def _build_output_dirs(root: Path) -> list[Path]:
+    """
+    Return all Great Docs build directories under `root`
+
+    The current `great-docs/` directory comes first, when present, followed by
+    marked historical sibling directories in name order.
+
+    Parameters
+    ----------
+    root
+        Project root containing the build directories.
+
+    Returns
+    -------
+    Current and historical build directories.
+    """
+    current = [root / "great-docs"] if (root / "great-docs").is_dir() else []
+    return current + _sibling_build_dirs(root)
 
 
 def _get_great_docs(project_path: str | None = None):
@@ -361,9 +409,8 @@ async def _handle_build(arguments: dict) -> list[TextContent]:
     if clean:
         import shutil
 
-        build_dir = _get_project_root(project_path) / "_great_docs_build"
-        if build_dir.exists():
-            shutil.rmtree(build_dir)
+        for ver_dir in _sibling_build_dirs(_get_project_root(project_path)):
+            shutil.rmtree(ver_dir)
 
     # Capture build output
     output = io.StringIO()
@@ -380,7 +427,7 @@ async def _handle_preview(arguments: dict) -> list[TextContent]:
 
     # Check if build output exists
     root = _get_project_root(project_path)
-    build_dir = root / "_great_docs_build" / "_root"
+    build_dir = root / "great-docs"
     if not build_dir.exists():
         return [
             TextContent(
@@ -581,12 +628,11 @@ async def _handle_status(arguments: dict) -> list[TextContent]:
 
     # Build status
     lines.append("")
-    build_dir = root / "_great_docs_build"
-    if build_dir.exists():
-        versions = [d.name for d in build_dir.iterdir() if d.is_dir()]
-        lines.append(f"Build output: {len(versions)} version(s) built")
-        for v in sorted(versions):
-            lines.append(f"  - {v}")
+    build_dirs = _build_output_dirs(root)
+    if build_dirs:
+        lines.append(f"Build output directories: {len(build_dirs)}")
+        for d in build_dirs:
+            lines.append(f"  - {d.name}")
     else:
         lines.append("Build output: none (run `gd_build` to generate)")
 
@@ -1039,18 +1085,12 @@ async def read_resource(uri: AnyUrl) -> str:
         return config_path.read_text(encoding="utf-8")
 
     elif uri_str == "gd://build-log":
-        # Look for build log in standard location
-        log_path = root / "_great_docs_build" / "build.log"
-        if log_path.exists():
-            return log_path.read_text(encoding="utf-8")
-        # Fallback: check if build dir exists at all
-        build_dir = root / "_great_docs_build"
-        if build_dir.exists():
-            versions = [d.name for d in build_dir.iterdir() if d.is_dir()]
+        build_dirs = _build_output_dirs(root)
+        if build_dirs:
+            names = ", ".join(d.name for d in build_dirs)
             return (
-                f"Build directory exists with {len(versions)} version(s): "
-                f"{', '.join(sorted(versions))}\n"
-                "No build.log file found (logs are printed to stdout during build)."
+                f"Build output directories: {names}\n"
+                "Great Docs prints logs during the build and does not save them to a file."
             )
         return "No build output found. Run `gd_build` to generate documentation."
 
@@ -1235,9 +1275,12 @@ async def handle_completion(
                 return None
 
         if "page" in str(ref.uri) and argument.name == "path":
-            # List .qmd files in the project
+            # List source pages without their generated build copies.
             root = Path.cwd()
-            qmd_files = sorted(str(p.relative_to(root)) for p in root.rglob("*.qmd"))
+            rel_paths = (p.relative_to(root) for p in root.rglob("*.qmd"))
+            qmd_files = sorted(
+                str(rel) for rel in rel_paths if not is_in_great_docs_build_dir(rel.parts, root)
+            )
             filtered = [f for f in qmd_files if value.lower() in f.lower()]
             return Completion(values=filtered[:20], hasMore=len(filtered) > 20)
 

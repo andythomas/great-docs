@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ._builtin.directives import DIRECTIVES
-from ._utils import parse_seealso
+from ._utils import is_in_great_docs_build_dir, parse_seealso
 
 
 @dataclass
@@ -621,12 +621,15 @@ def _check_stale_versions(project_root: Path, result: LintResult) -> None:
         re.MULTILINE,
     )
 
-    # Collect .qmd files (skip _site, _extensions, build dirs, hidden dirs)
+    # Ignore generated build copies at the project root. Nested directories
+    # with similar names remain part of the user's source tree.
     qmd_files = []
     for qmd in project_root.rglob("*.qmd"):
         rel = qmd.relative_to(project_root)
         parts = rel.parts
         if any(p.startswith("_") or p.startswith(".") for p in parts):
+            continue
+        if is_in_great_docs_build_dir(parts, project_root):
             continue
         qmd_files.append(qmd)
 

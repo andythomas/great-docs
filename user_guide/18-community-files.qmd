@@ -42,6 +42,19 @@ via frontmatter)
 3. **Generates a `.qmd` file** in the build directory with appropriate frontmatter
 4. **Adds a sidebar link** in the Community section of the homepage's right margin
 
+::: {.callout-tip}
+## Community file locations
+
+GitHub accepts `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` in your project root,
+`docs/`, or `.github/`. Great Docs searches only the project root and `.github/`, in that order.
+Both locations work without configuration.
+
+Great Docs generates `contributing.qmd`, `code-of-conduct.qmd`, and `security.qmd` from the files
+it finds, then links them from the homepage. Link to these generated pages instead of embedding
+the source files in another page. An include such as
+`{{{< include "../../../.github/CONTRIBUTING.md" >}}}` depends on the build directory's depth.
+:::
+
 The original Markdown content is preserved, so any formatting, images, or links in your community
 files carry through to the documentation site. The generated `.qmd` files are recreated on every
 build, so changes to the source files are always picked up.
