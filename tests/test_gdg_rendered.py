@@ -525,8 +525,10 @@ def test_footer_text_not_in_header(pkg_name: str):
 
 
 @requires_bs4
-@pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google", "gdtest_sphinx"])
-def test_r1_reference_page_heading_levels(pkg_name: str):
+@pytest.mark.parametrize(
+    "pkg_name", ["gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs"]
+)
+def test_reference_page_heading_levels(pkg_name: str):
     """
     Verify the reference object-page heading hierarchy
 
@@ -541,7 +543,8 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
     pages = [p for p in ref.glob("*.html") if p.name != "index.html"]
     assert pages, f"{pkg_name}: no reference object pages"
 
-    checked = 0
+    sections_checked = 0
+    members_checked = 0
     for page in pages:
         soup = _load_html(page)
 
@@ -553,8 +556,8 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
             f"{page.name}: page title was shifted to h2.title"
         )
 
-        # Check `<main>` separately because the navigation title is another
-        # `h1` at this stage.
+        # Limit the structural check to page content; navigation headings sit
+        # outside `<main>`.
         main = soup.select_one("main")
         assert main is not None, f"{page.name}: no <main> element"
         main_h1s = main.select("h1")
@@ -564,13 +567,15 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
             f"found {len(title_h1s)} (of {len(main_h1s)} h1 elements total)"
         )
 
-        for section in soup.select("section.doc-parameters, section.doc-methods"):
+        # Check only page-level sections. A member's own Parameters or Returns
+        # section is correctly nested at `level4` within its `level3` member.
+        for section in soup.select("section.level2.doc-parameters, section.level2.doc-methods"):
             heading = section.select_one("h1, h2, h3, h4, h5, h6")
             assert heading is not None, f"{page.name}: section has no heading"
             assert heading.name == "h2", (
                 f"{page.name}: expected h2 section heading, found {heading.name}"
             )
-            checked += 1
+            sections_checked += 1
 
         for member in soup.select(
             "section.doc-methods section.level3, section.doc-attributes section.level3"
@@ -580,14 +585,49 @@ def test_r1_reference_page_heading_levels(pkg_name: str):
             assert heading.name == "h3", (
                 f"{page.name}: expected h3 member heading, found {heading.name}"
             )
-            checked += 1
+            members_checked += 1
 
-    assert checked > 0, f"{pkg_name}: no docstring sections or members were checked"
+    assert sections_checked > 0, f"{pkg_name}: no docstring sections were checked"
+    # Packages without classes may contain no member sections. Skip them here;
+    # the companion test verifies member coverage across the full fixture set.
+    if members_checked == 0:
+        pytest.skip(f"{pkg_name}: no member sections to check")
+
+
+@requires_bs4
+def test_reference_page_heading_levels_exercises_member_check():
+    """
+    Verify that the fixture set exercises member heading checks
+
+    This fails if every parametrised package loses its class members and the
+    `h3` member assertion stops running.
+    """
+    found_members = False
+    for pkg_name in ("gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs"):
+        ref = _ref_dir(pkg_name)
+        if not ref.exists():
+            continue
+        for page in ref.glob("*.html"):
+            if page.name == "index.html":
+                continue
+            soup = _load_html(page)
+            if soup.select(
+                "section.doc-methods section.level3, section.doc-attributes section.level3"
+            ):
+                found_members = True
+                break
+        if found_members:
+            break
+
+    assert found_members, (
+        "no parametrised package has a member section; the h3 member-heading "
+        "assertion is not exercised"
+    )
 
 
 @requires_bs4
 @pytest.mark.parametrize("pkg_name", ["gdtest_minimal", "gdtest_google"])
-def test_r4_reference_index_heading_levels(pkg_name: str):
+def test_reference_index_heading_levels(pkg_name: str):
     """Verify that reference index group headings are `h2` elements"""
     index = _ref_dir(pkg_name) / "index.html"
     if not index.exists():
@@ -4023,11 +4063,11 @@ def test_copy_page_widget_does_not_overlap_long_titles():
             f"{page.name}: title text too short ({title_text!r}), expected long name"
         )
 
-        # `span.doc-object-name` applies the title's code style; inline styles
-        # do not.
+        # The title's object name is styled as code by `span.doc-object-name`
+        # in great-docs.scss, not by an inline style attribute.
         name_span = title_el.select_one("span.doc-object-name")
         assert name_span is not None, (
-            f"{page.name}: title is missing span.doc-object-name for code styling"
+            f"{page.name}: title has no span.doc-object-name to style as code"
         )
 
 
