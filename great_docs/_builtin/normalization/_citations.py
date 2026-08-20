@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 _RST_CITATION_MARKER_RE = re.compile(r"^([ \t]*)\.\.\s+\[(\d+)\](?:[ \t]+(.*))?$", re.MULTILINE)
 _RST_CITATION_URL_RE = re.compile(r'(?<![<"])(https?://\S+)(?![>"])')
 _RST_CITATION_REF_RE = re.compile(r"\[(\d+)\]_")
-_NON_ANCHOR_CHARS_RE = re.compile(r"[^a-z0-9]+")
+_NON_ANCHOR_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
 _CARET_CLASSES = ".gd-linkback-text .gd-linkback-caret"
 _LETTER_CLASSES = ".gd-linkback-text .gd-linkback-letter"
@@ -48,6 +48,10 @@ def _anchor_slug(path: str) -> str:
     """
     Convert an object path to a citation-anchor stem
 
+    Keep letters, digits, and underscores as written. Replace each run of other
+    characters with a hyphen so paths that differ by case or separator remain
+    distinct.
+
     Parameters
     ----------
     path
@@ -55,9 +59,9 @@ def _anchor_slug(path: str) -> str:
 
     Returns
     -------
-    The lowercase path with non-alphanumeric runs replaced by hyphens.
+    The path with other character runs replaced by hyphens.
     """
-    return _NON_ANCHOR_CHARS_RE.sub("-", path.lower()).strip("-")
+    return _NON_ANCHOR_CHARS_RE.sub("-", path).strip("-")
 
 
 def _occurrence_label(index: int) -> str:
@@ -125,6 +129,10 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
     Each `[N]_` reference links to its matching citation. The citation links
     back with a caret for one reference or lettered links for several.
     References without matching citations remain literal.
+
+    Duplicate labels are invalid RST. Both definitions reuse the same citation
+    ID and backlinks because references are counted by label. A reference in a
+    citation body links back to that same in-body reference.
 
     Parameters
     ----------

@@ -280,7 +280,7 @@ def test_anchors_differ_between_objects(parser: str):
     second = _normalized_for("binary_search", source, parser)
 
     assert "#cite-quicksort-1" in first
-    assert "#cite-binary-search-1" in second
+    assert "#cite-binary_search-1" in second
     assert "quicksort" not in second
 
 
@@ -298,7 +298,47 @@ def test_dotted_object_path_becomes_a_valid_anchor(parser: str):
     obj.docstring.value = "See [1]_.\n\n.. [1] Smith, J. (2020)."
     result = normalize_citations(obj)
     assert result.docstring is not None
-    assert "#cite-gdtest-long-docs-transform-data-1" in result.docstring.value
+    assert "#cite-gdtest_long_docs-transform_data-1" in result.docstring.value
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_anchor_slug_does_not_collapse_distinct_paths(parser: str):
+    """
+    Verify case and separator differences produce distinct anchors
+
+    Keep case and underscores so `pkg.foo_bar` and `pkg_foo.bar`, and `Foo.Bar`
+    and `foo.bar`, cannot collapse to the same anchor.
+    """
+    source = "See [1]_.\n\n.. [1] Hoare, C.A.R. (1961)."
+
+    def _for(dotted_path: str) -> str:
+        parts = dotted_path.split(".")
+        module = gf.Module(parts[0])
+        obj = gf.Function(parts[1], parent=module)
+        obj.docstring = gf.Docstring("", parent=obj, parser=parser)
+        obj.docstring.value = source
+        result = normalize_citations(obj)
+        assert result.docstring is not None
+        return result.docstring.value
+
+    underscore_first = _for("pkg.foo_bar")
+    underscore_second = _for("pkg_foo.bar")
+    assert "#cite-pkg-foo_bar-1" in underscore_first
+    assert "#cite-pkg_foo-bar-1" in underscore_second
+    assert underscore_first != underscore_second
+
+    case_first = _for("Foo.Bar")
+    case_second = _for("foo.bar")
+    assert "#cite-Foo-Bar-1" in case_first
+    assert "#cite-foo-bar-1" in case_second
+    assert case_first != case_second
+
+    digit_led = _for("123pkg.thing")
+    assert "#cite-123pkg-thing-1" in digit_led
+
+    for value in (underscore_first, underscore_second, case_first, case_second, digit_led):
+        anchor_id = value.split("#", 1)[1].split("}", 1)[0]
+        assert not anchor_id[0].isdigit()
 
 
 @pytest.mark.parametrize(
