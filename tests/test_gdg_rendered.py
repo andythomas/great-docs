@@ -838,6 +838,38 @@ def test_unread_dialect_renders_as_prose():
 
 
 @requires_bs4
+def test_docstring_citations_resolve():
+    """
+    Verify bibliography citations resolve in docstrings
+
+    Each `[@citekey]` marker must render as a reference. No RST marker or
+    unresolved citation key may remain.
+    """
+    if not _has_rendered_site("gdtest_docstring_references"):
+        pytest.skip("gdtest_docstring_references not rendered")
+
+    pages = [
+        p for p in _ref_dir("gdtest_docstring_references").glob("*.html")
+        if p.name != "index.html"
+    ]
+    assert pages, "no reference pages were rendered"
+
+    citations = 0
+    for html_file in pages:
+        soup = _load_html(html_file)
+        main = soup.select_one("main.content")
+        if main is None:
+            continue
+
+        text = main.get_text()
+        assert ".. [" not in text, f"{html_file.name}: contains a raw RST citation"
+        assert "[@" not in text, f"{html_file.name}: contains an unresolved citekey"
+        citations += len(main.select("div#refs, span.citation, a.citation"))
+
+    assert citations, "no reference page contains a resolved citation"
+
+
+@requires_bs4
 @pytest.mark.parametrize(
     ("pkg_name", "page_name"),
     [("gdtest_mixed_docs", "Converter.html"), ("gdtest_sphinx", "Timer.html")],

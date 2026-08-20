@@ -2,8 +2,7 @@
 gdtest_docstring_references — References sections in NumPy-style docstrings.
 
 Dimensions: L21
-Focus: Two functions with References sections citing academic papers
-       and textbooks.
+Focus: Two functions citing academic papers from a project bibliography.
 """
 
 SPEC = {
@@ -23,6 +22,7 @@ SPEC = {
     },
     "config": {
         "parser": "numpy",
+        "bibliography": "docs/references.bib",
     },
     "files": {
         "gdtest_docstring_references/__init__.py": '''\
@@ -60,12 +60,8 @@ SPEC = {
                 and creates new lists for the partitions, so it is not
                 in-place.
 
-                References
-                ----------
-                .. [1] Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."
-                   Communications of the ACM, 4(7), 321.
-                .. [2] Cormen, T.H. et al. (2009). "Introduction to
-                   Algorithms", 3rd edition, MIT Press, Chapter 7.
+                The partition scheme follows Hoare [@hoare1961], and the
+                complexity analysis follows Cormen [@cormen2009].
 
                 Examples
                 --------
@@ -112,11 +108,7 @@ SPEC = {
                 The time complexity is O(log n) and the space complexity
                 is O(1).
 
-                References
-                ----------
-                .. [1] Knuth, D.E. (1998). "The Art of Computer
-                   Programming", Volume 3: Sorting and Searching,
-                   2nd edition, Addison-Wesley, Section 6.2.1.
+                The algorithm and its analysis follow Knuth [@knuth1998].
 
                 Examples
                 --------
@@ -139,6 +131,36 @@ SPEC = {
 
                 return -1
         ''',
+        # Keep the bibliography in `docs/`, outside the build tree. The
+        # `bibliography:` setting points to this source file, which Great Docs
+        # copies into the build directory.
+        "docs/references.bib": """\
+            @article{hoare1961,
+              title = {Algorithm 64: Quicksort},
+              author = {Hoare, C. A. R.},
+              year = {1961},
+              journal = {Communications of the ACM},
+              volume = {4},
+              number = {7},
+              pages = {321},
+            }
+
+            @book{cormen2009,
+              title = {Introduction to Algorithms},
+              author = {Cormen, Thomas H.},
+              year = {2009},
+              publisher = {MIT Press},
+              edition = {3rd},
+            }
+
+            @book{knuth1998,
+              title = {The Art of Computer Programming, Volume 3},
+              author = {Knuth, Donald E.},
+              year = {1998},
+              publisher = {Addison-Wesley},
+              edition = {2nd},
+            }
+        """,
         "README.md": """\
             # gdtest-docstring-references
 
