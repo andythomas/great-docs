@@ -152,8 +152,9 @@ Great Docs recognizes these parser-independent directives:
 - Callouts: `%note`, `%warning`, `%caution`, `%danger`, `%important`, `%tip`, and `%hint`
 - Version notices: `%versionadded`, `%versionchanged`, and `%deprecated`
 
-Sphinx-style `.. name::` directives are a separate compatibility syntax. Great Docs normalizes them
-only when the configured docstring parser is Sphinx.
+Sphinx-style `.. name::` forms provide separate compatibility syntax. Callout and version
+directives work with every parser. Cross-reference roles, citation markers, and the `math`,
+`seealso`, and `todo` directives require `parser: sphinx`.
 
 Any other `%`-prefixed token, such as `%internal`, is flagged as unknown. If you see a false
 positive, check for typos in the directive name.

@@ -532,11 +532,15 @@ both Great Docs and Sphinx; otherwise, prefer Great Docs `%` directives.
 
 ### Sphinx Cross-Reference Roles
 
-Sphinx roles like `:py:class:`, `:func:`, and `:exc:` are converted into plain inline code
-formatting. For example, `` :py:exc:`ValueError` `` becomes `ValueError`, and
-`` :py:class:`datetime.datetime` `` becomes `datetime.datetime`. Function and method roles
-automatically receive trailing `()` to indicate they are callable, so `` :func:`my_function` ``
-renders as `my_function()` and `` :meth:`MyClass.run` `` renders as `MyClass.run()`.
+With `parser: sphinx`, Great Docs renders Sphinx roles such as `:py:class:`, `:func:`, and
+`:exc:` as inline code. For example, `` :py:exc:`ValueError` `` renders as `ValueError`,
+and `` :py:class:`datetime.datetime` `` renders as `datetime.datetime`. Function and
+method roles gain trailing parentheses: `` :func:`my_function` `` renders as
+`my_function()`, and `` :meth:`MyClass.run` `` renders as `MyClass.run()`.
+
+With `parser: numpy` or `parser: google`, these roles render as literal text. To link to
+another symbol with any parser, use `%seealso` or an inline interlink. See
+[Cross-Referencing](cross-referencing.qmd).
 
 ## Visual Enhancements
 

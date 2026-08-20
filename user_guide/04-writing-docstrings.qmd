@@ -586,13 +586,22 @@ should add what the type alone can't express.
 
 ## Docstrings and Sphinx Compatibility
 
-Great Docs uses `%` directives for callouts and API-reference behavior. For example,
-`%versionadded 2.0` adds a version annotation, while `%warning` adds a warning callout.
+Great Docs supports `%` directives for callouts and API-reference behaviour under every
+docstring parser. For example, `%versionadded 2.0` adds a version annotation, and
+`%warning` adds a warning callout.
 
-Projects that publish Sphinx documentation can use compatible RST forms such as
-`.. versionadded:: 2.0`. Great Docs also converts Sphinx cross-reference roles such as
-`` :py:exc:`ValueError` ``. This compatibility lets both documentation systems use the same
-docstrings.
+Equivalent RST callout and version directives, including `.. warning::` and
+`.. versionadded:: 2.0`, also work with every parser. Use them when the docstrings must
+also build with Sphinx.
+
+Set `parser: sphinx` to use other RST forms: cross-reference roles such as
+`` :py:exc:`ValueError` ``, `.. [1]` citation markers, `math`, `seealso`, and `todo`
+directives, the inline `:math:` role, literal blocks, and simple or grid tables. Under
+`parser: numpy` or `parser: google`, these forms render as literal text. To cite a source
+with any parser, use `[@citekey]` and set the project-level `bibliography:` key.
+
+A bold pseudo-heading such as `**Examples**::` renders as plain text under every parser,
+including Sphinx. Use a valid section heading instead.
 
 See [API Documentation: Docstring Directives](api-documentation.qmd#docstring-directives) for the
 supported directives and syntax.
