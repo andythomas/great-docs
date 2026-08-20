@@ -1797,6 +1797,39 @@ def test_sphinx_roles_survive_under_numpy_parser(pkg_name: str):
     )
 
 
+@requires_bs4
+def test_sphinx_roles_converted_under_sphinx_parser():
+    """
+    Verify Sphinx docstrings convert cross-reference roles
+
+    Each role must become inline code. Callable roles must also gain
+    parentheses, which distinguishes conversion from simply removing markup.
+    """
+    if not _has_rendered_site("gdtest_sphinx_rich"):
+        pytest.skip("gdtest_sphinx_rich not rendered")
+
+    execute_page = _ref_dir("gdtest_sphinx_rich") / "execute.html"
+    if not execute_page.exists():
+        pytest.skip("No execute page for gdtest_sphinx_rich")
+
+    main = _load_html(execute_page).select_one("main.content")
+    assert main is not None, "execute page has no main content"
+
+    text = main.get_text()
+    for role in (":py:exc:", ":func:", ":class:"):
+        assert role not in text, f"raw Sphinx role {role!r} survived conversion"
+
+    # `schedule` is documented in this fixture, so autolinking can replace its
+    # code span with a cross-reference. Accept either rendered form.
+    code_spans = {c.get_text(strip=True) for c in main.select("code, a.gdls-code")}
+    assert "TimeoutError" in code_spans, (
+        "the :py:exc: role did not render as inline code"
+    )
+    assert "schedule()" in code_spans, (
+        "the :func: role did not render as callable inline code"
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # R4: RST Code Blocks & Tables
 # ═══════════════════════════════════════════════════════════════════════════════
