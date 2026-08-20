@@ -221,7 +221,7 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
         seen[number] = seen.get(number, 0) + 1
         anchor = f"ref-{anchor_stem}-{number}-{seen[number]}"
         return (
-            f"[[{number}]](#cite-{anchor_stem}-{number})"
+            f"[^{number}^](#cite-{anchor_stem}-{number})"
             f'{{#{anchor} {_CITE_REF_CLASS} role="doc-noteref"}}'
         )
 
