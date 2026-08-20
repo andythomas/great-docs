@@ -594,18 +594,23 @@ Equivalent RST callout and version directives, including `.. warning::` and
 `.. versionadded:: 2.0`, also work with every parser. Use them when the docstrings must
 also build with Sphinx.
 
+Numbered citations also work with every parser. Define one in a References section with
+`.. [1]`; Great Docs renders it as an ordered-list item. Nonnumeric labels such as
+`.. [CIT2002]` render as literal text.
+
 Set `parser: sphinx` to use other RST forms: cross-reference roles such as
-`` :py:exc:`ValueError` ``, `.. [1]` citation markers, `math`, `seealso`, and `todo`
-directives, the inline `:math:` role, literal blocks, and simple or grid tables. Under
-`parser: numpy` or `parser: google`, these forms render as literal text. To cite a source
-with any parser, use `[@citekey]` and set the project-level `bibliography:` key.
+`` :py:exc:`ValueError` ``, `math`, `seealso`, and `todo` directives, the inline
+`:math:` role, literal blocks, and simple or grid tables. Under `parser: numpy` or
+`parser: google`, these forms render as literal text.
+
+To cite from a project bibliography with any parser, use `[@citekey]` and set the
+project-level `bibliography:` key.
 
 A bold pseudo-heading such as `**Examples**::` renders as plain text under every parser,
 including Sphinx. Use a valid section heading instead.
 
 See [API Documentation: Docstring Directives](api-documentation.qmd#docstring-directives) for the
 supported directives and syntax.
-
 ## Next Steps
 
 Well-structured docstrings are the foundation of a useful API reference. By choosing a consistent
