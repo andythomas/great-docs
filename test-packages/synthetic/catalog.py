@@ -1504,8 +1504,8 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "ideally with some form of alert styling."
     ),
     "gdtest_docstring_references": (
-        "Docstrings with References sections containing bibliography entries "
-        "and links. References should render as a list below the main docs."
+        "NumPy-style docstrings cite academic papers with `[@citekey]` markers "
+        "resolved against a project bibliography."
     ),
     "gdtest_docstring_seealso": (
         "Docstrings with See Also sections listing related functions, each "

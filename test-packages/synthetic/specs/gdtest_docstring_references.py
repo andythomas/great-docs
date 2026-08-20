@@ -1,13 +1,14 @@
 """
-gdtest_docstring_references — References sections in NumPy-style docstrings.
+gdtest_docstring_references — bibliography citations in NumPy-style docstrings.
 
 Dimensions: L21
-Focus: Two functions citing academic papers from a project bibliography.
+Focus: Two functions cite academic papers with `[@citekey]` markers resolved
+       against a project bibliography.
 """
 
 SPEC = {
     "name": "gdtest_docstring_references",
-    "description": "References sections in NumPy-style docstrings",
+    "description": "NumPy-style docstrings with `[@citekey]` bibliography citations",
     "dimensions": ["L21"],
     "pyproject_toml": {
         "project": {
@@ -164,7 +165,8 @@ SPEC = {
         "README.md": """\
             # gdtest-docstring-references
 
-            A synthetic test package with References sections.
+            A synthetic package whose NumPy-style docstrings cite academic
+            papers with `[@citekey]` markers and a project bibliography.
         """,
     },
     "expected": {
