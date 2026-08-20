@@ -21,6 +21,16 @@ def _normalized(text: str, parser: str) -> str:
     return result.docstring.value
 
 
+def _normalized_for(name: str, text: str, parser: str) -> str:
+    """Return normalised docstring text for an object with the given name"""
+    obj = gf.Function(name)
+    obj.docstring = gf.Docstring("", parent=obj, parser=parser)
+    obj.docstring.value = text
+    result = normalize_citations(obj)
+    assert result.docstring is not None
+    return result.docstring.value
+
+
 @pytest.mark.parametrize("parser", _PARSERS)
 def test_citation_converts_under_every_parser(parser: str):
     """
@@ -29,7 +39,7 @@ def test_citation_converts_under_every_parser(parser: str):
     Numbered citation conversion is parser-independent.
     """
     source = '.. [1] Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."'
-    expected = '1. Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."'
+    expected = '1. []{#cite-process-1}Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."'
     assert _normalized(source, parser) == expected
 
 
@@ -37,7 +47,7 @@ def test_citation_converts_under_every_parser(parser: str):
 def test_wrapped_citation_joins_onto_one_line(parser: str):
     """Verify an indented continuation joins its citation"""
     source = '.. [1] Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."\n   Communications of the ACM, 4(7), 321.'
-    expected = '1. Hoare, C.A.R. (1961). "Algorithm 64: Quicksort." Communications of the ACM, 4(7), 321.'
+    expected = '1. []{#cite-process-1}Hoare, C.A.R. (1961). "Algorithm 64: Quicksort." Communications of the ACM, 4(7), 321.'
     assert _normalized(source, parser) == expected
 
 
@@ -45,7 +55,7 @@ def test_wrapped_citation_joins_onto_one_line(parser: str):
 def test_bare_url_in_a_citation_becomes_a_link(parser: str):
     """Verify Quarto autolinks bare citation URLs"""
     source = ".. [2] https://en.wikipedia.org/wiki/Arithmetic_mean"
-    expected = "2. <https://en.wikipedia.org/wiki/Arithmetic_mean>"
+    expected = "2. []{#cite-process-2}<https://en.wikipedia.org/wiki/Arithmetic_mean>"
     assert _normalized(source, parser) == expected
 
 
@@ -53,7 +63,8 @@ def test_bare_url_in_a_citation_becomes_a_link(parser: str):
 def test_consecutive_citations_keep_their_numbers(parser: str):
     """Verify consecutive citations retain their labels"""
     source = ".. [1] First source.\n.. [2] Second source."
-    assert _normalized(source, parser) == "1. First source.\n2. Second source."
+    expected = "1. []{#cite-process-1}First source.\n2. []{#cite-process-2}Second source."
+    assert _normalized(source, parser) == expected
 
 
 @pytest.mark.parametrize("parser", _PARSERS)
@@ -98,7 +109,7 @@ def test_indented_citation_keeps_its_indentation(parser: str):
         "x\n"
         "    Something clever.\n"
         "\n"
-        "    1. Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+        "    1. []{#cite-process-1}Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
     )
     assert _normalized(source, parser) == expected
 
@@ -121,8 +132,8 @@ def test_consecutive_indented_citations_stay_separate(parser: str):
         "x\n"
         "    Something clever.\n"
         "\n"
-        "    1. Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
-        "    2. Knuth, D. (1998). The Art of Computer Programming.\n"
+        "    1. []{#cite-process-1}Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+        "    2. []{#cite-process-2}Knuth, D. (1998). The Art of Computer Programming.\n"
     )
     assert _normalized(source, parser) == expected
 
@@ -135,7 +146,7 @@ def test_indented_continuation_joins_when_more_indented_than_its_marker(parser: 
         '       Communications of the ACM, 4(7), 321.\n'
     )
     expected = (
-        '    1. Hoare, C.A.R. (1961). "Algorithm 64: Quicksort." '
+        '    1. []{#cite-process-1}Hoare, C.A.R. (1961). "Algorithm 64: Quicksort." '
         "Communications of the ACM, 4(7), 321.\n"
     )
     assert _normalized(source, parser) == expected
@@ -145,7 +156,7 @@ def test_indented_continuation_joins_when_more_indented_than_its_marker(parser: 
 def test_citation_with_body_on_the_following_line_converts(parser: str):
     """Verify a citation can start its body on the following line"""
     source = ".. [1]\n   Hoare, C. A. R. (1961). Algorithm 64.\n"
-    expected = "1. Hoare, C. A. R. (1961). Algorithm 64.\n"
+    expected = "1. []{#cite-process-1}Hoare, C. A. R. (1961). Algorithm 64.\n"
     assert _normalized(source, parser) == expected
 
 
@@ -169,3 +180,133 @@ def test_indented_citation_does_not_swallow_the_following_text(parser: str):
     assert "Returns" in result
     assert "A description." in result
     assert ".. [" not in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_single_reference_links_both_ways(parser: str):
+    """
+    Verify one reference and its citation link in both directions
+
+    The citation uses a linked caret to return to the single reference.
+    """
+    source = "See [1]_ for details.\n\n.. [1] Hoare, C.A.R. (1961)."
+    expected = (
+        "See [[1]](#cite-process-1){#ref-process-1-1} for details.\n\n"
+        "1. []{#cite-process-1}"
+        '[^](#ref-process-1-1){.gd-linkback-text .gd-linkback-caret role="doc-backlink"} '
+        "Hoare, C.A.R. (1961)."
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_repeated_references_get_lettered_backlinks(parser: str):
+    """
+    Verify repeated references receive distinct backlinks
+
+    The citation uses an inert caret followed by one lettered link for each
+    reference in source order.
+    """
+    source = "Based on [1]_. Refined in [1]_.\n\n.. [1] Hoare, C.A.R. (1961)."
+    result = _normalized(source, parser)
+
+    assert "[[1]](#cite-process-1){#ref-process-1-1}" in result
+    assert "[[1]](#cite-process-1){#ref-process-1-2}" in result
+    assert "[^]{.gd-linkback-text .gd-linkback-caret}" in result
+    assert (
+        '[a](#ref-process-1-1){.gd-linkback-text .gd-linkback-letter '
+        'role="doc-backlink"}'
+    ) in result
+    assert (
+        '[b](#ref-process-1-2){.gd-linkback-text .gd-linkback-letter '
+        'role="doc-backlink"}'
+    ) in result
+    assert "[^](#ref-process-1-1)" not in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_uncited_citation_carries_no_marker(parser: str):
+    """Verify an unreferenced citation has no backlink marker"""
+    source = ".. [1] Hoare, C.A.R. (1961)."
+    assert _normalized(source, parser) == "1. []{#cite-process-1}Hoare, C.A.R. (1961)."
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_forward_reference_links(parser: str):
+    """
+    Verify a reference can precede its citation
+
+    References sections usually follow the prose that cites them.
+    """
+    source = (
+        "Notes\n-----\nBased on [1]_.\n\n"
+        "References\n----------\n.. [1] Smith, J. (2020)."
+    )
+    result = _normalized(source, parser)
+    assert "[[1]](#cite-process-1){#ref-process-1-1}" in result
+    assert '[^](#ref-process-1-1){.gd-linkback-text' in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_unmatched_reference_is_left_alone(parser: str):
+    """
+    Verify an undefined reference remains literal
+
+    Linking it would hide the missing citation.
+    """
+    source = "See [1]_ and [7]_.\n\n.. [1] Hoare, C.A.R. (1961)."
+    result = _normalized(source, parser)
+    assert "[[1]](#cite-process-1){#ref-process-1-1}" in result
+    assert "[7]_" in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_reference_without_any_citation_is_left_alone(parser: str):
+    """Verify references remain unchanged when no citations are defined"""
+    source = "See [1]_ for details."
+    assert _normalized(source, parser) == source
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_anchors_differ_between_objects(parser: str):
+    """
+    Verify separate objects use distinct citation anchors
+
+    A class page can render several members that each define `.. [1]`.
+    Including the object path prevents their anchors from colliding.
+    """
+    source = "See [1]_.\n\n.. [1] Hoare, C.A.R. (1961)."
+    first = _normalized_for("quicksort", source, parser)
+    second = _normalized_for("binary_search", source, parser)
+
+    assert "#cite-quicksort-1" in first
+    assert "#cite-binary-search-1" in second
+    assert "quicksort" not in second
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_dotted_object_path_becomes_a_valid_anchor(parser: str):
+    """
+    Verify dotted object paths produce selector-safe anchors
+
+    Replace dots with hyphens so CSS treats them as text rather than class
+    selectors. The `cite-` prefix also prevents a leading digit.
+    """
+    module = gf.Module("gdtest_long_docs")
+    obj = gf.Function("transform_data", parent=module)
+    obj.docstring = gf.Docstring("", parent=obj, parser=parser)
+    obj.docstring.value = "See [1]_.\n\n.. [1] Smith, J. (2020)."
+    result = normalize_citations(obj)
+    assert result.docstring is not None
+    assert "#cite-gdtest-long-docs-transform-data-1" in result.docstring.value
+
+
+@pytest.mark.parametrize(
+    ("index", "expected"),
+    [(0, "a"), (1, "b"), (25, "z"), (26, "aa"), (27, "ab"), (51, "az"), (52, "ba")],
+)
+def test_occurrence_label_sequence(index: int, expected: str):
+    """Verify backlink labels continue after `z`"""
+    from great_docs._builtin.normalization._citations import _occurrence_label
+
+    assert _occurrence_label(index) == expected

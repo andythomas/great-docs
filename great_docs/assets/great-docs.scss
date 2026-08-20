@@ -50,6 +50,24 @@ a.gdls-code {
    font-size: 0.875em;
 }
 
+// A citation links back with a caret for one reference or an inert caret and one
+// letter per repeated reference. Raise the letters to align with the caret,
+// whose glyph sits high in its em box.
+.gd-linkback-text {
+   text-decoration: none;
+   font-size: 0.8em;
+}
+
+span.gd-linkback-text {
+   color: var(--gd-text-muted);
+}
+
+.gd-linkback-letter {
+   vertical-align: super;
+   font-size: 0.7em;
+   font-style: italic;
+}
+
 // Set headings boldness back to the bootstrap default.
 // quarto changes it for h1, h2, h3!
 h1, .h2, h2, .h2, h3, .h3 {
