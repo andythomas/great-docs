@@ -1125,48 +1125,6 @@ dd > ol > li::marker {
     color: #9ca3af;  /* lighter bullet / number color */
 }
 
-/* API reference section headings (Parameters, Returns, Examples, etc.) */
-/* Fallback sections use `h2` at the top level and `h4` inside members. Style
-   the `doc-section` class at every heading level. */
-:is(h1, h2, h3, h4, h5, h6).doc-section {
-    font-size: 22px;
-    border-bottom: none;
-    padding-bottom: 0;
-}
-
-/* Ensure parameter descriptions are indented within doc sections */
-.doc-section-parameters dd {
-    padding-left: 1.5rem;
-    margin-left: 0;
-}
-
-.doc-section-parameters dd p {
-    margin-left: 0;
-}
-
-/* Place the warning heading above its callout body at every nesting depth. */
-.doc-section-warnings > :is(h1, h2, h3, h4, h5, h6) {
-    color: Crimson;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    border-left: none;
-    border-bottom: none;
-    padding-left: 0;
-}
-
-.doc-section-warnings > :is(h1, h2, h3, h4, h5, h6)::before {
-    content: "⚠️ ";
-}
-
-.doc-section-warnings > p {
-    margin: 0.5rem 0;
-    padding: 0.75rem 1rem;
-    background-color: #FEF2F2;
-    border-left: 4px solid #DC2626;
-    border-radius: 4px;
-    font-size: 0.9rem;
-}
-
 .table td {
     padding-left: 0.5rem;
     text-indent: 0;
@@ -4007,30 +3965,6 @@ body.quarto-dark .parameter-default {
 
 body.quarto-dark .parameter-default-sep {
     color: var(--gd-text-muted);
-}
-
-/* Doc section styling */
-body.quarto-dark .doc-section dt {
-    color: var(--gd-text-primary);
-}
-
-body.quarto-dark .doc-section dd {
-    color: var(--gd-text-primary);
-}
-
-body.quarto-dark .doc-section-parameters dt code {
-    color: var(--gd-text-primary);
-}
-
-/* Warnings section dark mode */
-body.quarto-dark .doc-section-warnings > :is(h1, h2, h3, h4, h5, h6) {
-    color: #FCA5A5;
-}
-
-body.quarto-dark .doc-section-warnings > p {
-    background-color: rgba(220, 38, 38, 0.1);
-    border-left-color: #EF4444;
-    color: var(--gd-text-primary);
 }
 
 /* ==========================================================================

@@ -1226,7 +1226,7 @@ def translate_renderer_headings(html_content):
         "Methods": "methods",
     }
 
-    # ── Translate doc-section / doc-* headings ──────────────────────────
+    # Translate docstring section headings.
     # Matches:  <h2 class="doc-parameters">Parameters</h2>
     #           <h5 class="doc-returns anchored" ...>Returns</h5>
     def _replace_heading(m):
@@ -3164,11 +3164,6 @@ def _prepare_html_for_pandoc(html_file: str) -> tuple[str, str, str | None]:
         flags=re.DOTALL,
     )
 
-    main_html = re.sub(
-        r'<section\s+id="[^"]*"\s+class="[^"]*doc-section[^"]*">\s*',
-        "",
-        main_html,
-    )
     main_html = re.sub(r"</section>\s*", "", main_html)
 
     def _convert_callouts(html):
