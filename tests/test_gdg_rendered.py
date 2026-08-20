@@ -847,16 +847,17 @@ def test_unread_dialect_renders_as_prose():
 @requires_bs4
 def test_docstring_citations_resolve():
     """
-    Verify bibliography citations resolve in docstrings
+    Verify project-bibliography citations resolve in docstrings
 
-    Each `[@citekey]` marker must render as a reference. No RST marker or
-    unresolved citation key may remain.
+    `gdtest_bibliography` cites `[@knuth1984]` from a project bibliography.
+    The marker must render as a reference, with no RST marker or unresolved
+    citation key left in the page.
     """
-    if not _has_rendered_site("gdtest_docstring_references"):
-        pytest.skip("gdtest_docstring_references not rendered")
+    if not _has_rendered_site("gdtest_bibliography"):
+        pytest.skip("gdtest_bibliography not rendered")
 
     pages = [
-        p for p in _ref_dir("gdtest_docstring_references").glob("*.html")
+        p for p in _ref_dir("gdtest_bibliography").glob("*.html")
         if p.name != "index.html"
     ]
     assert pages, "no reference pages were rendered"
@@ -874,6 +875,55 @@ def test_docstring_citations_resolve():
         citations += len(main.select("div#refs, span.citation, a.citation"))
 
     assert citations, "no reference page contains a resolved citation"
+
+
+@requires_bs4
+@pytest.mark.parametrize(
+    "pkg_name",
+    [
+        "gdtest_docstring_references",
+        "gdtest_numpy_rich",
+        "gdtest_long_docs",
+        "gdtest_docstring_combo",
+    ],
+)
+def test_local_citations_render_as_a_list(pkg_name: str):
+    """
+    Verify local numbered citations render as ordered lists
+
+    Each numpy fixture defines citations with `.. [1]` markers. Its rendered
+    pages must contain an ordered list and no literal citation markers.
+    """
+    if not _has_rendered_site(pkg_name):
+        pytest.skip(f"{pkg_name} not rendered")
+
+    pages = [p for p in _ref_dir(pkg_name).glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg_name}: no reference pages were rendered"
+
+    pages_with_lists = []
+    pages_with_hoare = []
+    for html_file in pages:
+        soup = _load_html(html_file)
+        main = soup.select_one("main.content")
+        if main is None:
+            continue
+
+        assert ".. [" not in main.get_text(), (
+            f"{html_file.name}: contains a raw RST citation"
+        )
+        list_items = main.select("ol li")
+        if list_items:
+            pages_with_lists.append(html_file.name)
+        if any("Hoare" in li.get_text() for li in list_items):
+            pages_with_hoare.append(html_file.name)
+
+    assert pages_with_lists, (
+        f"{pkg_name}: no reference page contains a citation list"
+    )
+    if pkg_name == "gdtest_docstring_references":
+        assert pages_with_hoare, (
+            f"{pkg_name}: no citation list names Hoare from the quicksort fixture"
+        )
 
 
 @requires_bs4
@@ -4660,8 +4710,8 @@ def test_md_big_class_method_pages():
         assert '<span class="parameter-' not in content, (
             f"{md_file.name}: leftover classic renderer <span> HTML"
         )
-        assert '<section class="doc-section' not in content, (
-            f"{md_file.name}: leftover fabricated <section> HTML"
+        assert "doc-section doc-section-" not in content, (
+            f"{md_file.name}: leftover fabricated doc-section <section>/heading HTML"
         )
 
 
