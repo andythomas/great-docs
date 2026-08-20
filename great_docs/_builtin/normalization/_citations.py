@@ -40,6 +40,7 @@ def _wrap_url(match: re.Match[str]) -> str:
 _RST_CITATION_REF_RE = re.compile(r"\[(\d+)\]_")
 _NON_ANCHOR_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
+_CITE_REF_CLASS = ".gd-cite-ref"
 _CARET_CLASSES = ".gd-linkback-text .gd-linkback-caret"
 _LETTER_CLASSES = ".gd-linkback-text .gd-linkback-letter"
 
@@ -219,6 +220,9 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
             return match.group(0)
         seen[number] = seen.get(number, 0) + 1
         anchor = f"ref-{anchor_stem}-{number}-{seen[number]}"
-        return f"[[{number}]](#cite-{anchor_stem}-{number}){{#{anchor}}}"
+        return (
+            f"[[{number}]](#cite-{anchor_stem}-{number})"
+            f'{{#{anchor} {_CITE_REF_CLASS} role="doc-noteref"}}'
+        )
 
     return _RST_CITATION_REF_RE.sub(link, "\n".join(result))

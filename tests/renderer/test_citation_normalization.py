@@ -199,7 +199,7 @@ def test_single_reference_links_both_ways(parser: str):
     """
     source = "See [1]_ for details.\n\n.. [1] Hoare, C.A.R. (1961)."
     expected = (
-        "See [[1]](#cite-process-1){#ref-process-1-1} for details.\n\n"
+        'See [[1]](#cite-process-1){#ref-process-1-1 .gd-cite-ref role="doc-noteref"} for details.\n\n'
         "1. []{#cite-process-1}"
         '[^](#ref-process-1-1){.gd-linkback-text .gd-linkback-caret role="doc-backlink"} '
         "Hoare, C.A.R. (1961)."
@@ -218,8 +218,8 @@ def test_repeated_references_get_lettered_backlinks(parser: str):
     source = "Based on [1]_. Refined in [1]_.\n\n.. [1] Hoare, C.A.R. (1961)."
     result = _normalized(source, parser)
 
-    assert "[[1]](#cite-process-1){#ref-process-1-1}" in result
-    assert "[[1]](#cite-process-1){#ref-process-1-2}" in result
+    assert '[[1]](#cite-process-1){#ref-process-1-1 .gd-cite-ref role="doc-noteref"}' in result
+    assert '[[1]](#cite-process-1){#ref-process-1-2 .gd-cite-ref role="doc-noteref"}' in result
     assert "[^]{.gd-linkback-text .gd-linkback-caret}" in result
     assert (
         '[a](#ref-process-1-1){.gd-linkback-text .gd-linkback-letter '
@@ -251,7 +251,7 @@ def test_forward_reference_links(parser: str):
         "References\n----------\n.. [1] Smith, J. (2020)."
     )
     result = _normalized(source, parser)
-    assert "[[1]](#cite-process-1){#ref-process-1-1}" in result
+    assert '[[1]](#cite-process-1){#ref-process-1-1 .gd-cite-ref role="doc-noteref"}' in result
     assert '[^](#ref-process-1-1){.gd-linkback-text' in result
 
 
@@ -264,7 +264,7 @@ def test_unmatched_reference_is_left_alone(parser: str):
     """
     source = "See [1]_ and [7]_.\n\n.. [1] Hoare, C.A.R. (1961)."
     result = _normalized(source, parser)
-    assert "[[1]](#cite-process-1){#ref-process-1-1}" in result
+    assert '[[1]](#cite-process-1){#ref-process-1-1 .gd-cite-ref role="doc-noteref"}' in result
     assert "[7]_" in result
 
 

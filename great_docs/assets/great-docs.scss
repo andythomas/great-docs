@@ -50,6 +50,14 @@ a.gdls-code {
    font-size: 0.875em;
 }
 
+// Render inline citation references above the baseline and smaller than the
+// surrounding prose.
+.gd-cite-ref {
+   vertical-align: super;
+   font-size: 0.75em;
+   text-decoration: none;
+}
+
 // A citation links back with a caret for one reference or an inert caret and one
 // letter per repeated reference. Raise the letters to align with the caret,
 // whose glyph sits high in its em box.
