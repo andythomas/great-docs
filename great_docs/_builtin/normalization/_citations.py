@@ -37,6 +37,8 @@ def _wrap_url(match: re.Match[str]) -> str:
         trailer = url[-1] + trailer
         url = url[:-1]
     return f"<{url}>{trailer}"
+
+
 _RST_CITATION_REF_RE = re.compile(r"\[(\d+)\]_")
 _NON_ANCHOR_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
@@ -156,6 +158,10 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
     back with a caret for one reference or lettered links for several.
     References without matching citations remain literal.
 
+    The citation body becomes a bracketed Markdown span. An unmatched closing
+    bracket can end the span early, detach the anchor from its body, and expose
+    the remaining markup. Authors must escape unmatched brackets.
+
     Duplicate labels are invalid RST. Both definitions reuse the same citation
     ID and backlinks because references are counted by label. A reference in a
     citation body links back to that same in-body reference.
@@ -207,8 +213,9 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
 
         body = _RST_CITATION_URL_RE.sub(_wrap_url, " ".join(parts))
         result.append(
-            f"{indent}{number}. []{{#cite-{anchor_stem}-{number}}}"
-            f"{_backlinks(anchor_stem, number, counts.get(number, 0))}{body}"
+            f"{indent}{number}. "
+            f"{_backlinks(anchor_stem, number, counts.get(number, 0))}"
+            f"[{body}]{{#cite-{anchor_stem}-{number}}}"
         )
         index += 1
 
