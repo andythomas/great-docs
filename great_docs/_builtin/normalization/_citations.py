@@ -12,6 +12,31 @@ if TYPE_CHECKING:
 
 _RST_CITATION_MARKER_RE = re.compile(r"^([ \t]*)\.\.\s+\[(\d+)\](?:[ \t]+(.*))?$", re.MULTILINE)
 _RST_CITATION_URL_RE = re.compile(r'(?<![<"])(https?://\S+)(?![>"])')
+
+
+def _wrap_url(match: re.Match[str]) -> str:
+    """
+    Wrap a detected URL without enclosing trailing punctuation
+
+    URL detection consumes every non-space character, including a parenthesis
+    that closes a surrounding Markdown link. Move only unmatched trailing
+    parentheses outside the angle brackets so balanced URL paths remain intact.
+
+    Parameters
+    ----------
+    match
+        The detected URL.
+
+    Returns
+    -------
+    The angle-bracketed URL followed by any unmatched closing parentheses.
+    """
+    url = match.group(1)
+    trailer = ""
+    while url.endswith(")") and url.count("(") < url.count(")"):
+        trailer = url[-1] + trailer
+        url = url[:-1]
+    return f"<{url}>{trailer}"
 _RST_CITATION_REF_RE = re.compile(r"\[(\d+)\]_")
 _NON_ANCHOR_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
@@ -179,7 +204,7 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
             index += 1
             parts.append(next_line.strip())
 
-        body = _RST_CITATION_URL_RE.sub(r"<\1>", " ".join(parts))
+        body = _RST_CITATION_URL_RE.sub(_wrap_url, " ".join(parts))
         result.append(
             f"{indent}{number}. []{{#cite-{anchor_stem}-{number}}}"
             f"{_backlinks(anchor_stem, number, counts.get(number, 0))}{body}"

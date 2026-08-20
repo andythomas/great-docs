@@ -60,6 +60,14 @@ def test_bare_url_in_a_citation_becomes_a_link(parser: str):
 
 
 @pytest.mark.parametrize("parser", _PARSERS)
+def test_markdown_link_in_a_citation_keeps_its_closing_parenthesis(parser: str):
+    """Verify autolinking preserves a Markdown link's closing parenthesis"""
+    source = ".. [1] Author, [Title](https://example.com/paper) 2020."
+    expected = "1. []{#cite-process-1}Author, [Title](<https://example.com/paper>) 2020."
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
 def test_consecutive_citations_keep_their_numbers(parser: str):
     """Verify consecutive citations retain their labels"""
     source = ".. [1] First source.\n.. [2] Second source."
