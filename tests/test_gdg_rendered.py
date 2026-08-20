@@ -939,6 +939,62 @@ def test_local_citations_render_as_a_list(pkg_name: str):
 
 
 @requires_bs4
+def test_citation_references_resolve_both_ways():
+    """
+    Verify rendered citation links resolve in both directions
+
+    `gdtest_long_docs` defines `.. [1]` and references it twice. Every link must
+    target an anchor on the same page, source markers must disappear, and the
+    repeated references must produce lettered backlinks.
+    """
+    pkg = "gdtest_long_docs"
+    if not _has_rendered_site(pkg):
+        pytest.skip(f"{pkg} not rendered")
+
+    pages = [p for p in _ref_dir(pkg).glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg}: no reference pages were rendered"
+
+    forward = 0
+    backward = 0
+    lettered_pages = []
+    for html_file in pages:
+        soup = _load_html(html_file)
+        main = soup.select_one("main.content")
+        if main is None:
+            continue
+
+        assert not re.search(r"\[\d+\]_", main.get_text()), (
+            f"{html_file.name}: contains an unconverted citation reference"
+        )
+
+        for anchor in main.select('a[href^="#cite-"], a[href^="#ref-"]'):
+            target = anchor["href"].lstrip("#")
+            assert main.select_one(f'[id="{target}"]') is not None, (
+                f"{html_file.name}: citation target {target!r} is missing"
+            )
+            if target.startswith("cite-"):
+                forward += 1
+            else:
+                backward += 1
+
+        carets = main.select("span.gd-linkback-caret")
+        letters = main.select("a.gd-linkback-letter")
+        if carets and len(letters) >= 2:
+            lettered_pages.append(html_file.name)
+            for letter in letters:
+                target = letter["href"].lstrip("#")
+                assert main.select_one(f'[id="{target}"]') is not None, (
+                    f"{html_file.name}: lettered backlink target {target!r} is missing"
+                )
+
+    assert forward, f"{pkg}: no reference links to a citation"
+    assert backward, f"{pkg}: no citation links back to a reference"
+    assert lettered_pages, (
+        f"{pkg}: no page contains lettered backlinks for repeated references"
+    )
+
+
+@requires_bs4
 @pytest.mark.parametrize(
     ("pkg_name", "page_name"),
     [("gdtest_mixed_docs", "Converter.html"), ("gdtest_sphinx", "Timer.html")],

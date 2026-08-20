@@ -81,7 +81,7 @@ SPEC = {
                 (>10,000 elements), the ``"fast"`` mode is recommended.
 
                 The time complexity is O(n) for ``"fast"`` mode and O(n log n)
-                for ``"precise"`` mode.
+                for ``"precise"`` mode, as described in [1]_.
 
                 Warnings
                 --------
