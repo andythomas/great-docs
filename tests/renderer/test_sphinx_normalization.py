@@ -9,6 +9,9 @@ from great_docs._builtin.normalization._sphinx import (
     normalize_sphinx_markup,
 )
 
+_SPHINX_ROLE_NAMES = ("exc", "class", "func", "meth", "attr", "const", "mod", "obj", "data", "type")
+_CALLABLE_RST_ROLES = frozenset({"func", "meth"})
+
 
 def _function(text: str, parser: str) -> gf.Function:
     """Build a function with a docstring parsed in the selected style"""
@@ -73,6 +76,37 @@ def test_sphinx_normalization_repairs_inconsistent_indentation():
     ],
 )
 def test_sphinx_normalization_preserves_existing_code_fences(source: str):
+    obj = _function(source, "sphinx")
+
+    normalize_sphinx_markup(obj)
+
+    assert obj.docstring.value == source
+
+
+@pytest.mark.parametrize("role", _SPHINX_ROLE_NAMES)
+@pytest.mark.parametrize("prefix", ["", "py:"])
+def test_sphinx_role_converts_to_code_span(role: str, prefix: str):
+    obj = _function(f"See :{prefix}{role}:`thing`.", "sphinx")
+
+    normalize_sphinx_markup(obj)
+
+    if role in _CALLABLE_RST_ROLES:
+        assert obj.docstring.value == "See `thing()`."
+    else:
+        assert obj.docstring.value == "See `thing`."
+
+
+@pytest.mark.parametrize("role", sorted(_CALLABLE_RST_ROLES))
+def test_callable_role_does_not_double_parens(role: str):
+    obj = _function(f"See :{role}:`thing()`.", "sphinx")
+
+    normalize_sphinx_markup(obj)
+
+    assert obj.docstring.value == "See `thing()`."
+
+
+def test_non_role_text_is_unchanged():
+    source = "This is regular text with `code`."
     obj = _function(source, "sphinx")
 
     normalize_sphinx_markup(obj)

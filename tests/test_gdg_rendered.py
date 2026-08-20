@@ -799,11 +799,18 @@ def test_no_fabricated_docstring_sections(pkg_name: str):
     Renderer sections use `doc-{slug}` classes. The retired post-render
     conversion used `doc-section`, so that class identifies fabricated
     sections.
+
+    `gdtest_mixed_docs` previously contained fabricated markup and pins the
+    regression. The Sphinx and Google fixtures ensure the other parsers do not
+    acquire it.
     """
     if not _has_rendered_site(pkg_name):
         pytest.skip(f"{pkg_name} not rendered")
 
-    for html_file in _ref_dir(pkg_name).glob("*.html"):
+    pages = list(_ref_dir(pkg_name).glob("*.html"))
+    assert pages, f"{pkg_name}: no reference pages were rendered"
+
+    for html_file in pages:
         soup = _load_html(html_file)
         fabricated = soup.select("[class*=doc-section]")
         assert not fabricated, (
@@ -4653,7 +4660,9 @@ def test_md_big_class_method_pages():
         assert '<span class="parameter-' not in content, (
             f"{md_file.name}: leftover classic renderer <span> HTML"
         )
-        assert '<div class="doc-section' not in content, f"{md_file.name}: leftover <div> HTML"
+        assert '<section class="doc-section' not in content, (
+            f"{md_file.name}: leftover fabricated <section> HTML"
+        )
 
 
 @pytest.mark.dedicated
