@@ -1819,9 +1819,15 @@ def test_sphinx_roles_converted_under_sphinx_parser():
     for role in (":py:exc:", ":func:", ":class:"):
         assert role not in text, f"raw Sphinx role {role!r} survived conversion"
 
+    # The Raises section contains an independent `TimeoutError` annotation.
+    # Limit this check to prose so that annotation cannot hide failed role
+    # conversion.
+    prose = main.select_one("div.doc-text")
+    assert prose is not None, "execute page has no doc-text prose block"
+
     # `schedule` is documented in this fixture, so autolinking can replace its
     # code span with a cross-reference. Accept either rendered form.
-    code_spans = {c.get_text(strip=True) for c in main.select("code, a.gdls-code")}
+    code_spans = {c.get_text(strip=True) for c in prose.select("code, a.gdls-code")}
     assert "TimeoutError" in code_spans, (
         "the :py:exc: role did not render as inline code"
     )
