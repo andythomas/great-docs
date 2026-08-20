@@ -1735,13 +1735,19 @@ def test_landing_page_has_title(pkg_name: str):
         "gdtest_sphinx_mixed_roles",
     ],
 )
-def test_sphinx_roles_stripped(pkg_name: str):
-    """Sphinx cross-reference roles (:func:, :class:, etc.) should be stripped."""
+def test_sphinx_roles_survive_under_numpy_parser(pkg_name: str):
+    """
+    Verify numpy docstrings preserve Sphinx role syntax
+
+    These fixtures contain Sphinx roles but use the numpy parser. At least one
+    rendered page from each fixture must therefore retain literal role text.
+    """
     if not _has_rendered_site(pkg_name):
         pytest.skip(f"{pkg_name} not rendered")
 
-    ref = _ref_dir(pkg_name)
-    for html_file in ref.glob("*.html"):
+    roles = (":func:", ":class:", ":meth:", ":exc:")
+    pages_with_roles = []
+    for html_file in _ref_dir(pkg_name).glob("*.html"):
         if html_file.name == "index.html":
             continue
 
@@ -1750,20 +1756,13 @@ def test_sphinx_roles_stripped(pkg_name: str):
         if main is None:
             continue
 
-        text = main.get_text()
-        for role in (
-            ":func:",
-            ":class:",
-            ":meth:",
-            ":exc:",
-            ":py:func:",
-            ":py:class:",
-            ":py:meth:",
-            ":py:exc:",
-        ):
-            assert role not in text, (
-                f"{html_file.name}: raw Sphinx role {role!r} found in rendered text"
-            )
+        if any(role in main.get_text() for role in roles):
+            pages_with_roles.append(html_file.name)
+
+    assert pages_with_roles, (
+        f"{pkg_name}: no rendered page preserved a Sphinx role; the fixture "
+        f"may contain no roles, or role conversion may have run"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

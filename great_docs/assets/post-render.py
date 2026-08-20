@@ -1192,61 +1192,6 @@ def replace_secondary_nav_title(html_content: str, label_html: str) -> str:
     return _BREADCRUMB_NAV_RE.sub("", new_content)
 
 
-def translate_sphinx_roles(html_content):
-    """
-    Convert Sphinx cross-reference roles into clean HTML.
-
-    The renderer sometimes passes through Sphinx-style roles verbatim. The most common rendered
-    patterns are:
-
-    * `:py:exc:<code>ValueError</code>` ->  `<code>ValueError</code>`
-    * `:class:<code>Foo</code>`         ->  `<code>Foo</code>`
-    * `:func:<code>bar</code>`          ->  `<code>bar()</code>`
-    * `:func:`bar``  (inside `<pre>`)   ->  `<code>bar()</code>`
-
-    For *function* and *method* roles the name gets trailing `()` so the reader can tell it is
-    callable.
-    """
-
-    _CALLABLE_ROLES = {"func", "meth"}
-
-    # Pattern 1: role prefix followed by <code>…</code>
-    # e.g.  :py:class:<code>datetime.datetime</code>
-    #       :func:<code>get_object</code>
-    def _replace_code_role(m):
-        role = m.group("role")
-        inner = m.group("inner")
-        if role in _CALLABLE_ROLES and not inner.endswith("()"):
-            inner += "()"
-        return f"<code>{inner}</code>"
-
-    html_content = re.sub(
-        r":(?:py:)?(?P<role>exc|class|func|meth|attr|const|mod|obj|data|type):"
-        r"<code>(?P<inner>[^<]+)</code>",
-        _replace_code_role,
-        html_content,
-    )
-
-    # Pattern 2: role with backtick-delimited text (inside <pre><code> blocks
-    # or other contexts where markdown didn't convert backticks to <code>)
-    # e.g., :func:`get_zonefile_instance`
-    def _replace_backtick_role(m):
-        role = m.group("role")
-        inner = m.group("inner")
-        if role in _CALLABLE_ROLES and not inner.endswith("()"):
-            inner += "()"
-        return f"<code>{inner}</code>"
-
-    html_content = re.sub(
-        r":(?:py:)?(?P<role>exc|class|func|meth|attr|const|mod|obj|data|type):"
-        r"`(?P<inner>[^`]+)`",
-        _replace_backtick_role,
-        html_content,
-    )
-
-    return html_content
-
-
 def translate_renderer_headings(html_content):
     """
     Translate section headings and labels produced by the renderer.
@@ -1576,9 +1521,6 @@ for html_file in html_files:
     with open(html_file, "r", encoding="utf-8") as file:
         content = file.read()
 
-    # Translate Sphinx cross-reference roles (e.g. :py:exc:`ValueError`)
-    content = translate_sphinx_roles(content)
-
     # Translate renderer-rendered headings and Usage/Source labels
     content = translate_renderer_headings(content)
 
@@ -1784,9 +1726,6 @@ if os.path.exists(index_file):
     )
     nav_replacement = r"\1\2\3"
     content = re.sub(nav_pattern, nav_replacement, content, flags=re.DOTALL)
-
-    # Clean up Sphinx cross-reference roles in index descriptions
-    content = translate_sphinx_roles(content)
 
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
