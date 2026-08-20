@@ -788,77 +788,53 @@ def test_subtitle_only_section_heading_in_llms_outputs():
 
 
 @requires_bs4
-def test_fallback_docstring_section_nested_in_member_renders_as_h4():
+@pytest.mark.parametrize(
+    "pkg_name",
+    ["gdtest_mixed_docs", "gdtest_sphinx", "gdtest_google"],
+)
+def test_no_fabricated_docstring_sections(pkg_name: str):
     """
-    Verify that fallback sections follow member nesting
+    Verify docstring sections use only renderer markup
 
-    `Converter.is_valid` renders at `h3`, so its fallback Parameters and
-    Returns sections must render at `h4`. The top-level `validate` function's
-    fallback sections remain at `h2`.
+    Renderer sections use `doc-{slug}` classes. The retired post-render
+    conversion used `doc-section`, so that class identifies fabricated
+    sections.
     """
-    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
-    if not converter.exists():
-        pytest.skip("No Converter page for gdtest_mixed_docs")
+    if not _has_rendered_site(pkg_name):
+        pytest.skip(f"{pkg_name} not rendered")
 
-    soup = _load_html(converter)
-
-    is_valid_section = soup.select_one("section#is_valid")
-    assert is_valid_section is not None, "is_valid member section is missing"
-    assert is_valid_section.get("class") and "level3" in is_valid_section["class"], (
-        "is_valid member section is not level3"
-    )
-
-    fallback_headings = is_valid_section.select(
-        "section.doc-section h1, "
-        "section.doc-section h2, section.doc-section h3, section.doc-section h4"
-    )
-    assert fallback_headings, "is_valid has no fallback sections to check"
-    for heading in fallback_headings:
-        assert heading.name == "h4", (
-            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
-            f"inside is_valid, found {heading.name}"
+    for html_file in _ref_dir(pkg_name).glob("*.html"):
+        soup = _load_html(html_file)
+        fabricated = soup.select("[class*=doc-section]")
+        assert not fabricated, (
+            f"{html_file.name}: found {len(fabricated)} fabricated "
+            f"doc-section element(s)"
         )
-
-    validate_page = _ref_dir("gdtest_mixed_docs") / "validate.html"
-    if validate_page.exists():
-        validate_soup = _load_html(validate_page)
-        top_level_headings = validate_soup.select("section.doc-section h2")
-        assert top_level_headings, "validate has no top-level h2 fallback sections"
 
 
 @requires_bs4
-def test_chained_fallback_translators_stay_at_h4_in_member():
+def test_unread_dialect_renders_as_prose():
     """
-    Verify that chained fallback sections remain nested
+    Verify unsupported docstring syntax remains prose
 
-    `Converter.merge` triggers field and bold-section fallbacks in sequence.
-    The first emits an `h4`; the second must treat that heading as member
-    context and emit another `h4`.
+    `Converter.merge` contains Sphinx fields and a bold pseudo-heading, but the
+    fixture uses the numpy parser. Neither form is valid for that parser, so
+    both must remain plain prose.
     """
     converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
     if not converter.exists():
         pytest.skip("No Converter page for gdtest_mixed_docs")
 
     soup = _load_html(converter)
-
     merge_section = soup.select_one("section#merge")
     assert merge_section is not None, "merge member section is missing"
-    assert merge_section.get("class") and "level3" in merge_section["class"], (
-        "merge member section is not level3"
-    )
 
-    fallback_headings = merge_section.select(
-        "section.doc-section h1, section.doc-section h2, "
-        "section.doc-section h3, section.doc-section h4"
+    assert not merge_section.select("[class*=doc-section]"), (
+        "merge contains fabricated doc-section markup"
     )
-    assert fallback_headings, "merge has no fallback sections to check"
-    for heading in fallback_headings:
-        assert heading.name == "h4", (
-            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
-            f"inside merge, found {heading.name}"
-        )
-    section_names = {h.get_text(strip=True) for h in fallback_headings}
-    assert "Notes" in section_names, "merge's chained Notes section is missing"
+    assert "Converter whose settings to copy." in merge_section.get_text(), (
+        "merge's unsupported Sphinx field disappeared instead of remaining prose"
+    )
 
 
 @requires_bs4
