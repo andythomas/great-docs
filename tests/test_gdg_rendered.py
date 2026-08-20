@@ -97,6 +97,17 @@ def _has_rendered_site(pkg_name: str) -> bool:
     return _site_dir(pkg_name).is_dir()
 
 
+_CITATION_AUTHOR_RE = re.compile(r"^\s*\.\.\s+\[1\]\s+([A-Za-z]+)", re.MULTILINE)
+
+
+def _first_citation_author(pkg_name: str) -> str:
+    """Return the author surname from a fixture's first `.. [1]` citation"""
+    spec_path = _TEST_PACKAGES_DIR / "synthetic" / "specs" / f"{pkg_name}.py"
+    match = _CITATION_AUTHOR_RE.search(spec_path.read_text(encoding="utf-8"))
+    assert match, f"{pkg_name}: fixture source contains no `.. [1]` citation"
+    return match.group(1)
+
+
 def _spec_file_exists(name: str) -> bool:
     """Check whether the spec module exists on disk."""
     return (_TEST_PACKAGES_DIR / "synthetic" / "specs" / f"{name}.py").exists()
@@ -891,8 +902,9 @@ def test_local_citations_render_as_a_list(pkg_name: str):
     """
     Verify local numbered citations render as ordered lists
 
-    Each numpy fixture defines citations with `.. [1]` markers. Its rendered
-    pages must contain an ordered list and no literal citation markers.
+    Each numpy fixture defines numbered citations. Read its expected author
+    surname from the fixture source so unrelated ordered lists cannot satisfy
+    the test.
     """
     if not _has_rendered_site(pkg_name):
         pytest.skip(f"{pkg_name} not rendered")
@@ -900,8 +912,9 @@ def test_local_citations_render_as_a_list(pkg_name: str):
     pages = [p for p in _ref_dir(pkg_name).glob("*.html") if p.name != "index.html"]
     assert pages, f"{pkg_name}: no reference pages were rendered"
 
+    expected_author = _first_citation_author(pkg_name)
     pages_with_lists = []
-    pages_with_hoare = []
+    pages_with_author = []
     for html_file in pages:
         soup = _load_html(html_file)
         main = soup.select_one("main.content")
@@ -914,16 +927,15 @@ def test_local_citations_render_as_a_list(pkg_name: str):
         list_items = main.select("ol li")
         if list_items:
             pages_with_lists.append(html_file.name)
-        if any("Hoare" in li.get_text() for li in list_items):
-            pages_with_hoare.append(html_file.name)
+        if any(expected_author in li.get_text() for li in list_items):
+            pages_with_author.append(html_file.name)
 
     assert pages_with_lists, (
         f"{pkg_name}: no reference page contains a citation list"
     )
-    if pkg_name == "gdtest_docstring_references":
-        assert pages_with_hoare, (
-            f"{pkg_name}: no citation list names Hoare from the quicksort fixture"
-        )
+    assert pages_with_author, (
+        f"{pkg_name}: no citation list contains expected author {expected_author}"
+    )
 
 
 @requires_bs4

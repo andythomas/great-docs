@@ -1,16 +1,17 @@
 import griffe as gf
 import pytest
 
+from great_docs._builtin.normalization._citations import _convert_rst_citations
 from great_docs._builtin.normalization._sphinx import (
-    _convert_rst_citations,
+    _CALLABLE_RST_ROLES,
+    _SPHINX_ROLE_NAMES,
     _convert_rst_grid_tables,
     _convert_rst_simple_tables,
     _smart_dedent,
     normalize_sphinx_markup,
 )
 
-_SPHINX_ROLE_NAMES = ("exc", "class", "func", "meth", "attr", "const", "mod", "obj", "data", "type")
-_CALLABLE_RST_ROLES = frozenset({"func", "meth"})
+_SPHINX_ROLE_NAMES = tuple(_SPHINX_ROLE_NAMES.split("|"))
 
 
 def _function(text: str, parser: str) -> gf.Function:
