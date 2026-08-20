@@ -79,3 +79,93 @@ def test_docstringless_object_is_returned_unchanged():
     """Verify an object without a docstring remains unchanged"""
     obj = gf.Function("process")
     assert normalize_citations(obj) is obj
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_indented_citation_keeps_its_indentation(parser: str):
+    """Verify nested citations retain their indentation"""
+    source = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    .. [1] Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+    )
+    expected = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    1. Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_consecutive_indented_citations_stay_separate(parser: str):
+    """Verify adjacent nested citations remain separate"""
+    source = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    .. [1] Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+        "    .. [2] Knuth, D. (1998). The Art of Computer Programming.\n"
+    )
+    expected = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    1. Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+        "    2. Knuth, D. (1998). The Art of Computer Programming.\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_indented_continuation_joins_when_more_indented_than_its_marker(parser: str):
+    """Verify a nested continuation joins only its citation"""
+    source = (
+        "    .. [1] Hoare, C.A.R. (1961). \"Algorithm 64: Quicksort.\"\n"
+        '       Communications of the ACM, 4(7), 321.\n'
+    )
+    expected = (
+        '    1. Hoare, C.A.R. (1961). "Algorithm 64: Quicksort." '
+        "Communications of the ACM, 4(7), 321.\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_citation_with_body_on_the_following_line_converts(parser: str):
+    """Verify a citation can start its body on the following line"""
+    source = ".. [1]\n   Hoare, C. A. R. (1961). Algorithm 64.\n"
+    expected = "1. Hoare, C. A. R. (1961). Algorithm 64.\n"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_indented_citation_does_not_swallow_the_following_text(parser: str):
+    """Verify a nested citation preserves the following section"""
+    source = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    .. [1] Hoare, C. A. R. (1961). Algorithm 64: Quicksort.\n"
+        "\n"
+        "Returns\n"
+        "-------\n"
+        "int\n"
+        "    A description.\n"
+    )
+    result = _normalized(source, parser)
+    assert "Returns" in result
+    assert "A description." in result
+    assert ".. [" not in result
