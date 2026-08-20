@@ -15,8 +15,6 @@ _RST_CODE_BLOCK_RE = re.compile(
     re.MULTILINE,
 )
 _RST_INLINE_MATH_RE = re.compile(r":math:`([^`]+)`")
-_RST_CITATION_RE = re.compile(r"^[ \t]*\.\.\s+\[(\d+)\]\s+", re.MULTILINE)
-_RST_CITATION_URL_RE = re.compile(r'(?<![<"])(https?://\S+)(?![>"])')
 _RST_SIMPLE_TABLE_SEPARATOR_RE = re.compile(r"^=+(\s+=+)+\s*$")
 _RST_SIMPLE_TABLE_SECOND_COLUMN_RE = re.compile(r"\s+(=+)")
 _RST_SIMPLE_TABLE_COLUMN_RE = re.compile(r"=+")
@@ -54,7 +52,6 @@ def normalize_sphinx_markup(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     text = _convert_sphinx_roles(text)
     text = _convert_rst_simple_tables(text)
     text = _convert_rst_grid_tables(text)
-    text = _convert_rst_citations(text)
     docstring.value = text
     return obj
 
@@ -107,32 +104,6 @@ def _convert_sphinx_roles(text: str) -> str:
         return f"`{target}`"
 
     return _SPHINX_ROLE_RE.sub(replace, text)
-
-
-def _convert_rst_citations(text: str) -> str:
-    """Convert RST citation markers to numbered Markdown list items"""
-    if not _RST_CITATION_RE.search(text):
-        return text
-
-    lines = text.split("\n")
-    result: list[str] = []
-    index = 0
-    while index < len(lines):
-        match = _RST_CITATION_RE.match(lines[index])
-        if match is None:
-            result.append(lines[index])
-            index += 1
-            continue
-
-        body = lines[index][match.end() :]
-        while index + 1 < len(lines) and lines[index + 1] and lines[index + 1][0] in (" ", "\t"):
-            index += 1
-            body += " " + lines[index].strip()
-        body = _RST_CITATION_URL_RE.sub(r"<\1>", body.strip())
-        result.append(f"{match.group(1)}. {body}")
-        index += 1
-
-    return "\n".join(result)
 
 
 def _markdown_table(header: list[str], rows: list[list[str]]) -> str:

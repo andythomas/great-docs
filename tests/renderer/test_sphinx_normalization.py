@@ -38,7 +38,6 @@ def _function(text: str, parser: str) -> gf.Function:
             "+------+------+\n| A    | B    |\n+======+======+\n| 1    | 2    |\n+------+------+",
             "| A | B |",
         ),
-        (".. [1] Author. https://example.com", "1. Author. <https://example.com>"),
     ],
 )
 def test_sphinx_markup_is_normalized(source: str, expected: str):
