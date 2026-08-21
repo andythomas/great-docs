@@ -515,7 +515,8 @@ content as the optional description.
 
 ### Sphinx Compatibility
 
-Great Docs also accepts the equivalent Sphinx/RST forms:
+With `parser: sphinx`, Great Docs also recognises these equivalent reStructuredText
+directives:
 
 ```rst
 .. versionadded:: 2.0
@@ -527,8 +528,8 @@ Great Docs also accepts the equivalent Sphinx/RST forms:
 .. warning:: This operation modifies the input.
 ```
 
-Both syntaxes produce the same callouts. Use Sphinx syntax when the same docstrings must work with
-both Great Docs and Sphinx; otherwise, prefer Great Docs `%` directives.
+Both forms produce the same callouts. Use `parser: sphinx` when docstrings must build
+with both Great Docs and Sphinx. Otherwise, use Great Docs `%` directives.
 
 ### Sphinx Cross-Reference Roles
 

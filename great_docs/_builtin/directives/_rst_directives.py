@@ -33,6 +33,11 @@ def add_rst_directives(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     """
     Replace RST directives in an object's docstring value with Quarto markup
 
+    Convert every supported directive in Sphinx docstrings. For NumPy and Google
+    docstrings, continue to convert callout and version directives so existing
+    docstrings retain their rendered output. `%` directives are the documented
+    parser-independent form.
+
     Parameters
     ----------
     obj

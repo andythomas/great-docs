@@ -152,10 +152,9 @@ Great Docs recognizes these parser-independent directives:
 - Callouts: `%note`, `%warning`, `%caution`, `%danger`, `%important`, `%tip`, and `%hint`
 - Version notices: `%versionadded`, `%versionchanged`, and `%deprecated`
 
-Sphinx-style `.. name::` forms provide separate compatibility syntax. Callout and version
-directives and numbered `.. [1]` citation markers work with every parser. Other RST
-directives and inline cross-reference roles such as `` :py:exc:`ValueError` `` require
-`parser: sphinx`.
+Numbered `.. [1]` citation markers work with every parser. Use `parser: sphinx` for
+reStructuredText directives and inline cross-reference roles such as
+`` :py:exc:`ValueError` ``.
 
 Any other `%`-prefixed token, such as `%internal`, is flagged as unknown. If you see a false
 positive, check for typos in the directive name.

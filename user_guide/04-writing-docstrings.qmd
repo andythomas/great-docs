@@ -593,10 +593,6 @@ Great Docs supports `%` directives for callouts and API-reference behaviour unde
 docstring parser. For example, `%versionadded 2.0` adds a version annotation, and
 `%warning` adds a warning callout.
 
-Equivalent RST callout and version directives, including `.. warning::` and
-`.. versionadded:: 2.0`, also work with every parser. Use them when the docstrings must
-also build with Sphinx.
-
 Numbered citations also work with every parser. Define one in a References section with
 `.. [1]`; Great Docs renders it as an ordered-list item. Refer to it from prose in the
 same docstring with `[1]_`. The reference links to the citation, and the citation links

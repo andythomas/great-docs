@@ -166,7 +166,5 @@ def encode(data: bytes) -> str:
 ## Docstrings That Do Not Render Well
 
 Some patterns render poorly. Keep summary lines short enough for the sidebar. Use
-reStructuredText field lists and roles, such as `:param:` and
-`` :py:exc:`ValueError` ``, only with `parser: sphinx`. RST callouts such as
-`.. note::` work with every parser. Document every parameter if you document any
-of them.
+`parser: sphinx` for reStructuredText field lists and roles such as `:param:` and
+`` :py:exc:`ValueError` ``. If you document one parameter, document them all.
