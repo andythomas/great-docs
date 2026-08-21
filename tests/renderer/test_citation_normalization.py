@@ -1,7 +1,7 @@
 import griffe as gf
 import pytest
 
-from great_docs._builtin.normalization._citations import normalize_citations
+from great_docs._builtin.normalization._citations import normalize_citations, _protected_lines, _live_reference_matches
 
 _PARSERS = ("numpy", "google", "sphinx")
 
@@ -384,3 +384,179 @@ def test_occurrence_label_sequence(index: int, expected: str):
     from great_docs._builtin.normalization._citations import _occurrence_label
 
     assert _occurrence_label(index) == expected
+
+
+def test_fenced_block_and_delimiters_remain_literal():
+    """Mark both fence delimiters and their content as literal code"""
+    lines = ["before", "```python", "code", "```", "after"]
+    assert _protected_lines(lines) == [False, True, True, True, False]
+
+
+def test_tilde_fenced_block_remains_literal():
+    """Recognise tilde delimiters as a fenced code block"""
+    lines = ["~~~", "code", "~~~", "after"]
+    assert _protected_lines(lines) == [True, True, True, False]
+
+
+def test_shorter_delimiter_does_not_close_longer_fence():
+    """Keep a fence open until a delimiter is at least as long as its opener"""
+    lines = ["````", "```", "code", "```", "````", "after"]
+    assert _protected_lines(lines) == [True, True, True, True, True, False]
+
+
+def test_info_string_opens_fence():
+    """Open a fence when its delimiter includes an info string"""
+    lines = ["```python", "code"]
+    assert _protected_lines(lines) == [True, True]
+
+
+def test_unfenced_doctest_prompts_remain_literal():
+    """Mark doctest prompts and continuations as code, but not their output"""
+    lines = [">>> value = 1", "... value", "1", ">>>", "prose"]
+    assert _protected_lines(lines) == [True, True, False, True, False]
+
+
+def test_prose_references_are_found():
+    """Return citation references that occur in prose"""
+    matches = _live_reference_matches("See [1]_ and [2]_.")
+    assert [match.group(1) for match in matches] == ["1", "2"]
+
+
+def test_single_backtick_span_excludes_reference():
+    """Ignore a reference inside a single-backtick code span"""
+    assert _live_reference_matches("Use `[1]_` to cite.") == []
+
+
+def test_rst_literal_excludes_reference():
+    """Ignore a reference inside a double-backtick RST literal"""
+    assert _live_reference_matches("Use ``[1]_`` to cite.") == []
+
+
+def test_inline_code_excludes_only_enclosed_reference():
+    """Keep a neighbouring prose reference outside the protected span"""
+    matches = _live_reference_matches("Show `[1]_`, then cite [2]_.")
+    assert [match.group(1) for match in matches] == ["2"]
+
+
+def test_unpaired_backtick_preserves_reference():
+    """Treat a reference after an unmatched backtick as prose"""
+    matches = _live_reference_matches("An unmatched ` precedes [1]_.")
+    assert [match.group(1) for match in matches] == ["1"]
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_fenced_definition_remains_literal(parser: str):
+    """Preserve a fenced definition while converting a prose definition"""
+    source = (
+        "Citation syntax:\n"
+        "\n"
+        "```\n"
+        ".. [1] Author. Title.\n"
+        "```\n"
+        "\n"
+        "See [1]_.\n"
+        "\n"
+        ".. [1] Author. Title."
+    )
+    result = _normalized(source, parser)
+    assert "```\n.. [1] Author. Title.\n```" in result
+    assert result.count("{#cite-process-1}") == 1
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_fenced_reference_is_excluded_from_backlink_count(parser: str):
+    """
+    Count only prose references when generating backlinks
+
+    One prose reference produces a linked caret. Counting the fenced reference
+    would instead produce two lettered backlinks.
+    """
+    source = "```\nSee [1]_.\n```\n\nSee [1]_.\n\n.. [1] Author. Title."
+    result = _normalized(source, parser)
+    assert "```\nSee [1]_.\n```" in result
+    assert ".gd-linkback-caret" in result
+    assert ".gd-linkback-letter" not in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_rst_literal_reference_is_excluded_from_backlink_count(parser: str):
+    """Exclude an RST literal from backlink generation"""
+    source = "Cite with ``[1]_``.\n\nSee [1]_.\n\n.. [1] Author. Title."
+    result = _normalized(source, parser)
+    assert "``[1]_``" in result
+    assert ".gd-linkback-letter" not in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_doctest_prompt_keeps_its_reference_literal(parser: str):
+    """Preserve citation syntax in an unfenced doctest prompt"""
+    source = ">>> cite('[1]_')\n\n.. [1] Author. Title."
+    result = _normalized(source, parser)
+    assert ">>> cite('[1]_')" in result
+    assert result.endswith("1. [Author. Title.]{#cite-process-1}")
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_fenced_citation_example_is_unchanged(parser: str):
+    """Return a fenced citation example unchanged"""
+    source = "Citation syntax:\n\n```\n.. [1] Author. Title.\n\nSee [1]_.\n```"
+    assert _normalized(source, parser) == source
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_fenced_block_after_citation_remains_literal(parser: str):
+    """Keep a following fenced block outside the converted citation body"""
+    source = ".. [1] Author. Title.\n\n```\n   indented code\n```"
+    result = _normalized(source, parser)
+    assert result == "1. [Author. Title.]{#cite-process-1}\n\n```\n   indented code\n```"
+
+
+def test_tilde_section_underline_is_not_a_fence():
+    """Keep a tilde RST section underline in prose"""
+    lines = ["Details", "~~~~~~~", "", "See [1]_ here."]
+    assert _protected_lines(lines) == [False, False, False, False]
+
+
+def test_backtick_section_underline_is_not_a_fence():
+    """Keep a backtick RST section underline in prose"""
+    lines = ["Details", "```````", "", "See [1]_ here."]
+    assert _protected_lines(lines) == [False, False, False, False]
+
+
+def test_info_string_opens_fence_after_short_text():
+    """Open a fence with an info string after shorter prose"""
+    lines = ["Hi", "```python", "code", "```", "after"]
+    assert _protected_lines(lines) == [False, True, True, True, False]
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_tilde_section_underline_allows_later_conversion(parser: str):
+    """Continue citation conversion after a tilde RST section underline"""
+    source = "Details\n~~~~~~~\n\nSee [1]_ here.\n\n.. [1] Smith."
+    result = _normalized(source, parser)
+    assert '[^1^](#cite-process-1)' in result
+    assert "{#cite-process-1}" in result
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_backtick_section_underline_allows_later_conversion(parser: str):
+    """Continue citation conversion after a backtick RST section underline"""
+    source = "Details\n```````\n\nSee [1]_ here.\n\n.. [1] Smith."
+    result = _normalized(source, parser)
+    assert '[^1^](#cite-process-1)' in result
+    assert "{#cite-process-1}" in result
+
+
+def test_leading_inline_code_span_does_not_open_fence():
+    """Do not interpret a leading inline code span as a fence"""
+    lines = ["```yaml``` is an inline span.", "See [1]_ here."]
+    assert _protected_lines(lines) == [False, False]
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_leading_inline_code_span_allows_later_conversion(parser: str):
+    """Continue citation conversion after a leading inline code span"""
+    source = "```yaml``` is an inline span.\n\nSee [1]_ here.\n\n.. [1] Smith."
+    result = _normalized(source, parser)
+    assert '[^1^](#cite-process-1)' in result
+    assert "{#cite-process-1}" in result
