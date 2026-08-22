@@ -8,8 +8,7 @@ Focus: Exercise four titled sections and one subtitled section.
 SPEC = {
     "name": "gdtest_ref_sectioned",
     "description": (
-        "Four titled reference sections with two functions each, plus one "
-        "subtitled section."
+        "Four titled reference sections with two functions each, plus one subtitled section."
     ),
     "dimensions": ["P5"],
     "pyproject_toml": {

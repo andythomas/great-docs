@@ -567,8 +567,12 @@ def build_all(
 
             if state is not None and run_id is not None:
                 record_build(
-                    state, name, run_id=run_id, status=status,
-                    elapsed=elapsed, error=result.get("error"),
+                    state,
+                    name,
+                    run_id=run_id,
+                    status=status,
+                    elapsed=elapsed,
+                    error=result.get("error"),
                 )
             results.append(result)
     else:
@@ -602,8 +606,11 @@ def build_all(
                 result = future.result()
                 if state is not None and run_id is not None:
                     record_build(
-                        state, result["name"], run_id=run_id,
-                        status=result["status"], elapsed=result["elapsed_s"],
+                        state,
+                        result["name"],
+                        run_id=run_id,
+                        status=result["status"],
+                        elapsed=result["elapsed_s"],
                         error=result.get("error"),
                     )
                 results.append(result)
