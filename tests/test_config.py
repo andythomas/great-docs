@@ -40,6 +40,7 @@ class TestConfigInit:
 class TestConfigIsolation:
     def test_mutation_does_not_leak_into_defaults(self, tmp_project: Path):
         from great_docs.config import DEFAULT_CONFIG
+
         cfg = Config(tmp_project)
         cfg._config["changelog"]["max_releases"] = 999
         assert DEFAULT_CONFIG["changelog"]["max_releases"] == 50
@@ -693,15 +694,11 @@ class TestAnnouncement:
         assert cfg.announcement["position"] == "above-navbar"
 
     def test_position_below_navbar(self, tmp_project: Path):
-        cfg = _make_config(
-            tmp_project, "announcement:\n  content: Hi\n  position: below-navbar\n"
-        )
+        cfg = _make_config(tmp_project, "announcement:\n  content: Hi\n  position: below-navbar\n")
         assert cfg.announcement["position"] == "below-navbar"
 
     def test_position_invalid_falls_back_to_above(self, tmp_project: Path):
-        cfg = _make_config(
-            tmp_project, "announcement:\n  content: Hi\n  position: sideways\n"
-        )
+        cfg = _make_config(tmp_project, "announcement:\n  content: Hi\n  position: sideways\n")
         assert cfg.announcement["position"] == "above-navbar"
 
     def test_dict_empty_content_returns_none(self, tmp_project: Path):
@@ -1108,7 +1105,11 @@ class TestLogoCanonical:
 
     def test_string_shorthand(self, tmp_path: Path):
         cfg = _make_config(tmp_path, "logo: assets/logo.svg\n")
-        assert cfg.logo == {"light": "assets/logo.svg", "dark": "assets/logo.svg", "show_title": False}
+        assert cfg.logo == {
+            "light": "assets/logo.svg",
+            "dark": "assets/logo.svg",
+            "show_title": False,
+        }
 
     def test_dict_show_title(self, tmp_path: Path):
         cfg = _make_config(tmp_path, "logo:\n  light: a.svg\n  show_title: true\n")
@@ -1457,7 +1458,7 @@ class TestSeoShorthandNormalization:
         cfg = _make_config(tmp_path, "seo:\n  sitemap: true\n")
         assert cfg["seo.sitemap.enabled"] is True
         assert cfg.sitemap_enabled is True
-        assert cfg.sitemap_changefreq["homepage"] == "weekly"   # full default dict, no KeyError
+        assert cfg.sitemap_changefreq["homepage"] == "weekly"  # full default dict, no KeyError
         assert cfg.sitemap_priority["homepage"] == 1.0
 
     def test_sitemap_false_expands(self, tmp_path: Path):
@@ -1468,7 +1469,7 @@ class TestSeoShorthandNormalization:
     def test_robots_true_expands(self, tmp_path: Path):
         cfg = _make_config(tmp_path, "seo:\n  robots: true\n")
         assert cfg["seo.robots.enabled"] is True
-        assert cfg.robots_disallow == []          # sub-defaults survive
+        assert cfg.robots_disallow == []  # sub-defaults survive
 
     def test_top_level_seo_false_expands(self, tmp_path: Path):
         cfg = _make_config(tmp_path, "seo: false\n")
@@ -1477,7 +1478,7 @@ class TestSeoShorthandNormalization:
     def test_top_level_seo_true_expands(self, tmp_path: Path):
         cfg = _make_config(tmp_path, "seo: true\n")
         assert cfg.seo_enabled is True
-        assert cfg.sitemap_enabled is True        # sub-defaults survive
+        assert cfg.sitemap_enabled is True  # sub-defaults survive
 
     def test_top_level_seo_null_keeps_defaults(self, tmp_path: Path):
         # `seo:` with nothing under it (an empty or commented-out block) parses
@@ -1509,10 +1510,7 @@ class TestNullMeansUnspecified:
         if isinstance(v, dict) and k not in Config._NULL_DISABLES
     )
     _SUB_KEYS = sorted(
-        (k, sub)
-        for k in _KEYS
-        for sub, v in DEFAULT_CONFIG[k].items()
-        if isinstance(v, dict)
+        (k, sub) for k in _KEYS for sub, v in DEFAULT_CONFIG[k].items() if isinstance(v, dict)
     )
 
     @pytest.mark.parametrize("key", _KEYS)
@@ -1593,10 +1591,21 @@ class TestSingleSourceInvariant:
         cfg = Config(tmp_project)
         # Properties that are a direct top-level passthrough must equal the YAML value.
         direct = [
-            "parser", "dynamic", "jupyter", "language", "date_format",
-            "github_style", "homepage", "attribution",
-            "package_info_page", "back_to_top", "keyboard_nav", "dark_mode_toggle",
-            "show_dates", "show_author", "show_security",
+            "parser",
+            "dynamic",
+            "jupyter",
+            "language",
+            "date_format",
+            "github_style",
+            "homepage",
+            "attribution",
+            "package_info_page",
+            "back_to_top",
+            "keyboard_nav",
+            "dark_mode_toggle",
+            "show_dates",
+            "show_author",
+            "show_security",
         ]
         for name in direct:
             assert getattr(cfg, name) == DEFAULT_CONFIG[name], name
@@ -1641,6 +1650,5 @@ class TestSingleSourceInvariant:
                     undeclared.append(path)
                     break
         assert not undeclared, (
-            "config.py reads keys that great-docs.default.yml does not declare: "
-            f"{undeclared}"
+            f"config.py reads keys that great-docs.default.yml does not declare: {undeclared}"
         )

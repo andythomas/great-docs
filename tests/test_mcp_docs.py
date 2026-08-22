@@ -907,3 +907,82 @@ class TestMcpRunnerRun:
             asyncio.run(_run("fake.module", None))
 
         mock_server.run_stdio_async.assert_called_once()
+
+    def test_explicit_server_var_used(self):
+        from great_docs._mcp_runner import _run
+
+        mock_server = AsyncMock()
+        mock_server.run_stdio_async = AsyncMock()
+        type(mock_server).__name__ = "FastMCP"
+        type(mock_server).__module__ = "mcp.fastmcp"
+
+        mod = types.ModuleType("fake")
+        mod.named_server = mock_server
+
+        with patch("great_docs._mcp_runner.importlib.import_module", return_value=mod):
+            asyncio.run(_run("fake.module", "named_server"))
+
+        mock_server.run_stdio_async.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _introspect_via_protocol exception path
+# ---------------------------------------------------------------------------
+
+
+class TestIntrospectViaProtocol:
+    def test_returns_none_when_collect_raises(self):
+        from great_docs._mcp_docs import _introspect_via_protocol
+
+        async def _bad_coro(*args, **kwargs):
+            raise RuntimeError("connection refused")
+
+        with patch("great_docs._mcp_docs._collect_over_protocol", _bad_coro):
+            result = _introspect_via_protocol("fake.module", None)
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# generate_mcp_manifest — resources and prompts sections
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateMcpManifestExtended:
+    def _server_info(self, **overrides) -> dict:
+        base: dict = {
+            "name": "srv",
+            "module": "pkg.mcp",
+            "tools": [],
+            "resources": [],
+            "prompts": [],
+        }
+        base.update(overrides)
+        return base
+
+    def test_resources_section_included(self, tmp_path: Path):
+        import json
+
+        info = self._server_info(
+            resources=[{"uri": "gd://config", "name": "config", "description": "Cfg."}]
+        )
+        generate_mcp_manifest(info, tmp_path)
+        data = json.loads((tmp_path / ".well-known" / "mcp.json").read_text())
+        assert data["capabilities"]["resources"]["count"] == 1
+        assert data["capabilities"]["resources"]["list"][0]["name"] == "config"
+
+    def test_prompts_section_included(self, tmp_path: Path):
+        import json
+
+        info = self._server_info(prompts=[{"name": "setup", "description": "Set up docs."}])
+        generate_mcp_manifest(info, tmp_path)
+        data = json.loads((tmp_path / ".well-known" / "mcp.json").read_text())
+        assert data["capabilities"]["prompts"]["count"] == 1
+        assert data["capabilities"]["prompts"]["list"][0]["name"] == "setup"
+
+    def test_no_tools_section_when_empty(self, tmp_path: Path):
+        import json
+
+        generate_mcp_manifest(self._server_info(), tmp_path)
+        data = json.loads((tmp_path / ".well-known" / "mcp.json").read_text())
+        assert "tools" not in data["capabilities"]

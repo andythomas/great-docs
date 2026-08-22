@@ -115,11 +115,7 @@ class TestFindBinaryTargets:
         assert result == ["mycli"]
 
     def test_multiple_bin_sections(self, tmp_path: Path):
-        cargo = (
-            '[package]\nname = "app"\n\n'
-            '[[bin]]\nname = "cli-a"\n\n'
-            '[[bin]]\nname = "cli-b"\n'
-        )
+        cargo = '[package]\nname = "app"\n\n[[bin]]\nname = "cli-a"\n\n[[bin]]\nname = "cli-b"\n'
         result = _find_binary_targets(tmp_path, cargo, "app")
         assert result == ["cli-a", "cli-b"]
 
@@ -144,7 +140,7 @@ class TestUsesClap:
         assert _uses_clap(cargo) is True
 
     def test_no_clap(self):
-        cargo = "[dependencies]\nserde = \"1.0\"\n"
+        cargo = '[dependencies]\nserde = "1.0"\n'
         assert _uses_clap(cargo) is False
 
     def test_clap_fixture_detected(self):
@@ -195,11 +191,10 @@ class TestDetectRustCliProject:
         assert result.binary_names == ["mycli"]
 
     def test_uses_clap_flag_propagated(self, tmp_path: Path):
-        cargo = (
-            '[package]\nname = "app"\nversion = "0.1.0"\n\n'
-            '[dependencies]\nclap = "4.5"\n'
+        cargo = '[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\nclap = "4.5"\n'
+        _make_rust_project(
+            tmp_path, cargo_toml=cargo, extra_files={"src/main.rs": "fn main() {}\n"}
         )
-        _make_rust_project(tmp_path, cargo_toml=cargo, extra_files={"src/main.rs": "fn main() {}\n"})
         result = detect_rust_cli_project(tmp_path)
         assert result is not None
         assert result.uses_clap is True
@@ -661,9 +656,7 @@ class TestRustHelloFixtureIntegration:
         assert rust_project is not None
         binary = build_rust_binary(rust_project, output_dir=tmp_path)
         assert binary is not None
-        result = subprocess.run(
-            [str(binary), "--help"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run([str(binary), "--help"], capture_output=True, text=True, timeout=5)
         output = result.stdout + result.stderr
         assert "greet" in output
         assert "version" in output

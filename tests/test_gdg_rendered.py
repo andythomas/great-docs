@@ -527,7 +527,13 @@ def test_footer_text_not_in_header(pkg_name: str):
 @requires_bs4
 @pytest.mark.parametrize(
     "pkg_name",
-    ["gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs", "gdtest_no_breadcrumbs"],
+    [
+        "gdtest_minimal",
+        "gdtest_google",
+        "gdtest_sphinx",
+        "gdtest_mixed_docs",
+        "gdtest_no_breadcrumbs",
+    ],
 )
 def test_reference_page_heading_levels(pkg_name: str):
     """
@@ -550,9 +556,7 @@ def test_reference_page_heading_levels(pkg_name: str):
         soup = _load_html(page)
 
         title = soup.select_one("h1.title")
-        assert title is not None, (
-            f"{page.name}: missing h1.title page title"
-        )
+        assert title is not None, f"{page.name}: missing h1.title page title"
         assert soup.select_one("h2.title") is None, (
             f"{page.name}: page title was shifted to h2.title"
         )
@@ -561,13 +565,10 @@ def test_reference_page_heading_levels(pkg_name: str):
         # must remain `h5`, even when breadcrumbs are disabled.
         page_h1s = soup.select("h1")
         assert len(page_h1s) == 1, (
-            f"{page.name}: expected exactly one h1 in the whole document, "
-            f"found {len(page_h1s)}"
+            f"{page.name}: expected exactly one h1 in the whole document, found {len(page_h1s)}"
         )
         nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
-        assert nav_title is not None, (
-            f"{page.name}: missing h5.gd-ref-title navigation label"
-        )
+        assert nav_title is not None, f"{page.name}: missing h5.gd-ref-title navigation label"
 
         main = soup.select_one("main")
         assert main is not None, f"{page.name}: no <main> element"
@@ -652,9 +653,7 @@ def test_reference_index_heading_levels(pkg_name: str):
     # Require one page title and an `h5` navigation label with or without
     # breadcrumbs.
     page_h1s = soup.select("h1")
-    assert len(page_h1s) == 1, (
-        f"reference index: expected exactly one h1, found {len(page_h1s)}"
-    )
+    assert len(page_h1s) == 1, f"reference index: expected exactly one h1, found {len(page_h1s)}"
     nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
     assert nav_title is not None, "reference index is missing its h5.gd-ref-title label"
 
@@ -662,8 +661,7 @@ def test_reference_index_heading_levels(pkg_name: str):
     assert groups, "reference index contains no group headings"
     for heading in groups:
         assert heading.name == "h2", (
-            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
-            f"found {heading.name}"
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, found {heading.name}"
         )
 
 
@@ -698,9 +696,7 @@ def test_reference_index_subtitle_renders_as_h3_in_toc():
     toc = soup.select_one("nav#TOC")
     assert toc is not None, "reference index is missing nav#TOC"
     toc_entries = {a.get_text(strip=True) for a in toc.select("a")}
-    assert "Miscellaneous" in toc_entries, (
-        "subtitled section is missing from the table of contents"
-    )
+    assert "Miscellaneous" in toc_entries, "subtitled section is missing from the table of contents"
 
 
 @requires_bs4
@@ -812,8 +808,10 @@ def test_fallback_docstring_section_nested_in_member_renders_as_h4():
         "is_valid member section is not level3"
     )
 
-    fallback_headings = is_valid_section.select("section.doc-section h1, "
-        "section.doc-section h2, section.doc-section h3, section.doc-section h4")
+    fallback_headings = is_valid_section.select(
+        "section.doc-section h1, "
+        "section.doc-section h2, section.doc-section h3, section.doc-section h4"
+    )
     assert fallback_headings, "is_valid has no fallback sections to check"
     for heading in fallback_headings:
         assert heading.name == "h4", (
@@ -1224,9 +1222,7 @@ def test_gdtest_directives_renders_every_callout():
         "Preserve this paragraph.",
         "Inline hint.",
     ):
-        assert expected_phrase in page_text, (
-            f"Callout content missing: {expected_phrase!r}"
-        )
+        assert expected_phrase in page_text, f"Callout content missing: {expected_phrase!r}"
 
     text = page_text
 
@@ -2133,8 +2129,7 @@ def test_cli_command_page_heading_levels(pkg_name: str):
 
         page_h1s = soup.select("h1")
         assert len(page_h1s) == 1, (
-            f"{page.name}: expected exactly one h1 in the whole document, "
-            f"found {len(page_h1s)}"
+            f"{page.name}: expected exactly one h1 in the whole document, found {len(page_h1s)}"
         )
 
         for section in soup.select("section.level2.doc-parameters"):
@@ -2207,8 +2202,7 @@ def test_cli_index_heading_levels():
     assert groups, "CLI reference index contains no group headings"
     for heading in groups:
         assert heading.name == "h2", (
-            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
-            f"found {heading.name}"
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, found {heading.name}"
         )
 
 
@@ -2383,8 +2377,7 @@ def test_mcp_page_heading_levels():
 
         page_h1s = soup.select("h1")
         assert len(page_h1s) == 1, (
-            f"{page.name}: expected exactly one h1 in the whole document, "
-            f"found {len(page_h1s)}"
+            f"{page.name}: expected exactly one h1 in the whole document, found {len(page_h1s)}"
         )
 
         for section in soup.select("section.level2.doc-parameters"):
@@ -2421,8 +2414,7 @@ def test_mcp_index_heading_levels():
     assert groups, "MCP reference index contains no group headings"
     for heading in groups:
         assert heading.name == "h2", (
-            f"expected h2 group heading {heading.get_text(strip=True)!r}, "
-            f"found {heading.name}"
+            f"expected h2 group heading {heading.get_text(strip=True)!r}, found {heading.name}"
         )
 
 
@@ -3389,13 +3381,14 @@ def test_empty_module_no_reference_dir():
     ref = _ref_dir(pkg)
     if ref.exists():
         api_pages = [
-            f for f in ref.iterdir()
-            if f.suffix in (".html", ".md") and f.name != "index.html"
-            and "mcp" not in f.name and not f.is_dir()
+            f
+            for f in ref.iterdir()
+            if f.suffix in (".html", ".md")
+            and f.name != "index.html"
+            and "mcp" not in f.name
+            and not f.is_dir()
         ]
-        api_subdirs = [
-            d for d in ref.iterdir() if d.is_dir() and d.name != "mcp"
-        ]
+        api_subdirs = [d for d in ref.iterdir() if d.is_dir() and d.name != "mcp"]
         assert not api_pages and not api_subdirs, (
             "Empty module with __all__ = [] should not have API reference pages"
         )
@@ -3867,7 +3860,9 @@ def test_ug_mixed_subdir_order_sidebar_interleaving():
     # Position 0: Overview (plain page link for root file 01-)
     entry0 = contents[0]
     assert isinstance(entry0, dict) and "text" in entry0, "First entry should be a plain page link"
-    assert entry0["text"] == "Overview", f"First entry should be Overview, got {entry0.get('text')!r}"
+    assert entry0["text"] == "Overview", (
+        f"First entry should be Overview, got {entry0.get('text')!r}"
+    )
     assert entry0.get("href"), "First entry should have an href"
 
     # Position 1: Setup section (subdir 02-)
@@ -4730,10 +4725,7 @@ def test_md_namespace_ug_nested_dirs():
     # Total .md count: 10 content pages (all HTML pages minus homepage), plus
     # skill.md files and MCP reference pages which are generated separately.
     all_mds = list(site.rglob("*.md"))
-    content_mds = [
-        m for m in all_mds
-        if "skill" not in m.name.lower() and "/mcp/" not in str(m)
-    ]
+    content_mds = [m for m in all_mds if "skill" not in m.name.lower() and "/mcp/" not in str(m)]
     assert len(content_mds) == 10, f"Expected 10 content .md files, found {len(content_mds)}"
 
 
