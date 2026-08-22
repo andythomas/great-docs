@@ -153,7 +153,7 @@ def _find_binary_targets(
 
 def _uses_clap(cargo_text: str) -> bool:
     """Return ``True`` when Cargo.toml lists ``clap`` as a dependency."""
-    return bool(re.search(r'^\s*clap\s*=', cargo_text, re.MULTILINE))
+    return bool(re.search(r"^\s*clap\s*=", cargo_text, re.MULTILINE))
 
 
 # ---------------------------------------------------------------------------
@@ -505,12 +505,14 @@ def _parse_clap_help(
                 arg_name = m.group(1) or m.group(2)
                 is_required = m.group(1) is not None
                 arg_help = (m.group(4) or "").strip()
-                arguments.append({
-                    "name": arg_name,
-                    "help": arg_help,
-                    "required": is_required,
-                    "default": None,
-                })
+                arguments.append(
+                    {
+                        "name": arg_name,
+                        "help": arg_help,
+                        "required": is_required,
+                        "default": None,
+                    }
+                )
 
         elif (
             current_section not in _OPTION_SECTIONS

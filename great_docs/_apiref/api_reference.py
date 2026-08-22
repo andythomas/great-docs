@@ -169,9 +169,7 @@ class APIReference:
             return depth
 
         site = cfg.get("site")
-        depth = (
-            cast("dict[str, Any]", site).get("toc-depth") if isinstance(site, dict) else None
-        )
+        depth = cast("dict[str, Any]", site).get("toc-depth") if isinstance(site, dict) else None
         return depth if isinstance(depth, int) else _DEFAULT_SITE_TOC_DEPTH
 
     @staticmethod

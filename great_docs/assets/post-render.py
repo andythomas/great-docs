@@ -2220,7 +2220,7 @@ if os.path.exists(index_file):
     # Find the nav structure and flatten it by removing the top-level wrapper
     nav_pattern = (
         r'(<nav[^>]*>.*?<h2[^>]*>.*?</h2>\s*<ul>\s*)<li><a[^>]*href="[^"]*#api-reference"[^>]*>'
-        r'API Reference</a>\s*<ul[^>]*>(.*?)</ul></li>\s*(</ul>\s*</nav>)'
+        r"API Reference</a>\s*<ul[^>]*>(.*?)</ul></li>\s*(</ul>\s*</nav>)"
     )
     nav_replacement = r"\1\2\3"
     content = re.sub(nav_pattern, nav_replacement, content, flags=re.DOTALL)
@@ -3663,9 +3663,7 @@ def _prepare_html_for_pandoc(html_file: str) -> tuple[str, str, str | None]:
             flags=re.DOTALL,
         )
         clean_title = f"{heading_tag_open}{heading_inner.strip()}{heading_tag_close}"
-        main_html = (
-            main_html[: title_match.start()] + clean_title + main_html[title_match.end() :]
-        )
+        main_html = main_html[: title_match.start()] + clean_title + main_html[title_match.end() :]
 
     main_html = re.sub(
         r'<div\s+class="code-with-filename">\s*'
@@ -3767,9 +3765,7 @@ def _prepare_html_for_pandoc(html_file: str) -> tuple[str, str, str | None]:
                 else:
                     i += 1
             callout_html = html[start:i]
-            type_m = re.search(
-                r"callout-(tip|note|warning|important|caution)", callout_html
-            )
+            type_m = re.search(r"callout-(tip|note|warning|important|caution)", callout_html)
             callout_type = type_m.group(1).capitalize() if type_m else "Note"
             title_m = re.search(
                 r'<div\s+class="callout-title-container[^"]*">\s*'

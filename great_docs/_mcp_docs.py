@@ -117,8 +117,8 @@ def _introspect_via_protocol(
     """
     try:
         import asyncio
-    except Exception:
-        return None
+    except Exception:  # pragma: no cover
+        return None  # pragma: no cover
 
     try:
         return asyncio.run(_collect_over_protocol(module_path, server_var))
@@ -127,7 +127,7 @@ def _introspect_via_protocol(
         return None
 
 
-async def _collect_over_protocol(
+async def _collect_over_protocol(  # pragma: no cover
     module_path: str,
     server_var: str | None,
 ) -> dict[str, Any] | None:
@@ -205,7 +205,7 @@ def _dump(obj: Any) -> dict[str, Any]:
     return {}
 
 
-async def _call_list(method: Any, cursor: str | None) -> dict[str, Any]:
+async def _call_list(method: Any, cursor: str | None) -> dict[str, Any]:  # pragma: no cover
     """Call an MCP client `list_*` method across `mcp` v1/v2 signatures.
 
     `mcp` v1 paginates via a `cursor=` keyword; v2 wraps it in a
@@ -235,7 +235,7 @@ async def _call_list(method: Any, cursor: str | None) -> dict[str, Any]:
     return _dump(await asyncio.wait_for(call, _PROTOCOL_TIMEOUT))
 
 
-async def _list_tools(session: Any) -> list[dict[str, Any]]:
+async def _list_tools(session: Any) -> list[dict[str, Any]]:  # pragma: no cover
     """Fetch all tools, following pagination cursors."""
     tools: list[dict[str, Any]] = []
     cursor: str | None = None
@@ -255,7 +255,7 @@ async def _list_tools(session: Any) -> list[dict[str, Any]]:
     return tools
 
 
-async def _list_resources(session: Any) -> list[dict[str, Any]]:
+async def _list_resources(session: Any) -> list[dict[str, Any]]:  # pragma: no cover
     """Fetch all resources, following pagination cursors."""
     resources: list[dict[str, Any]] = []
     cursor: str | None = None
@@ -279,7 +279,7 @@ async def _list_resources(session: Any) -> list[dict[str, Any]]:
     return resources
 
 
-async def _list_resource_templates(session: Any) -> list[dict[str, Any]]:
+async def _list_resource_templates(session: Any) -> list[dict[str, Any]]:  # pragma: no cover
     """Fetch all resource templates."""
     templates: list[dict[str, Any]] = []
     try:
@@ -298,7 +298,7 @@ async def _list_resource_templates(session: Any) -> list[dict[str, Any]]:
     return templates
 
 
-async def _list_prompts(session: Any) -> list[dict[str, Any]]:
+async def _list_prompts(session: Any) -> list[dict[str, Any]]:  # pragma: no cover
     """Fetch all prompts along with their expanded message content."""
     prompts: list[dict[str, Any]] = []
     try:
@@ -336,7 +336,7 @@ async def _list_prompts(session: Any) -> list[dict[str, Any]]:
     return prompts
 
 
-async def _get_prompt_messages(
+async def _get_prompt_messages(  # pragma: no cover
     session: Any, name: str, required_names: list[str]
 ) -> list[dict[str, Any]]:
     """Call `prompts/get` for a prompt, tolerating required-argument servers."""

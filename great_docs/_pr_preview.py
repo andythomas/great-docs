@@ -410,9 +410,7 @@ class GitHubClient:
                         mode, start = "wb", 0
                         total = int(resp.headers.get("Content-Length") or 0)
                     else:
-                        raise PreviewError(
-                            f"Artifact download failed (HTTP {resp.status_code})."
-                        )
+                        raise PreviewError(f"Artifact download failed (HTTP {resp.status_code}).")
                     _stream_to_file(resp, zip_path, total, mode=mode, start=start)
                 break  # completed
             except requests.RequestException as exc:

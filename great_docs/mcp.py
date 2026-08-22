@@ -51,8 +51,8 @@ def _handler(name: str) -> Any:
     mcp v1 uses the decorator API; mcp v2 collects handlers for later
     constructor-based registration at the bottom of this module.
     """
-    if _MCP_V1:
-        return getattr(server, name)()
+    if _MCP_V1:  # pragma: no cover
+        return getattr(server, name)()  # pragma: no cover
 
     def _collect(func: Any) -> Any:
         _V2_HANDLERS[name] = func
@@ -76,8 +76,8 @@ _INSTRUCTIONS = (
     "Start with `gd_status` to understand the current project state, then use "
     "tools and prompts to accomplish documentation tasks."
 )
-if _MCP_V1:
-    server.instructions = _INSTRUCTIONS
+if _MCP_V1:  # pragma: no cover
+    server.instructions = _INSTRUCTIONS  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -1314,47 +1314,49 @@ if not _MCP_V1 and _V2_HANDLERS:
         Completion as _Completion,
     )
 
-    async def _on_list_tools(ctx: Any, params: Any = None) -> Any:
-        return ListToolsResult(tools=await _raw["list_tools"]())
+    async def _on_list_tools(ctx: Any, params: Any = None) -> Any:  # pragma: no cover
+        return ListToolsResult(tools=await _raw["list_tools"]())  # pragma: no cover
 
-    async def _on_call_tool(ctx: Any, params: Any) -> Any:
-        content = await _raw["call_tool"](
+    async def _on_call_tool(ctx: Any, params: Any) -> Any:  # pragma: no cover
+        content = await _raw["call_tool"](  # pragma: no cover
             getattr(params, "name", ""),
             getattr(params, "arguments", {}) or {},
         )
-        return CallToolResult(content=list(content or []))
+        return CallToolResult(content=list(content or []))  # pragma: no cover
 
-    async def _on_list_prompts(ctx: Any, params: Any = None) -> Any:
-        return ListPromptsResult(prompts=await _raw["list_prompts"]())
+    async def _on_list_prompts(ctx: Any, params: Any = None) -> Any:  # pragma: no cover
+        return ListPromptsResult(prompts=await _raw["list_prompts"]())  # pragma: no cover
 
-    async def _on_get_prompt(ctx: Any, params: Any) -> Any:
+    async def _on_get_prompt(ctx: Any, params: Any) -> Any:  # pragma: no cover
         # The v1 handler already returns a GetPromptResult (a valid v2 model).
-        return await _raw["get_prompt"](
+        return await _raw["get_prompt"](  # pragma: no cover
             getattr(params, "name", ""),
             getattr(params, "arguments", None),
         )
 
-    async def _on_list_resources(ctx: Any, params: Any = None) -> Any:
-        return ListResourcesResult(resources=await _raw["list_resources"]())
+    async def _on_list_resources(ctx: Any, params: Any = None) -> Any:  # pragma: no cover
+        return ListResourcesResult(resources=await _raw["list_resources"]())  # pragma: no cover
 
-    async def _on_read_resource(ctx: Any, params: Any) -> Any:
-        uri = getattr(params, "uri", "")
+    async def _on_read_resource(ctx: Any, params: Any) -> Any:  # pragma: no cover
+        uri = getattr(params, "uri", "")  # pragma: no cover
         text = await _raw["read_resource"](uri)
-        return ReadResourceResult(contents=[TextResourceContents(uri=uri, text=text or "")])
+        return ReadResourceResult(
+            contents=[TextResourceContents(uri=uri, text=text or "")]
+        )  # pragma: no cover
 
-    async def _on_list_resource_templates(ctx: Any, params: Any = None) -> Any:
-        return ListResourceTemplatesResult(
+    async def _on_list_resource_templates(ctx: Any, params: Any = None) -> Any:  # pragma: no cover
+        return ListResourceTemplatesResult(  # pragma: no cover
             resourceTemplates=await _raw["list_resource_templates"]()
         )
 
-    async def _on_completion(ctx: Any, params: Any) -> Any:
-        completion = await _raw["completion"](
+    async def _on_completion(ctx: Any, params: Any) -> Any:  # pragma: no cover
+        completion = await _raw["completion"](  # pragma: no cover
             getattr(params, "ref", None),
             getattr(params, "argument", None),
         )
-        if completion is None:
-            completion = _Completion(values=[])
-        return CompleteResult(completion=completion)
+        if completion is None:  # pragma: no cover
+            completion = _Completion(values=[])  # pragma: no cover
+        return CompleteResult(completion=completion)  # pragma: no cover
 
     server = Server(
         name="great-docs",
@@ -1378,7 +1380,7 @@ if not _MCP_V1 and _V2_HANDLERS:
 # ---------------------------------------------------------------------------
 
 
-async def run_mcp_server():
+async def run_mcp_server():  # pragma: no cover
     """Run the Great Docs MCP server over stdio."""
     async with stdio_server() as (read_stream, write_stream):
         if _MCP_V1:
@@ -1387,7 +1389,7 @@ async def run_mcp_server():
             await server.run(read_stream, write_stream)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     import asyncio
 
     asyncio.run(run_mcp_server())

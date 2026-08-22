@@ -46,9 +46,7 @@ _BUILTIN_NOISE_DUNDERS = frozenset(
     }
 )
 
-_ENUM_BASES = frozenset(
-    {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum", "EnumCheck"}
-)
+_ENUM_BASES = frozenset({"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum", "EnumCheck"})
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

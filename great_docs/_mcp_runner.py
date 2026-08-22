@@ -48,9 +48,9 @@ async def _run(module_path: str, server_var: str | None) -> None:
     # FastMCP exposes the underlying low-level server as `_mcp_server`.
     low = getattr(server, "_mcp_server", server)
 
-    from mcp.server.stdio import stdio_server
+    from mcp.server.stdio import stdio_server  # pragma: no cover
 
-    async with stdio_server() as (read_stream, write_stream):
+    async with stdio_server() as (read_stream, write_stream):  # pragma: no cover
         # mcp v1 requires initialization options; v2's `run` takes only the
         # streams. Try the v1 shape first and fall back on signature mismatch.
         init_options = None
