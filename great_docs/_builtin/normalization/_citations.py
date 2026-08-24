@@ -232,6 +232,16 @@ def normalize_citations(obj: gf.Object | gf.Alias) -> gf.Object | gf.Alias:
     if docstring is None:
         return obj
 
+    # TODO: Generate citation anchor stems during rendering from both the page and
+    # each rendered object. A Griffe alias exposes its target's `Docstring`, so all
+    # aliases mutate the same value. The first resolved path converts the citation
+    # markers with its own stem; later paths reuse that markup. The links remain
+    # self-consistent, but the stem names the wrong path and duplicate IDs can occur
+    # when the same target appears twice on one page.
+    #
+    # This hook receives only object context. The renderer has both contexts and
+    # must keep a separate citation namespace for every object. On a multi-object
+    # page, `[1]_` in one docstring must not link to a definition in another.
     docstring.value = _convert_rst_citations(docstring.value, _anchor_slug(obj.path))
     return obj
 
