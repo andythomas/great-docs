@@ -66,3 +66,23 @@ def test_is_in_great_docs_build_dir_rejects_non_build_paths(parts: tuple[str, ..
         (tmp_path / parts[0]).mkdir(exist_ok=True)
 
     assert is_in_great_docs_build_dir(parts, tmp_path) is False
+
+
+def test_fenced_lines_backtick_fence_with_backtick_in_info_not_fenced():
+    """A backtick fence opening line whose info string contains a backtick is not marked fenced."""
+    # e.g. ```py`thon — info contains "`", so it looks like inline code, not a block fence
+    lines, fenced = fenced_lines("before\n```py`thon\ninside\n```\nafter")
+
+    # The opening line should be False (treated as not a block fence)
+    assert fenced[1] is False
+
+
+def test_parse_seealso_blank_name_entry_is_dropped():
+    """parse_seealso silently drops %seealso entries whose name is blank."""
+    from great_docs._utils import parse_seealso
+
+    # The entry " : desc" has a blank name after strip()
+    result = parse_seealso("Some docs\n%seealso  : no-name, real_func\n")
+    names = [name for name, _ in result]
+    assert "" not in names
+    assert "real_func" in names
