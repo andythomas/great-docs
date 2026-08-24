@@ -46,7 +46,7 @@ async def _run(module_path: str, server_var: str | None) -> None:
         return
 
     # FastMCP exposes the underlying low-level server as `_mcp_server`.
-    low = getattr(server, "_mcp_server", server)
+    low = getattr(server, "_mcp_server", server)  # pragma: no cover
 
     from mcp.server.stdio import stdio_server  # pragma: no cover
 
