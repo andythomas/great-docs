@@ -28,8 +28,8 @@ def _detect_python_version_from_pyproject(project_root: Path) -> str | None:
         # Use tomllib (Python 3.11+) or tomli as fallback
         try:
             import tomllib
-        except ImportError:
-            import tomli as tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # pragma: no cover
 
         with open(pyproject_path, "rb") as f:
             data = tomllib.load(f)
@@ -97,8 +97,8 @@ def _detect_optional_dependencies(project_root: Path) -> list[str]:
     try:
         try:
             import tomllib
-        except ImportError:
-            import tomli as tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # pragma: no cover
 
         with open(pyproject_path, "rb") as f:
             data = tomllib.load(f)
