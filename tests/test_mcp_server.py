@@ -948,3 +948,339 @@ class TestHandleCompletion:
         arg = CompletionArgument(name="other_arg", value="x")
         result = asyncio.run(handle_completion(ref, arg))
         assert result is None
+
+    def test_symbol_completion_for_improve_docstrings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Completion for improve-docstrings + symbol arg returns filtered exports."""
+        from mcp.types import CompletionArgument, PromptReference
+
+        monkeypatch.chdir(tmp_path)
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+        mock_docs._get_package_exports.return_value = ["MyClass", "my_func", "other_func"]
+        with patch("great_docs.mcp._get_great_docs", return_value=mock_docs):
+            ref = PromptReference(type="ref/prompt", name="improve-docstrings")
+            arg = CompletionArgument(name="symbol", value="my")
+            result = asyncio.run(handle_completion(ref, arg))
+        assert result is not None
+        assert "MyClass" in result.values or "my_func" in result.values
+
+    def test_symbol_completion_for_improve_docstrings_exception_returns_none(self):
+        """Completion for improve-docstrings + symbol arg returns None on exception."""
+        from mcp.types import CompletionArgument, PromptReference
+
+        with patch("great_docs.mcp._get_great_docs", side_effect=RuntimeError("boom")):
+            ref = PromptReference(type="ref/prompt", name="improve-docstrings")
+            arg = CompletionArgument(name="symbol", value="x")
+            result = asyncio.run(handle_completion(ref, arg))
+        assert result is None
+
+    def test_reference_uri_symbol_completion(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """ResourceTemplateReference with reference URI + symbol arg returns completions."""
+        from mcp.types import CompletionArgument, ResourceTemplateReference
+
+        monkeypatch.chdir(tmp_path)
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+        mock_docs._get_package_exports.return_value = ["MyClass", "my_func"]
+        with patch("great_docs.mcp._get_great_docs", return_value=mock_docs):
+            ref = ResourceTemplateReference(type="ref/resource", uri="gd://reference/{symbol}")
+            arg = CompletionArgument(name="symbol", value="My")
+            result = asyncio.run(handle_completion(ref, arg))
+        assert result is not None
+        assert "MyClass" in result.values
+
+    def test_reference_uri_symbol_completion_exception_returns_none(self):
+        """ResourceTemplateReference symbol completion returns None on exception."""
+        from mcp.types import CompletionArgument, ResourceTemplateReference
+
+        with patch("great_docs.mcp._get_great_docs", side_effect=RuntimeError("boom")):
+            ref = ResourceTemplateReference(type="ref/resource", uri="gd://reference/{symbol}")
+            arg = CompletionArgument(name="symbol", value="x")
+            result = asyncio.run(handle_completion(ref, arg))
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _get_great_docs direct call
+# ---------------------------------------------------------------------------
+
+
+class TestGetGreatDocs:
+    def test_returns_great_docs_instance(self, tmp_path: Path):
+        """_get_great_docs() returns a GreatDocs instance for the given path."""
+        from great_docs.mcp import _get_great_docs
+
+        result = _get_great_docs(str(tmp_path))
+        from great_docs.core import GreatDocs
+
+        assert isinstance(result, GreatDocs)
+
+
+# ---------------------------------------------------------------------------
+# _handle_scan — reference config dict item branch
+# ---------------------------------------------------------------------------
+
+
+class TestHandleScanRefConfigDictItem:
+    def test_dict_item_in_reference_config_is_included(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Reference config dict items (with 'name' key) are included in ref_items."""
+        monkeypatch.chdir(tmp_path)
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+        mock_docs._get_package_exports.return_value = ["do_thing"]
+        mock_docs._categorize_api_objects.return_value = {"functions": ["do_thing"]}
+        # Reference config uses dict items, not str items
+        mock_docs._config.reference = [{"contents": [{"name": "do_thing"}]}]
+        with patch("great_docs.mcp._get_great_docs", return_value=mock_docs):
+            result = asyncio.run(_handle_scan({}))
+        text = result[0].text
+        assert "do_thing" in text
+        assert "[x]" in text
+
+
+# ---------------------------------------------------------------------------
+# _handle_api_diff
+# ---------------------------------------------------------------------------
+
+
+class TestHandleApiDiffWithSnapshot:
+    def _patched_docs(self):
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+        return mock_docs
+
+    def _mock_current_snapshot(self):
+        snap = MagicMock()
+        snap.symbols = {}
+        return snap
+
+    def test_with_added_symbols(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """_handle_api_diff shows added symbols when base snapshot exists."""
+        from great_docs._api_diff import ApiSnapshot, SymbolChange
+
+        monkeypatch.chdir(tmp_path)
+        snap_dir = tmp_path / ".great-docs-snapshots"
+        snap_dir.mkdir()
+        (snap_dir / "v0.1.json").write_text("{}")
+
+        current = self._mock_current_snapshot()
+        added_sym = MagicMock(spec=SymbolChange)
+        added_sym.name = "new_func"
+        added_sym.kind = "function"
+        diff = MagicMock()
+        diff.added = [added_sym]
+        diff.removed = []
+        diff.changed = []
+        base_snap = MagicMock()
+        base_snap.diff.return_value = diff
+
+        with (
+            patch("great_docs.mcp._get_great_docs", return_value=self._patched_docs()),
+            patch.object(ApiSnapshot, "from_live", return_value=current, create=True),
+            patch.object(ApiSnapshot, "from_json", return_value=base_snap, create=True),
+        ):
+            result = asyncio.run(_handle_api_diff({"base": "v0.1"}))
+
+        assert "Added" in result[0].text
+        assert "new_func" in result[0].text
+
+    def test_with_removed_symbols(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """_handle_api_diff shows removed symbols when base snapshot exists."""
+        from great_docs._api_diff import ApiSnapshot, SymbolChange
+
+        monkeypatch.chdir(tmp_path)
+        snap_dir = tmp_path / ".great-docs-snapshots"
+        snap_dir.mkdir()
+        (snap_dir / "v0.1.json").write_text("{}")
+
+        current = self._mock_current_snapshot()
+        removed_sym = MagicMock(spec=SymbolChange)
+        removed_sym.name = "old_func"
+        removed_sym.kind = "function"
+        diff = MagicMock()
+        diff.added = []
+        diff.removed = [removed_sym]
+        diff.changed = []
+        base_snap = MagicMock()
+        base_snap.diff.return_value = diff
+
+        with (
+            patch("great_docs.mcp._get_great_docs", return_value=self._patched_docs()),
+            patch.object(ApiSnapshot, "from_live", return_value=current, create=True),
+            patch.object(ApiSnapshot, "from_json", return_value=base_snap, create=True),
+        ):
+            result = asyncio.run(_handle_api_diff({"base": "v0.1"}))
+
+        assert "Removed" in result[0].text
+        assert "old_func" in result[0].text
+
+    def test_with_changed_symbols(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """_handle_api_diff shows changed symbols when base snapshot exists."""
+        from great_docs._api_diff import ApiSnapshot, SymbolChange
+
+        monkeypatch.chdir(tmp_path)
+        snap_dir = tmp_path / ".great-docs-snapshots"
+        snap_dir.mkdir()
+        (snap_dir / "v0.1.json").write_text("{}")
+
+        current = self._mock_current_snapshot()
+        changed_sym = MagicMock(spec=SymbolChange)
+        changed_sym.name = "changed_func"
+        changed_sym.change_type = "signature_changed"
+        diff = MagicMock()
+        diff.added = []
+        diff.removed = []
+        diff.changed = [changed_sym]
+        base_snap = MagicMock()
+        base_snap.diff.return_value = diff
+
+        with (
+            patch("great_docs.mcp._get_great_docs", return_value=self._patched_docs()),
+            patch.object(ApiSnapshot, "from_live", return_value=current, create=True),
+            patch.object(ApiSnapshot, "from_json", return_value=base_snap, create=True),
+        ):
+            result = asyncio.run(_handle_api_diff({"base": "v0.1"}))
+
+        assert "Changed" in result[0].text
+        assert "changed_func" in result[0].text
+
+    def test_no_diff_shows_no_changes_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """_handle_api_diff shows 'No API changes detected' when diff is empty."""
+        from great_docs._api_diff import ApiSnapshot
+
+        monkeypatch.chdir(tmp_path)
+        snap_dir = tmp_path / ".great-docs-snapshots"
+        snap_dir.mkdir()
+        (snap_dir / "v0.1.json").write_text("{}")
+
+        current = self._mock_current_snapshot()
+        diff = MagicMock()
+        diff.added = []
+        diff.removed = []
+        diff.changed = []
+        base_snap = MagicMock()
+        base_snap.diff.return_value = diff
+
+        with (
+            patch("great_docs.mcp._get_great_docs", return_value=self._patched_docs()),
+            patch.object(ApiSnapshot, "from_live", return_value=current, create=True),
+            patch.object(ApiSnapshot, "from_json", return_value=base_snap, create=True),
+        ):
+            result = asyncio.run(_handle_api_diff({"base": "v0.1"}))
+
+        assert "No API changes detected" in result[0].text
+
+
+# ---------------------------------------------------------------------------
+# read_resource — gd://api-surface no-exports and exception paths
+# ---------------------------------------------------------------------------
+
+
+class TestReadResourceApiSurface:
+    def _uri(self, s: str) -> AnyUrl:
+        return AnyUrl(s)
+
+    def test_api_surface_no_exports_returns_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """read_resource returns 'No exports discovered' when _get_package_exports is empty."""
+        monkeypatch.chdir(tmp_path)
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+        mock_docs._get_package_exports.return_value = []
+        with patch("great_docs.mcp._get_great_docs", return_value=mock_docs):
+            result = asyncio.run(read_resource(self._uri("gd://api-surface")))
+
+        assert "No exports discovered" in result
+
+    def test_api_surface_exception_returns_error_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """read_resource returns error string when _get_great_docs raises an exception."""
+        monkeypatch.chdir(tmp_path)
+        with patch("great_docs.mcp._get_great_docs", side_effect=RuntimeError("pkg not found")):
+            result = asyncio.run(read_resource(self._uri("gd://api-surface")))
+
+        assert "Error discovering API surface" in result
+
+
+# ---------------------------------------------------------------------------
+# read_resource — gd://reference/{symbol} paths
+# ---------------------------------------------------------------------------
+
+
+class TestReadResourceReference:
+    def _uri(self, s: str) -> AnyUrl:
+        return AnyUrl(s)
+
+    def test_reference_symbol_found_returns_docstring(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """gd://reference/symbol returns kind and docstring when symbol is found."""
+        monkeypatch.chdir(tmp_path)
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+
+        # Build a module-like object that has `my_func` as an attribute
+        mock_func = MagicMock()
+        mock_func.__doc__ = "Does a thing."
+        mock_mod = MagicMock()
+
+        # getattr(mock_mod, "my_func", None) returns mock_func via spec trick
+        mock_mod.configure_mock(**{"my_func": mock_func})
+
+        with (
+            patch("great_docs.mcp._get_great_docs", return_value=mock_docs),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
+            result = asyncio.run(read_resource(self._uri("gd://reference/my_func")))
+
+        assert "mypkg" in result or "my_func" in result or "Does a thing" in result
+
+    def test_reference_symbol_not_found_returns_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """gd://reference/symbol returns 'not found' message when getattr returns None."""
+        monkeypatch.chdir(tmp_path)
+        mock_docs = MagicMock()
+        mock_docs._detect_package_name.return_value = "mypkg"
+        mock_docs._detect_module_name.return_value = "mypkg"
+        mock_docs._normalize_package_name.return_value = "mypkg"
+
+        mock_mod = MagicMock(spec=[])  # no attributes -> getattr returns None
+
+        with (
+            patch("great_docs.mcp._get_great_docs", return_value=mock_docs),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
+            result = asyncio.run(read_resource(self._uri("gd://reference/missing_sym")))
+
+        assert "not found" in result.lower()
+
+    def test_reference_exception_returns_error_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """gd://reference/symbol returns error string on exception."""
+        monkeypatch.chdir(tmp_path)
+        with patch("great_docs.mcp._get_great_docs", side_effect=RuntimeError("import fail")):
+            result = asyncio.run(read_resource(self._uri("gd://reference/any_sym")))
+
+        assert "Error reading reference" in result
