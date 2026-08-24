@@ -12,35 +12,11 @@ if TYPE_CHECKING:
 
 _RST_CITATION_MARKER_RE = re.compile(r"^([ \t]*)\.\.\s+\[(\d+)\](?:[ \t]+(.*))?$")
 _RST_CITATION_REF_RE = re.compile(r"\[(\d+)\]_")
-_RST_CITATION_URL_RE = re.compile(r'(?<![<"])(https?://\S+)(?![>"])')
+_RST_CITATION_URL_RE = re.compile(r'(?<![<"])(https?://[^\s<>"`\[\]{}]+)')
 _FENCE_RE = re.compile(r"^[ \t]*(?P<marker>`{3,}|~{3,})")
 _DOCTEST_PROMPT_RE = re.compile(r"^[ \t]*(?:>>>(?: |$)|\.\.\. )")
 _BACKTICK_RUN_RE = re.compile(r"`+")
-
-
-def _wrap_url(match: re.Match[str]) -> str:
-    """
-    Wrap a detected URL without enclosing trailing punctuation
-
-    URL detection consumes every non-space character, including a parenthesis
-    that closes a surrounding Markdown link. Move only unmatched trailing
-    parentheses outside the angle brackets so balanced URL paths remain intact.
-
-    Parameters
-    ----------
-    match
-        The detected URL.
-
-    Returns
-    -------
-    The angle-bracketed URL followed by any unmatched closing parentheses.
-    """
-    url = match.group(1)
-    trailer = ""
-    while url.endswith(")") and url.count("(") < url.count(")"):
-        trailer = url[-1] + trailer
-        url = url[:-1]
-    return f"<{url}>{trailer}"
+_URL_TAIL_PUNCTUATION = ".,;:!?"
 
 
 def _closes_fence(stripped: str, marker: str) -> bool:
@@ -181,6 +157,30 @@ def _inline_code_spans(line: str) -> list[tuple[int, int]]:
     return spans
 
 
+def _outside_inline_code(line: str, matches: list[re.Match[str]]) -> list[re.Match[str]]:
+    """
+    Select matches that begin outside inline code
+
+    Parameters
+    ----------
+    line
+        The line containing the matches.
+    matches
+        The matches to filter, in the order they appear.
+
+    Returns
+    -------
+    The matches whose first character lies outside every closed code span.
+    """
+    if not matches or "`" not in line:
+        return matches
+
+    spans = _inline_code_spans(line)
+    return [
+        match for match in matches if not any(start <= match.start() < end for start, end in spans)
+    ]
+
+
 def _live_reference_matches(line: str) -> list[re.Match[str]]:
     """
     Return citation references outside inline code
@@ -194,14 +194,67 @@ def _live_reference_matches(line: str) -> list[re.Match[str]]:
     -------
     The `[N]_` matches outside inline code, in the order they appear.
     """
-    matches = list(_RST_CITATION_REF_RE.finditer(line))
-    if not matches or "`" not in line:
-        return matches
+    return _outside_inline_code(line, list(_RST_CITATION_REF_RE.finditer(line)))
 
-    spans = _inline_code_spans(line)
-    return [
-        match for match in matches if not any(start <= match.start() < end for start, end in spans)
-    ]
+
+def _wrap_url(match: re.Match[str]) -> str:
+    """
+    Wrap a detected URL while leaving trailing punctuation outside
+
+    Remove sentence punctuation and unmatched closing parentheses from the URL
+    before adding angle brackets. Check the new final character after each
+    removal so endings such as `).` remain outside the link. Preserve balanced
+    parentheses in URL paths.
+
+    Parameters
+    ----------
+    match
+        The regular expression match containing the URL.
+
+    Returns
+    -------
+    The angle-bracketed URL followed by any trailing punctuation.
+    """
+    url = match.group(1)
+    trailer = ""
+    while url:
+        last = url[-1]
+        unmatched_paren = last == ")" and url.count("(") < url.count(")")
+        if last not in _URL_TAIL_PUNCTUATION and not unmatched_paren:
+            break
+        trailer = last + trailer
+        url = url[:-1]
+    return f"<{url}>{trailer}"
+
+
+def _autolink_urls(text: str) -> str:
+    """
+    Convert bare URLs outside inline code to Markdown autolinks
+
+    End each URL before a Markdown delimiter so generated reference markup
+    cannot enter the link target. Leave URLs inside inline code unchanged.
+
+    Parameters
+    ----------
+    text
+        One citation-body line or a complete single-paragraph body.
+
+    Returns
+    -------
+    The text with each bare URL angle-bracketed.
+    """
+    matches = _outside_inline_code(text, list(_RST_CITATION_URL_RE.finditer(text)))
+    if not matches:
+        return text
+
+    parts: list[str] = []
+    cursor = 0
+    for match in matches:
+        parts.append(text[cursor : match.start()])
+        parts.append(_wrap_url(match))
+        cursor = match.end()
+    parts.append(text[cursor:])
+    return "".join(parts)
 
 
 _NON_ANCHOR_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
@@ -485,7 +538,7 @@ def _span_definition(
     The list item with its complete body inside the anchored span.
     """
     body = " ".join([head, *(line.strip() for line in continuations)]).strip()
-    return f"{marker}{backlinks}[{_RST_CITATION_URL_RE.sub(_wrap_url, body)}]{{#{anchor}}}"
+    return f"{marker}{backlinks}[{_autolink_urls(body)}]{{#{anchor}}}"
 
 
 def _block_definition(
@@ -524,7 +577,7 @@ def _block_definition(
     body = [f"{content}{backlinks}{head}", *(_shifted(line, offset) for line in continuations)]
     return [
         f"{marker}::: {{#{anchor} {_CITE_BODY_CLASS}}}",
-        *(_RST_CITATION_URL_RE.sub(_wrap_url, line) for line in body),
+        *(_autolink_urls(line) for line in body),
         f"{content}:::",
     ]
 
@@ -599,6 +652,11 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
     Preserve citation syntax in fenced blocks, inline code spans, and unfenced
     doctest prompts. Exclude these references from backlink counts. Return the
     original text when every definition appears in literal code.
+
+    Autolink bare URLs in citation bodies. End each link before Markdown
+    delimiters, trailing sentence punctuation, and adjacent citation-reference
+    markup. Preserve balanced parentheses in URL paths. Leave URLs inside inline
+    code unchanged.
 
     Put a single-paragraph body in a bracketed Markdown span and a
     multi-paragraph body in a fenced div. Both forms keep the complete body

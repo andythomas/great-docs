@@ -68,6 +68,70 @@ def test_markdown_link_in_a_citation_keeps_its_closing_parenthesis(parser: str):
 
 
 @pytest.mark.parametrize("parser", _PARSERS)
+def test_sentence_full_stop_stays_outside_url_autolink(parser: str):
+    """Keep a sentence-ending full stop outside the URL autolink"""
+    source = ".. [1] Hoare, C.A.R. (1961). https://example.com/a."
+    expected = "1. [Hoare, C.A.R. (1961). <https://example.com/a>.]{#cite-process-1}"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_comma_between_url_and_prose_stays_outside_autolink(parser: str):
+    """Keep a separating comma outside the URL autolink"""
+    source = ".. [1] Hoare, https://example.com/a, 1961."
+    expected = "1. [Hoare, <https://example.com/a>, 1961.]{#cite-process-1}"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_url_autolink_excludes_parenthesis_and_full_stop(parser: str):
+    """Keep an unmatched closing parenthesis and full stop outside the autolink"""
+    source = ".. [1] Hoare (https://example.com/a)."
+    expected = "1. [Hoare (<https://example.com/a>).]{#cite-process-1}"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_url_autolink_stops_before_adjacent_citation_reference(parser: str):
+    """Keep adjacent citation-reference markup outside the URL autolink"""
+    source = ".. [1] See https://example.com/a[1]_"
+    expected = (
+        "1. "
+        '[^](#ref-process-1-1){.gd-linkback-text .gd-linkback-caret role="doc-backlink"} '
+        "[See <https://example.com/a>"
+        '[^1^](#cite-process-1){#ref-process-1-1 .gd-cite-ref role="doc-noteref"}'
+        "]{#cite-process-1}"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_every_bare_url_on_a_line_becomes_an_autolink(parser: str):
+    """Autolink every bare URL in a citation body"""
+    source = ".. [1] Data https://example.com/a. Code https://example.com/b, 2020."
+    expected = (
+        "1. [Data <https://example.com/a>. Code <https://example.com/b>, 2020.]{#cite-process-1}"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_rst_inline_literal_url_remains_literal(parser: str):
+    """Leave a URL inside double backticks unchanged"""
+    source = ".. [1] See ``https://example.com/a`` for details."
+    expected = "1. [See ``https://example.com/a`` for details.]{#cite-process-1}"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_markdown_inline_code_url_remains_literal(parser: str):
+    """Leave a URL inside single backticks unchanged"""
+    source = ".. [1] See `https://example.com/a` for details."
+    expected = "1. [See `https://example.com/a` for details.]{#cite-process-1}"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
 def test_citation_body_is_passed_through_unescaped(parser: str):
     """
     Verify citation bodies enter anchor spans without escaping
