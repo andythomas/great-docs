@@ -37,9 +37,11 @@ class TestWriteTermshow:
         _write_termshow(rec, out)
 
         assert out.exists()
+
         # Parse it back
         content = out.read_text()
         parsed = parse_termshow_str(content)
+
         assert parsed.term.cols == 80
         assert len(parsed.events) == 3
         assert parsed.events[0].time == pytest.approx(0.0)
@@ -50,6 +52,7 @@ class TestWriteTermshow:
         out = tmp_path / "deep" / "nested" / "dir" / "rec.termshow"
         rec = Recording(events=[Event(time=0.0, code="o", data="x")])
         _write_termshow(rec, out)
+
         assert out.exists()
 
     def test_relative_intervals_in_output(self, tmp_path: Path):
@@ -68,6 +71,7 @@ class TestWriteTermshow:
         ev1 = json.loads(lines[1])
         ev2 = json.loads(lines[2])
         ev3 = json.loads(lines[3])
+
         assert ev1[0] == pytest.approx(0.0)
         assert ev2[0] == pytest.approx(1.0)
         assert ev3[0] == pytest.approx(2.0)  # 3.0 - 1.0
@@ -79,6 +83,7 @@ class TestWriteTermshow:
 
         lines = out.read_text().strip().splitlines()
         header = json.loads(lines[0])
+
         assert header["title"] == "My Demo"
 
 
@@ -107,4 +112,26 @@ class TestImportAsciicast:
 
         # Verify the output is parseable
         parsed = parse_termshow_str(output.read_text())
+
         assert len(parsed.events) == 2
+
+
+class TestWriteTermshowTimestamp:
+    def test_timestamp_included_in_header_when_set(self, tmp_path: Path):
+        """_write_termshow includes timestamp in header when Recording.timestamp is set."""
+        from great_docs._term_player.parser import TermInfo
+
+        recording = Recording(
+            events=[Event(time=0.5, code="o", data="hi")],
+            term=TermInfo(cols=80, rows=24),
+            title="Timestamped",
+            timestamp=1700000000,
+        )
+        out = tmp_path / "out.termshow"
+        _write_termshow(recording, out)
+
+        lines = out.read_text().splitlines()
+        header = json.loads(lines[0])
+
+        assert "timestamp" in header
+        assert header["timestamp"] == 1700000000
