@@ -42314,3 +42314,424 @@ class TestPersistFreezeCacheVersioned:
             tmp_path / "_freeze" / "user-guide" / "a" / "execute-results" / "html.json"
         ).read_text(encoding="utf-8")
         assert merged_a == '{"page": "a"}'
+
+
+# ---------------------------------------------------------------------------
+# _update_project_gitignore — migration_only and missing-versioning paths
+# ---------------------------------------------------------------------------
+
+
+def test_update_gitignore_force_creates_new_file():
+    """_update_project_gitignore with force=True creates .gitignore when absent."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=str(tmp_dir))
+        docs._update_project_gitignore(force=True)
+        gitignore = Path(tmp_dir) / ".gitignore"
+        assert gitignore.exists()
+        assert "/great-docs/" in gitignore.read_text()
+
+
+def test_update_gitignore_force_appends_missing_versioning_entries():
+    """_update_project_gitignore appends versioning entries when main entry already present."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        gitignore.write_text("# Great Docs build directory\n/great-docs/\n", encoding="utf-8")
+        docs = GreatDocs(project_path=str(tmp_dir))
+        docs._update_project_gitignore(force=True)
+        content = gitignore.read_text()
+        assert "/great-docs-*/" in content
+
+
+def test_update_gitignore_force_migration_only():
+    """_update_project_gitignore migrates un-anchored 'great-docs/' to '/great-docs/'."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        # Legacy un-anchored entry that needs migration
+        gitignore.write_text(
+            "great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        docs._update_project_gitignore(force=True)
+        content = gitignore.read_text()
+        assert "/great-docs/" in content
+
+
+def test_update_gitignore_noop_when_all_entries_present():
+    """_update_project_gitignore returns without writing when all entries are already present."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gitignore = Path(tmp_dir) / ".gitignore"
+        gitignore.write_text(
+            "/great-docs/\n/great-docs-*/\n.great-docs-build/\n.great-docs-cache/\n.great-docs/\n",
+            encoding="utf-8",
+        )
+        original_mtime = gitignore.stat().st_mtime
+        import time; time.sleep(0.01)
+        docs = GreatDocs(project_path=str(tmp_dir))
+        docs._update_project_gitignore(force=True)
+        # mtime unchanged means file wasn't written
+        assert gitignore.stat().st_mtime == original_mtime
+
+
+# ---------------------------------------------------------------------------
+# _detect_module_name — maturin dotted module-name and hatch namespace paths
+# ---------------------------------------------------------------------------
+
+
+def test_detect_module_name_maturin_dotted_path():
+    """_detect_module_name strips suffix from maturin module-name with a dot."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "ggsql"\n\n[tool.maturin]\nmodule-name = "ggsql._ggsql"\n',
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        result = docs._detect_module_name()
+        assert result == "ggsql"
+
+
+def test_detect_module_name_hatch_namespace_package():
+    """_detect_module_name resolves hatch namespace package to dotted sub-name."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        # Simulate: project "firebird-base", hatch wheel.packages = ["src/firebird"]
+        # firebird/ is a namespace (no __init__.py), firebird/base/ is the real package
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "firebird-base"\n'
+            '[tool.hatch.build.targets.wheel]\npackages = ["src/firebird"]\n',
+            encoding="utf-8",
+        )
+        src_firebird = tmp / "src" / "firebird"
+        src_firebird.mkdir(parents=True)
+        # namespace root: no __init__.py in firebird/
+        base_pkg = src_firebird / "base"
+        base_pkg.mkdir()
+        (base_pkg / "__init__.py").write_text("", encoding="utf-8")
+
+        docs = GreatDocs(project_path=str(tmp_dir))
+        result = docs._detect_module_name()
+        assert result == "firebird.base"
+
+
+def test_detect_module_name_hatch_regular_package():
+    """_detect_module_name returns simple pkg name when hatch package dir has __init__.py."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\n'
+            '[tool.hatch.build.targets.wheel]\npackages = ["src/mypkg"]\n',
+            encoding="utf-8",
+        )
+        pkg = tmp / "src" / "mypkg"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+
+        docs = GreatDocs(project_path=str(tmp_dir))
+        result = docs._detect_module_name()
+        assert result == "mypkg"
+
+
+# ---------------------------------------------------------------------------
+# _get_package_metadata — dependency extras and optional_dep group parsing
+# ---------------------------------------------------------------------------
+
+
+def test_get_package_metadata_dep_with_extras():
+    """_get_package_metadata parses extras on a PEP 508 dependency."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\nversion = "1.0"\n'
+            'dependencies = ["httpx[http2]>=0.24"]\n',
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        meta = docs._get_package_metadata()
+        dep = next(d for d in meta["dependencies"] if d["name"] == "httpx")
+        assert "http2" in dep["extras"]
+
+
+def test_get_package_metadata_dep_with_marker():
+    """_get_package_metadata captures environment markers on dependencies."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\nversion = "1.0"\n'
+            'dependencies = ["pywin32>=1; sys_platform == \\"win32\\""]\n',
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        meta = docs._get_package_metadata()
+        dep = next(d for d in meta["dependencies"] if d["name"] == "pywin32")
+        assert "sys_platform" in dep["marker"]
+
+
+def test_get_package_metadata_optional_dep_group_with_extras():
+    """_get_package_metadata parses extras inside optional-dependency groups."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\nversion = "1.0"\n'
+            '[project.optional-dependencies]\n'
+            'full = ["httpx[http2]>=0.24", "boto3[s3]"]\n',
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        meta = docs._get_package_metadata()
+        full_group = meta["optional_dependencies_full"]["full"]
+        httpx = next(d for d in full_group if d["name"] == "httpx")
+        assert "http2" in httpx["extras"]
+        boto3 = next(d for d in full_group if d["name"] == "boto3")
+        assert "s3" in boto3["extras"]
+
+
+def test_get_package_metadata_optional_dep_with_marker():
+    """_get_package_metadata captures markers in optional dep groups."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\nversion = "1.0"\n'
+            '[project.optional-dependencies]\n'
+            'windows = ["pywin32>=1; sys_platform == \\"win32\\""]\n',
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        meta = docs._get_package_metadata()
+        win_group = meta["optional_dependencies_full"]["windows"]
+        dep = next(d for d in win_group if d["name"] == "pywin32")
+        assert "sys_platform" in dep["marker"]
+
+
+def test_get_package_metadata_invalid_dep_falls_back():
+    """_get_package_metadata stores raw string when PEP 508 parse fails."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text(
+            '[project]\nname = "mypkg"\nversion = "1.0"\n'
+            'dependencies = ["!!!not-valid-pep508!!!"]\n',
+            encoding="utf-8",
+        )
+        docs = GreatDocs(project_path=str(tmp_dir))
+        meta = docs._get_package_metadata()
+        assert any(d["specifier"] == "" for d in meta["dependencies"])
+
+
+# ---------------------------------------------------------------------------
+# _get_source_location_from_pkg — missing lineno / filepath branches
+# ---------------------------------------------------------------------------
+
+
+def test_get_source_location_no_lineno():
+    """_get_source_location_from_pkg returns None when obj has no lineno."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=str(tmp_dir))
+
+        class FakeObj:
+            lineno = None
+            filepath = "/some/file.py"
+            members = {}
+
+        class FakePkg:
+            members = {"MyClass": FakeObj()}
+
+        result = docs._get_source_location_from_pkg(FakePkg(), "MyClass")
+        assert result is None
+
+
+def test_get_source_location_no_filepath():
+    """_get_source_location_from_pkg returns None when obj has no filepath."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=str(tmp_dir))
+
+        class FakeObj:
+            lineno = 10
+            filepath = None
+            members = {}
+
+        class FakePkg:
+            members = {"MyClass": FakeObj()}
+
+        result = docs._get_source_location_from_pkg(FakePkg(), "MyClass")
+        assert result is None
+
+
+def test_get_source_location_member_missing():
+    """_get_source_location_from_pkg returns None when dotted path member absent."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=str(tmp_dir))
+
+        class FakePkg:
+            members = {}
+
+        result = docs._get_source_location_from_pkg(FakePkg(), "Missing.method")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _copy_blog_files — co-located asset and subdirectory copying
+# ---------------------------------------------------------------------------
+
+
+def test_copy_blog_files_copies_colocated_images():
+    """_copy_blog_files copies non-.qmd files co-located with content files."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        src = tmp / "blog"
+        src.mkdir()
+        (src / "post.qmd").write_text("---\ntitle: Post\n---\nHello\n", encoding="utf-8")
+        (src / "image.png").write_bytes(b"\x89PNG")
+        dest = tmp / "dest"
+        dest.mkdir()
+
+        (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        docs = GreatDocs(project_path=str(tmp_dir))
+        docs._copy_blog_files([src / "post.qmd"], src, dest)
+
+        assert (dest / "image.png").exists()
+
+
+def test_copy_blog_files_copies_asset_subdirectory():
+    """_copy_blog_files copies asset subdirs that contain no .qmd files."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        src = tmp / "blog"
+        src.mkdir()
+        (src / "post.qmd").write_text("---\ntitle: Post\n---\n", encoding="utf-8")
+        assets = src / "datasets"
+        assets.mkdir()
+        (assets / "data.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        dest = tmp / "dest"
+        dest.mkdir()
+
+        (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        docs = GreatDocs(project_path=str(tmp_dir))
+        docs._copy_blog_files([src / "post.qmd"], src, dest)
+
+        assert (dest / "datasets" / "data.csv").exists()
+
+
+def test_copy_blog_files_returns_metadata():
+    """_copy_blog_files returns list of dicts with filename/title/description."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        src = tmp / "blog"
+        src.mkdir()
+        (src / "my-post.qmd").write_text(
+            '---\ntitle: My Post\ndescription: A great post.\n---\nContent.\n',
+            encoding="utf-8",
+        )
+        dest = tmp / "dest"
+        dest.mkdir()
+
+        (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        docs = GreatDocs(project_path=str(tmp_dir))
+        result = docs._copy_blog_files([src / "my-post.qmd"], src, dest)
+
+        assert len(result) == 1
+        assert result[0]["title"] == "My Post"
+        assert result[0]["description"] == "A great post."
+
+
+# ---------------------------------------------------------------------------
+# _add_section_sidebar — sidebar_groups path
+# ---------------------------------------------------------------------------
+
+
+def test_add_section_sidebar_with_sidebar_groups():
+    """_add_section_sidebar organizes pages into sections when sidebar_groups given."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+
+        docs = GreatDocs(project_path=str(tmp_dir))
+        quarto_yml = docs.project_path / "_quarto.yml"
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        from great_docs._utils import QUARTO_YML_HEADER
+
+        quarto_yml.write_text(
+            QUARTO_YML_HEADER + "website:\n  sidebar:\n    - id: existing\n      contents: []\n",
+            encoding="utf-8",
+        )
+
+        pages = [
+            {"filename": "intro.qmd", "title": "Introduction", "description": ""},
+            {"filename": "advanced.qmd", "title": "Advanced", "description": ""},
+        ]
+        sidebar_groups = [
+            {"section": "Getting Started", "contents": ["intro.qmd"]},
+            {"section": "Deep Dive", "contents": ["advanced.qmd"]},
+        ]
+        docs._add_section_sidebar(
+            title="Recipes",
+            slug="recipes",
+            pages=pages,
+            has_user_index=False,
+            sidebar_groups=sidebar_groups,
+        )
+
+        import yaml as pyyaml
+
+        with open(quarto_yml, encoding="utf-8") as f:
+            config = pyyaml.safe_load(f)
+
+        sidebars = config["website"]["sidebar"]
+        recipe_sidebar = next((s for s in sidebars if s.get("id") == "recipes"), None)
+        assert recipe_sidebar is not None
+        # Each group should appear as a section in the contents
+        section_titles = [
+            item["section"]
+            for item in recipe_sidebar["contents"]
+            if isinstance(item, dict) and "section" in item
+        ]
+        assert "Getting Started" in section_titles
+        assert "Deep Dive" in section_titles
+
+
+def test_add_section_sidebar_with_sidebar_groups_ungrouped_pages():
+    """_add_section_sidebar appends ungrouped pages after explicit groups."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        (tmp / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+
+        docs = GreatDocs(project_path=str(tmp_dir))
+        quarto_yml = docs.project_path / "_quarto.yml"
+        docs.project_path.mkdir(parents=True, exist_ok=True)
+
+        from great_docs._utils import QUARTO_YML_HEADER
+
+        quarto_yml.write_text(
+            QUARTO_YML_HEADER + "website:\n  sidebar:\n    - id: existing\n      contents: []\n",
+            encoding="utf-8",
+        )
+
+        pages = [
+            {"filename": "intro.qmd", "title": "Introduction", "description": ""},
+            {"filename": "extra.qmd", "title": "Extra", "description": ""},
+        ]
+        sidebar_groups = [
+            {"section": "Group A", "contents": ["intro.qmd"]},
+        ]
+        docs._add_section_sidebar(
+            title="Guides",
+            slug="guides",
+            pages=pages,
+            has_user_index=False,
+            sidebar_groups=sidebar_groups,
+        )
+
+        import yaml as pyyaml
+
+        with open(quarto_yml, encoding="utf-8") as f:
+            config = pyyaml.safe_load(f)
+
+        sidebars = config["website"]["sidebar"]
+        guide_sidebar = next((s for s in sidebars if s.get("id") == "guides"), None)
+        assert guide_sidebar is not None
+        hrefs = [
+            item.get("href", "")
+            for item in guide_sidebar["contents"]
+            if isinstance(item, dict)
+        ]
+        assert any("extra.qmd" in h for h in hrefs)
