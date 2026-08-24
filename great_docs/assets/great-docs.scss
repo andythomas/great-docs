@@ -82,6 +82,12 @@ span.gd-linkback-text {
    font-style: italic;
 }
 
+// A block citation puts its backlinks inside the element Quarto copies into the
+// hover preview. Hide them because the preview should not contain linkbacks.
+.tippy-content .gd-linkback-text {
+   display: none;
+}
+
 // Set headings boldness back to the bootstrap default.
 // quarto changes it for h1, h2, h3!
 h1, .h2, h2, .h2, h3, .h3 {

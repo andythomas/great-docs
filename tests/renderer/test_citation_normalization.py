@@ -204,6 +204,151 @@ def test_indented_citation_does_not_swallow_the_following_text(parser: str):
 
 
 @pytest.mark.parametrize("parser", _PARSERS)
+def test_multi_paragraph_citation_anchors_every_paragraph(parser: str):
+    """
+    Verify one citation anchor contains every paragraph
+
+    Quarto builds its hover preview from the target element, but a bracketed
+    Markdown span cannot contain multiple paragraphs.
+    """
+    source = (
+        '.. [1] Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."\n'
+        "\n"
+        "       Communications of the ACM, 4(7), 321.\n"
+    )
+    expected = (
+        "1. ::: {#cite-process-1 .gd-cite-body}\n"
+        '   Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."\n'
+        "\n"
+        "   Communications of the ACM, 4(7), 321.\n"
+        "   :::\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_block_citation_preserves_nested_indentation(parser: str):
+    """Preserve a nested list's relative indentation in a block citation"""
+    source = (
+        ".. [1] Knuth, D. (1998). The Art of Computer Programming.\n"
+        "\n"
+        "       - Volume 3, Sorting and Searching,\n"
+        "         second edition\n"
+        "       - Section 6.2.1\n"
+    )
+    expected = (
+        "1. ::: {#cite-process-1 .gd-cite-body}\n"
+        "   Knuth, D. (1998). The Art of Computer Programming.\n"
+        "\n"
+        "   - Volume 3, Sorting and Searching,\n"
+        "     second edition\n"
+        "   - Section 6.2.1\n"
+        "   :::\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_block_citation_keeps_backlink_inside_anchor(parser: str):
+    """Keep the backlink in the anchored first paragraph"""
+    source = (
+        "See [1]_.\n"
+        "\n"
+        ".. [1] Hoare, C.A.R. (1961).\n"
+        "\n"
+        "       A second paragraph.\n"
+    )
+    expected = (
+        'See [^1^](#cite-process-1){#ref-process-1-1 .gd-cite-ref role="doc-noteref"}.\n'
+        "\n"
+        "1. ::: {#cite-process-1 .gd-cite-body}\n"
+        "   [^](#ref-process-1-1){.gd-linkback-text .gd-linkback-caret "
+        'role="doc-backlink"} Hoare, C.A.R. (1961).\n'
+        "\n"
+        "   A second paragraph.\n"
+        "   :::\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_marker_indentation_ends_citation_body(parser: str):
+    """Keep prose at the marker's indentation outside the citation"""
+    source = ".. [1] Hoare, C.A.R. (1961).\n\nUnrelated prose.\n"
+    expected = "1. [Hoare, C.A.R. (1961).]{#cite-process-1}\n\nUnrelated prose.\n"
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_following_definition_ends_citation_body(parser: str):
+    """Recognise a following definition at any indentation as a new citation"""
+    same_indent = (
+        ".. [1] First source.\n"
+        "\n"
+        "       Its second paragraph.\n"
+        "\n"
+        ".. [2] Second source.\n"
+    )
+    assert _normalized(same_indent, parser) == (
+        "1. ::: {#cite-process-1 .gd-cite-body}\n"
+        "   First source.\n"
+        "\n"
+        "   Its second paragraph.\n"
+        "   :::\n"
+        "\n"
+        "2. [Second source.]{#cite-process-2}\n"
+    )
+
+    deeper_indent = ".. [1] First source.\n\n   .. [2] Second source.\n"
+    assert _normalized(deeper_indent, parser) == (
+        "1. [First source.]{#cite-process-1}\n\n   2. [Second source.]{#cite-process-2}\n"
+    )
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_fenced_code_after_blank_line_ends_citation_body(parser: str):
+    """Keep fenced code after a blank line outside the citation"""
+    source = ".. [1] Hoare, C.A.R. (1961).\n\n   ```python\n   quicksort(xs)\n   ```\n"
+    expected = (
+        "1. [Hoare, C.A.R. (1961).]{#cite-process-1}\n"
+        "\n"
+        "   ```python\n"
+        "   quicksort(xs)\n"
+        "   ```\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
+def test_indented_block_citation_preserves_outer_indentation(parser: str):
+    """Convert a nested block citation without changing its outer indentation"""
+    source = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    .. [1] Hoare, C.A.R. (1961).\n"
+        "\n"
+        "           A second paragraph.\n"
+    )
+    expected = (
+        "Parameters\n"
+        "----------\n"
+        "x\n"
+        "    Something clever.\n"
+        "\n"
+        "    1. ::: {#cite-process-1 .gd-cite-body}\n"
+        "       Hoare, C.A.R. (1961).\n"
+        "\n"
+        "       A second paragraph.\n"
+        "       :::\n"
+    )
+    assert _normalized(source, parser) == expected
+
+
+
+@pytest.mark.parametrize("parser", _PARSERS)
 def test_single_reference_links_both_ways(parser: str):
     """
     Verify one reference and its citation link in both directions

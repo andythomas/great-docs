@@ -35,9 +35,9 @@ SPEC = {
                 """
                 Sort a list using the quicksort algorithm.
 
-                Implements the classic quicksort algorithm with Lomuto
-                partition scheme. Returns a new sorted list without
-                modifying the original.
+                Implements the classic quicksort algorithm [1]_ with
+                Lomuto partition scheme. Returns a new sorted list
+                without modifying the original.
 
                 Parameters
                 ----------
@@ -63,6 +63,9 @@ SPEC = {
                 ----------
                 .. [1] Hoare, C.A.R. (1961). "Algorithm 64: Quicksort."
                    Communications of the ACM, 4(7), 321.
+
+                   The paper describes the partition step in ALGOL 60 and
+                   calls the pivot a "bound".
                 .. [2] Cormen, T.H. et al. (2009). "Introduction to
                    Algorithms", 3rd edition, MIT Press, Chapter 7.
 

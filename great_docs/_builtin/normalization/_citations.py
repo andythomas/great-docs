@@ -207,6 +207,7 @@ def _live_reference_matches(line: str) -> list[re.Match[str]]:
 _NON_ANCHOR_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
 _CITE_REF_CLASS = ".gd-cite-ref"
+_CITE_BODY_CLASS = ".gd-cite-body"
 _CARET_CLASSES = ".gd-linkback-text .gd-linkback-caret"
 _LETTER_CLASSES = ".gd-linkback-text .gd-linkback-letter"
 
@@ -368,6 +369,166 @@ def _link_references(
     return "".join(parts)
 
 
+def _indent_width(line: str) -> int:
+    """
+    Count a line's leading spaces and tabs
+
+    Parameters
+    ----------
+    line
+        The line to measure.
+
+    Returns
+    -------
+    The number of leading whitespace characters.
+    """
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _shifted(line: str, offset: int) -> str:
+    """
+    Shift a body line by an indentation offset
+
+    Parameters
+    ----------
+    line
+        The line to move.
+    offset
+        The number of spaces to add. A negative value removes that many leading
+        whitespace characters and must not exceed the line's indentation.
+
+    Returns
+    -------
+    The shifted line, or an empty string for a blank line.
+    """
+    if not line.strip():
+        return ""
+    return " " * offset + line if offset > 0 else line[-offset:]
+
+
+def _continuation_lines(
+    lines: list[str],
+    protected: list[bool],
+    start: int,
+    marker_width: int,
+) -> tuple[list[str], int]:
+    """
+    Collect the lines continuing a citation body
+
+    Stop before literal code, another definition, or the first non-blank line
+    whose indentation does not exceed the marker's. Retain paragraph breaks
+    within the body, but leave trailing blank lines with the following text.
+
+    Parameters
+    ----------
+    lines
+        The docstring's lines, with references already linked.
+    protected
+        One flag per line. `True` identifies literal code.
+    start
+        The definition marker's line index.
+    marker_width
+        The number of leading spaces and tabs before the marker.
+
+    Returns
+    -------
+    The continuation lines and the final source index consumed by the body.
+    """
+    collected: list[str] = []
+    blanks: list[str] = []
+    index = start
+    while index + 1 < len(lines):
+        line = lines[index + 1]
+        if not line.strip():
+            blanks.append(line)
+            index += 1
+            continue
+        ends_body = (
+            protected[index + 1]
+            or _indent_width(line) <= marker_width
+            or _RST_CITATION_MARKER_RE.match(line) is not None
+        )
+        if ends_body:
+            break
+        collected.extend(blanks)
+        blanks.clear()
+        collected.append(line)
+        index += 1
+    return collected, index - len(blanks)
+
+
+def _span_definition(
+    marker: str,
+    anchor: str,
+    backlinks: str,
+    head: str,
+    continuations: list[str],
+) -> str:
+    """
+    Render a single-paragraph citation as an anchored span
+
+    Parameters
+    ----------
+    marker
+        The list marker, including its indentation and trailing space.
+    anchor
+        The citation's anchor ID.
+    backlinks
+        The citation's return links, or the empty string.
+    head
+        The body's first line, without indentation.
+    continuations
+        The body's remaining lines.
+
+    Returns
+    -------
+    The list item with its complete body inside the anchored span.
+    """
+    body = " ".join([head, *(line.strip() for line in continuations)]).strip()
+    return f"{marker}{backlinks}[{_RST_CITATION_URL_RE.sub(_wrap_url, body)}]{{#{anchor}}}"
+
+
+def _block_definition(
+    marker: str,
+    anchor: str,
+    backlinks: str,
+    head: str,
+    continuations: list[str],
+) -> list[str]:
+    """
+    Render a multi-paragraph citation as an anchored fenced div
+
+    Markdown spans cannot contain paragraph breaks. A fenced div keeps every
+    paragraph within the citation anchor. Apply one indentation offset to all
+    continuation lines so nested content retains its relative indentation.
+
+    Parameters
+    ----------
+    marker
+        The list marker, including its indentation and trailing space.
+    anchor
+        The citation's anchor ID.
+    backlinks
+        The citation's return links, or the empty string.
+    head
+        The body's first line, without indentation.
+    continuations
+        The body's remaining lines, including paragraph breaks.
+
+    Returns
+    -------
+    The opening fence, the body, and the closing fence.
+    """
+    content = " " * len(marker)
+    offset = len(content) - min(_indent_width(line) for line in continuations if line.strip())
+    body = [f"{content}{backlinks}{head}", *(_shifted(line, offset) for line in continuations)]
+    return [
+        f"{marker}::: {{#{anchor} {_CITE_BODY_CLASS}}}",
+        *(_RST_CITATION_URL_RE.sub(_wrap_url, line) for line in body),
+        f"{content}:::",
+    ]
+
+
 def _convert_definitions(
     lines: list[str],
     protected: list[bool],
@@ -377,9 +538,9 @@ def _convert_definitions(
     """
     Convert prose citation definitions to anchored numbered list items
 
-    Start each body with the text after its marker. Append consecutive
-    non-blank lines indented beyond the marker, stopping before another
-    definition or literal code.
+    A body starts after its marker and includes subsequent lines indented beyond
+    the marker. Render one paragraph as an anchored span and multiple paragraphs
+    as an anchored fenced div.
 
     Parameters
     ----------
@@ -394,7 +555,8 @@ def _convert_definitions(
 
     Returns
     -------
-    The lines with every unprotected definition converted.
+    The lines with every unprotected definition converted. Fenced divs add
+    opening and closing lines around multi-paragraph bodies.
     """
     result: list[str] = []
     index = 0
@@ -406,25 +568,20 @@ def _convert_definitions(
             continue
 
         indent, number, inline_body = match.group(1), match.group(2), match.group(3)
-        marker_width = len(indent)
-        parts = [inline_body.strip()] if inline_body and inline_body.strip() else []
+        continuations, index = _continuation_lines(lines, protected, index, len(indent))
 
-        while index + 1 < len(lines):
-            next_line = lines[index + 1]
-            if protected[index + 1] or not next_line.strip():
-                break
-            next_indent = len(next_line) - len(next_line.lstrip(" \t"))
-            if next_indent <= marker_width or _RST_CITATION_MARKER_RE.match(next_line):
-                break
-            index += 1
-            parts.append(next_line.strip())
+        # A marker can carry no text, leaving the body to start on the next line.
+        head = (inline_body or "").strip()
+        if not head and continuations:
+            head, continuations = continuations[0].strip(), continuations[1:]
 
-        body = _RST_CITATION_URL_RE.sub(_wrap_url, " ".join(parts))
-        result.append(
-            f"{indent}{number}. "
-            f"{_backlinks(anchor_stem, number, counts.get(number, 0))}"
-            f"[{body}]{{#cite-{anchor_stem}-{number}}}"
-        )
+        marker = f"{indent}{number}. "
+        anchor = f"cite-{anchor_stem}-{number}"
+        backlinks = _backlinks(anchor_stem, number, counts.get(number, 0))
+        if any(not line.strip() for line in continuations):
+            result.extend(_block_definition(marker, anchor, backlinks, head, continuations))
+        else:
+            result.append(_span_definition(marker, anchor, backlinks, head, continuations))
         index += 1
     return result
 
@@ -433,17 +590,20 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
     """
     Convert numbered RST citations to bidirectional Markdown links
 
-    Convert each prose definition to an anchored numbered item. Each matching
-    `[N]_` reference links to that item. The item links back with a caret for
-    one reference or lettered links for several. Leave unmatched references
-    unchanged.
+    Convert each prose definition to an anchored numbered item. Its body ends
+    before literal code, another definition, or the first non-blank line whose
+    indentation does not exceed the marker's. Each matching `[N]_` reference
+    links to that item. The item links back with a caret for one reference or
+    lettered links for several. Leave unmatched references unchanged.
 
     Preserve citation syntax in fenced blocks, inline code spans, and unfenced
     doctest prompts. Exclude these references from backlink counts. Return the
     original text when every definition appears in literal code.
 
-    Wrap the first paragraph of each citation body in a bracketed Markdown
-    span. Authors must escape unmatched closing brackets, which can end the
+    Put a single-paragraph body in a bracketed Markdown span and a
+    multi-paragraph body in a fenced div. Both forms keep the complete body
+    inside the anchor that Quarto uses for its hover preview. In the span form,
+    authors must escape unmatched closing brackets because they can end the
     span early and detach its anchor.
 
     RST forbids duplicate labels. When they occur, both definitions reuse the
@@ -485,9 +645,10 @@ def _convert_rst_citations(text: str, anchor_stem: str) -> str:
             number = match.group(1)
             counts[number] = counts.get(number, 0) + 1
 
-    # Match offsets refer to the original lines, so link references before
-    # converting definitions. Links preserve line count and indentation;
-    # `protected` therefore remains aligned with the rewritten lines.
+    # Match offsets refer to the original lines, so link references first. Links
+    # preserve line count and indentation, which keeps `protected` aligned with
+    # the rewritten lines. Convert definitions last because fenced divs change
+    # the line count.
     seen: dict[str, int] = {}
     linked: list[str] = []
     for line, matches in zip(lines, live):
