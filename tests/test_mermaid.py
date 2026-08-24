@@ -390,3 +390,59 @@ def test_render_string_failure(mock_svg):
         result = render_mermaid_string(SIMPLE_DIAGRAM, out)
         assert result is False
         assert not out.exists()
+
+
+def _make_qmd(tmp_path: Path, diagram_code: str) -> Path:
+    """Write a minimal .qmd file containing one mermaid block."""
+    qmd = tmp_path / "page.qmd"
+    qmd.write_text(f"# Title\n\n```{{mermaid}}\n{diagram_code}\n```\n", encoding="utf-8")
+    return qmd
+
+
+def test_render_diagrams_for_page_cache_hit_skips_render(tmp_path: Path):
+    """render_diagrams_for_page reads from cache when both light and dark files exist."""
+    diagram_code = "graph TD\n  A --> B"
+    from great_docs._mermaid import get_diagram_hash
+
+    h = get_diagram_hash(diagram_code)
+    light_fn = f"mermaid-{h}-light.png"
+    dark_fn = f"mermaid-{h}-dark.png"
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / light_fn).write_bytes(b"LIGHT_PNG")
+    (cache_dir / dark_fn).write_bytes(b"DARK_PNG")
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    qmd = _make_qmd(tmp_path, diagram_code)
+
+    with patch("great_docs._mermaid.render_mermaid_to_png") as mock_render:
+        results = render_diagrams_for_page(qmd, output_dir=out_dir, cache_dir=cache_dir)
+        mock_render.assert_not_called()
+
+    assert h in results
+    assert results[h][0].read_bytes() == b"LIGHT_PNG"
+
+
+def test_render_diagrams_for_page_writes_to_cache_on_success(tmp_path: Path):
+    """render_diagrams_for_page saves rendered output to cache_dir."""
+    diagram_code = "graph TD\n  A --> B"
+    from great_docs._mermaid import get_diagram_hash
+
+    h = get_diagram_hash(diagram_code)
+    light_fn = f"mermaid-{h}-light.png"
+    dark_fn = f"mermaid-{h}-dark.png"
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    qmd = _make_qmd(tmp_path, diagram_code)
+
+    with patch("great_docs._mermaid.render_mermaid_to_png", side_effect=[b"LPNG", b"DPNG"]):
+        results = render_diagrams_for_page(qmd, output_dir=out_dir, cache_dir=cache_dir)
+
+    assert h in results
+    assert (cache_dir / light_fn).read_bytes() == b"LPNG"
+    assert (cache_dir / dark_fn).read_bytes() == b"DPNG"
