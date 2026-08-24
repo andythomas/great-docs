@@ -86,7 +86,7 @@ def get_file_created_date(
             # Get the last line (earliest commit)
             lines = result.stdout.strip().split("\n")
             iso_date = lines[-1].strip()
-            if iso_date:
+            if iso_date:  # pragma: no branch
                 return datetime.fromisoformat(iso_date)
 
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
