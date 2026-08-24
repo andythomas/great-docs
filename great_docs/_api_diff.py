@@ -819,8 +819,8 @@ def _read_cli_module_at_tag(
                 # Parse [tool.great-docs.cli] section
                 try:
                     import tomllib
-                except ImportError:
-                    import tomli as tomllib  # type: ignore[no-redef]
+                except ImportError:  # pragma: no cover
+                    import tomli as tomllib  # type: ignore[no-redef]  # pragma: no cover
                 data = tomllib.loads(content)
                 cli_cfg = data.get("tool", {}).get("great-docs", {}).get("cli", {})
                 if cli_cfg.get("enabled"):
@@ -1340,8 +1340,8 @@ def snapshot_cli_from_click(cli_obj: object) -> CliCommandInfo | None:
     """
     try:
         import click
-    except ImportError:
-        return None
+    except ImportError:  # pragma: no cover
+        return None  # pragma: no cover
 
     if not isinstance(cli_obj, (click.Command, click.Group)):
         return None
@@ -2427,8 +2427,8 @@ def _detect_package_name(project_root: Path) -> str | None:
     try:
         try:
             import tomllib
-        except ImportError:
-            import tomli as tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # pragma: no cover
 
         with open(pyproject, "rb") as f:
             data = tomllib.load(f)
