@@ -264,6 +264,7 @@ class TestFileParsing:
         f.write_text(content, encoding="utf-8")
 
         rec = parse_termshow(f)
+
         assert rec.title == "Test"
         assert len(rec.events) == 2
         assert rec.duration == pytest.approx(0.5)
@@ -277,5 +278,36 @@ class TestFileParsing:
         f.write_text(content, encoding="utf-8")
 
         rec = parse_asciicast(f)
+
         assert rec.format == "asciicast"
         assert len(rec.events) == 1
+
+
+def test_parse_asciicast_str_skips_malformed_event_line():
+    """parse_asciicast_str skips lines that are not a >=3-element JSON array."""
+    header = json.dumps({"version": 2, "width": 80, "height": 24})
+    good_event = json.dumps([0.5, "o", "hello"])
+    bad_event = json.dumps({"not": "array"})  # dict, not list -> skipped
+
+    recording = parse_asciicast_str(f"{header}\n{bad_event}\n{good_event}\n")
+
+    assert len(recording.events) == 1
+    assert recording.events[0].data == "hello"
+
+
+def test_parse_asciicast_str_non_dict_theme_skips_theme_parse():
+    """parse_asciicast_str handles non-dict theme data in the header."""
+    header = json.dumps(
+        {
+            "version": 2,
+            "width": 80,
+            "height": 24,
+            "term": {"cols": 80, "rows": 24, "type": "xterm-256color", "theme": "base16-ocean"},
+        }
+    )
+    event = json.dumps([0.5, "o", "hi"])
+
+    recording = parse_asciicast_str(f"{header}\n{event}\n")
+
+    assert len(recording.events) == 1
+    assert recording.events[0].data == "hi"
