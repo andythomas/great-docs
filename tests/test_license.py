@@ -217,3 +217,32 @@ class TestBuildLicenseFeaturesHtml:
             html = build_license_features_html(info)
             assert html.startswith('<div class="gd-license-features">')
             assert html.endswith("</div>")
+
+
+class TestBuildLicenseFeaturesHtmlTooltip:
+    def test_badge_renders_title_when_tooltip_provided(self):
+        """build_license_features_html renders a title= attribute when tooltips is given."""
+        info = get_license_info("MIT")
+
+        assert info is not None
+
+        # Pass a tooltip for one of the permission labels
+        perm_label = info.permissions[0] if info.permissions else "use commercially"
+        html = build_license_features_html(
+            info, tooltips={perm_label: "You may use this commercially"}
+        )
+
+        assert "title=" in html
+
+    def test_license_with_no_permissions_omits_permissions_section(self):
+        """build_license_features_html skips the permissions block when info.permissions is empty."""
+        info_data = LicenseInfo(
+            spdx_id="Test-0",
+            full_name="Test License",
+            permissions=[],
+            conditions=["License and copyright notice"],
+            limitations=["Liability"],
+        )
+        html = build_license_features_html(info_data)
+
+        assert "license-badge-permission" not in html
