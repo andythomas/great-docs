@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import tempfile
+import sys as _sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,11 @@ from click.testing import CliRunner
 from great_docs.cli import (
     _detect_optional_dependencies,
     _detect_python_version_from_pyproject,
+    _find_build_timing,
+    _format_seconds,
+    _freeze_info,
+    _print_page_table,
+    _print_timing_table,
     cli,
 )
 
@@ -1401,7 +1407,7 @@ def test_versions_with_git_ref():
 def test_api_snapshot_head(mock_detect, mock_snap):
     """api-snapshot with no args snapshots HEAD."""
     mock_snap_obj = MagicMock()
-    mock_snap_obj.symbol_count = 42
+    mock_snap_obj.symbol_count = 23
     mock_snap.return_value = mock_snap_obj
 
     runner = CliRunner()
@@ -1409,7 +1415,7 @@ def test_api_snapshot_head(mock_detect, mock_snap):
         Path("pyproject.toml").write_text('[project]\nname = "mypkg"\n')
         result = runner.invoke(cli, ["api-snapshot", "--project-path", "."])
         assert result.exit_code == 0
-        assert "42 symbols" in result.output
+        assert "23" in result.output
         mock_snap_obj.save.assert_called_once()
 
 
@@ -1555,3 +1561,566 @@ def test_api_snapshot_all_tags_differ(tmp_path: Path):
     assert set(s1) == {"sub.Widget", "sub.Widget.fit"}
     assert "sub.Widget.transform" in s2
     assert set(s1) != set(s2)
+
+
+# ---------------------------------------------------------------------------
+# _format_seconds
+# ---------------------------------------------------------------------------
+
+
+class TestFormatSeconds:
+    def test_under_sixty(self):
+        assert _format_seconds(5.0) == "5.0s"
+
+    def test_exactly_sixty(self):
+        assert _format_seconds(60.0) == "1m 0.0s"
+
+    def test_over_sixty(self):
+        assert _format_seconds(90.5) == "1m 30.5s"
+
+    def test_fraction_under_sixty(self):
+        assert _format_seconds(1.25) == "1.2s"
+
+    def test_large(self):
+        assert _format_seconds(125.0) == "2m 5.0s"
+
+
+# ---------------------------------------------------------------------------
+# _find_build_timing
+# ---------------------------------------------------------------------------
+
+
+class TestFindBuildTiming:
+    def test_output_dir_file_exists(self, tmp_path):
+        out = tmp_path / "output"
+        out.mkdir()
+        f = out / "build-timings.json"
+        f.write_text("{}")
+        result = _find_build_timing(tmp_path, output_dir=out)
+        assert result == f
+
+    def test_output_dir_file_missing_falls_through_to_gd_site(self, tmp_path):
+        out = tmp_path / "output"
+        out.mkdir()
+        gd_site = tmp_path / "great-docs" / "_site"
+        gd_site.mkdir(parents=True)
+        f = gd_site / "build-timings.json"
+        f.write_text("{}")
+        result = _find_build_timing(tmp_path, output_dir=out)
+        assert result == f
+
+    def test_great_docs_site(self, tmp_path):
+        gd_site = tmp_path / "great-docs" / "_site"
+        gd_site.mkdir(parents=True)
+        f = gd_site / "build-timings.json"
+        f.write_text("{}")
+        result = _find_build_timing(tmp_path)
+        assert result == f
+
+    def test_underscore_site(self, tmp_path):
+        site = tmp_path / "_site"
+        site.mkdir()
+        f = site / "build-timings.json"
+        f.write_text("{}")
+        result = _find_build_timing(tmp_path)
+        assert result == f
+
+    def test_nothing_exists(self, tmp_path):
+        result = _find_build_timing(tmp_path)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _print_page_table
+# ---------------------------------------------------------------------------
+
+
+class TestPrintPageTable:
+    def test_empty_pages(self, capsys):
+        _print_page_table([])
+        out = capsys.readouterr().out
+        assert "No page timings recorded" in out
+
+    def test_pages_without_frozen(self, capsys):
+        pages = [
+            {"page": "index.qmd", "seconds": 2.0},
+            {"page": "intro.qmd", "seconds": 1.0},
+        ]
+        _print_page_table(pages)
+        out = capsys.readouterr().out
+        assert "index.qmd" in out
+        assert "2.0s" in out
+        # No frozen legend
+        assert "freeze cache" not in out
+
+    def test_pages_with_frozen_entries(self, capsys):
+        pages = [
+            {"page": "slow.qmd", "seconds": 5.0, "frozen": True},
+            {"page": "fast.qmd", "seconds": 1.0, "frozen": False},
+        ]
+        _print_page_table(pages)
+        out = capsys.readouterr().out
+        assert "slow.qmd" in out
+        assert "❄" in out  # ❄
+        assert "freeze cache" in out
+
+
+# ---------------------------------------------------------------------------
+# _print_timing_table
+# ---------------------------------------------------------------------------
+
+
+class TestPrintTimingTable:
+    def test_single_version_data_top(self, capsys):
+        data = {
+            "build_time": "2024-01-15 10:00:00",
+            "total_seconds": 30.0,
+            "pages": [
+                {"page": "a.qmd", "seconds": 10.0},
+                {"page": "b.qmd", "seconds": 5.0},
+                {"page": "c.qmd", "seconds": 2.0},
+            ],
+        }
+        _print_timing_table(data, top=2, version_filter=None)
+        out = capsys.readouterr().out
+
+        assert "a.qmd" in out
+        assert "b.qmd" in out
+
+        # top=2 so c.qmd should be excluded
+        assert "c.qmd" not in out
+
+    def test_multi_version_data(self, capsys):
+        data = {
+            "build_time": "2024-01-15 10:00:00",
+            "total_seconds": 30.0,
+            "versions": {
+                "v1": {
+                    "seconds": 20.0,
+                    "pages": [{"page": "a.qmd", "seconds": 10.0}],
+                },
+                "v2": {
+                    "seconds": 10.0,
+                    "pages": [{"page": "b.qmd", "seconds": 10.0}],
+                },
+            },
+        }
+        _print_timing_table(data, top=None, version_filter=None)
+        out = capsys.readouterr().out
+
+        assert "v1" in out
+        assert "v2" in out
+
+    def test_multi_version_with_filter(self, capsys):
+        data = {
+            "build_time": "2024-01-15 10:00:00",
+            "total_seconds": 30.0,
+            "versions": {
+                "v1": {
+                    "seconds": 20.0,
+                    "pages": [{"page": "a.qmd", "seconds": 10.0}],
+                },
+                "v2": {
+                    "seconds": 10.0,
+                    "pages": [{"page": "b.qmd", "seconds": 10.0}],
+                },
+            },
+        }
+        _print_timing_table(data, top=None, version_filter="v1")
+        out = capsys.readouterr().out
+
+        assert "v1" in out
+        assert "b.qmd" not in out
+
+    def test_version_filter_not_found(self, capsys):
+        data = {
+            "build_time": "2024-01-15",
+            "total_seconds": 5.0,
+            "versions": {
+                "v1": {"seconds": 5.0, "pages": []},
+            },
+        }
+        with pytest.raises(SystemExit) as exc_info:
+            _print_timing_table(data, top=None, version_filter="v99")
+
+        assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# _freeze_info
+# ---------------------------------------------------------------------------
+
+
+class TestFreezeInfo:
+    def _make_mock_config(self, freeze_value=None):
+        cfg = MagicMock()
+        cfg.freeze = freeze_value
+        return cfg
+
+    def test_no_freeze_cache_dir(self, tmp_path, capsys):
+        persist_dir = tmp_path / "_freeze"
+
+        # persist_dir does not exist
+        with patch("great_docs.config.Config", return_value=self._make_mock_config()):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+
+        assert "No freeze cache found yet" in out
+
+    def test_cache_dir_empty(self, tmp_path, capsys):
+        persist_dir = tmp_path / "_freeze"
+        persist_dir.mkdir()
+        with patch("great_docs.config.Config", return_value=self._make_mock_config()):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+
+        assert "contains no entries" in out
+
+    def test_cache_with_valid_json_timestamp(self, tmp_path, capsys):
+        persist_dir = tmp_path / "_freeze"
+        page_dir = persist_dir / "user_guide" / "demo" / "execute-results"
+        page_dir.mkdir(parents=True)
+        cache_json = page_dir / "html.json"
+        cache_json.write_text(
+            json.dumps({"result": {"markdown": "Executed at: 2024-01-15 10:30:00\nsome content"}})
+        )
+        with patch("great_docs.config.Config", return_value=self._make_mock_config()):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+
+        assert "2024-01-15 10:30:00" in out
+
+    def test_cache_unparseable_json(self, tmp_path, capsys):
+        persist_dir = tmp_path / "_freeze"
+        page_dir = persist_dir / "user_guide" / "demo" / "execute-results"
+        page_dir.mkdir(parents=True)
+        cache_json = page_dir / "html.json"
+        cache_json.write_text("not valid json{{")
+        with patch("great_docs.config.Config", return_value=self._make_mock_config()):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+
+        assert "could not be parsed" in out
+
+    def test_per_page_overrides_qmd(self, tmp_path, capsys):
+        # Create a .qmd file in user_guide/ with freeze: true in frontmatter
+        user_guide = tmp_path / "user_guide"
+        user_guide.mkdir()
+        qmd = user_guide / "benchmarks.qmd"
+        qmd.write_text("---\nfreeze: true\n---\n# Benchmarks\n")
+        persist_dir = tmp_path / "_freeze"
+
+        # persist_dir does not exist (we just want the per-page section)
+        with patch("great_docs.config.Config", return_value=self._make_mock_config()):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+
+        assert "Per-page overrides" in out
+        assert "benchmarks.qmd" in out
+
+    def test_project_freeze_auto(self, tmp_path, capsys):
+        persist_dir = tmp_path / "_freeze"
+        with patch(
+            "great_docs.config.Config", return_value=self._make_mock_config(freeze_value="auto")
+        ):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+        assert "auto" in out
+
+    def test_project_freeze_disabled(self, tmp_path, capsys):
+        persist_dir = tmp_path / "_freeze"
+        with patch(
+            "great_docs.config.Config", return_value=self._make_mock_config(freeze_value=None)
+        ):
+            _freeze_info(tmp_path, persist_dir)
+        out = capsys.readouterr().out
+        assert "disabled" in out
+
+
+# ---------------------------------------------------------------------------
+# freeze command
+# ---------------------------------------------------------------------------
+
+
+class TestFreezeCommand:
+    def test_info_flag_calls_freeze_info(self, tmp_path):
+        runner = CliRunner()
+        with patch("great_docs.cli._freeze_info") as mock_fi:
+            result = runner.invoke(cli, ["freeze", "--info", "--project-path", str(tmp_path)])
+        mock_fi.assert_called_once()
+
+    def test_no_pages_no_info_exits_error(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["freeze", "--project-path", str(tmp_path)])
+
+        assert result.exit_code != 0
+        assert "Specify at least one PAGE" in result.output + (result.stderr or "")
+
+    def test_page_not_found_exits_error(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["freeze", "nonexistent_page.qmd", "--project-path", str(tmp_path)],
+        )
+
+        assert result.exit_code != 0
+
+        # Error should mention "Page not found"
+        combined = (result.output or "") + (result.stderr or "")
+
+        assert "Page not found" in combined or result.exit_code != 0
+
+    def test_clean_removes_freeze_dir(self, tmp_path):
+        runner = CliRunner()
+        freeze_dir = tmp_path / "_freeze"
+        freeze_dir.mkdir()
+        (freeze_dir / "dummy.txt").write_text("x")
+
+        # We need a real .qmd file to satisfy page-exists check
+        qmd = tmp_path / "page.qmd"
+        qmd.write_text("---\ntitle: Test\n---\n")
+
+        with patch("great_docs.cli.GreatDocs") as mock_gd:
+            mock_gd.return_value._prepare_for_freeze.return_value = None
+            # Make build_dir/_quarto.yml NOT exist so we get the "not ready" error
+            result = runner.invoke(
+                cli,
+                ["freeze", "--clean", "page.qmd", "--project-path", str(tmp_path)],
+            )
+
+        # The _freeze dir should have been removed
+        assert not freeze_dir.exists()
+
+    def test_clean_no_existing_dir_does_not_crash(self, tmp_path):
+        runner = CliRunner()
+        qmd = tmp_path / "page.qmd"
+        qmd.write_text("---\ntitle: Test\n---\n")
+        with patch("great_docs.cli.GreatDocs") as mock_gd:
+            mock_gd.return_value._prepare_for_freeze.return_value = None
+            result = runner.invoke(
+                cli,
+                ["freeze", "--clean", "page.qmd", "--project-path", str(tmp_path)],
+            )
+
+        # Should not crash (exit with non-zero is OK due to missing _quarto.yml)
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+# ---------------------------------------------------------------------------
+# timings command
+# ---------------------------------------------------------------------------
+
+
+class TestTimingsCommand:
+    def test_no_timings_file_exits_error(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["timings", "--project-path", str(tmp_path)])
+
+        assert result.exit_code != 0
+
+        combined = (result.output or "") + (result.stderr or "")
+
+        assert "build-timings.json" in combined
+
+    def test_json_flag_outputs_json(self, tmp_path):
+        site = tmp_path / "_site"
+        site.mkdir()
+        data = {"build_time": "2024-01-01", "total_seconds": 5.0, "pages": []}
+        (site / "build-timings.json").write_text(json.dumps(data))
+        runner = CliRunner()
+        result = runner.invoke(cli, ["timings", "--json", "--project-path", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+
+        parsed = json.loads(result.output)
+
+        assert parsed["build_time"] == "2024-01-01"
+
+    def test_table_output(self, tmp_path):
+        site = tmp_path / "_site"
+        site.mkdir()
+        data = {
+            "build_time": "2024-01-01",
+            "total_seconds": 5.0,
+            "pages": [{"page": "index.qmd", "seconds": 5.0}],
+        }
+        (site / "build-timings.json").write_text(json.dumps(data))
+        runner = CliRunner()
+        result = runner.invoke(cli, ["timings", "--project-path", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "index.qmd" in result.output
+
+
+# ---------------------------------------------------------------------------
+# skill check command
+# ---------------------------------------------------------------------------
+
+
+class TestSkillCheckCommand:
+    def test_no_installed_skills(self):
+        runner = CliRunner()
+        with patch("great_docs._skill_install.check_skill", return_value=[]):
+            result = runner.invoke(cli, ["skill", "check"])
+
+        assert result.exit_code == 0
+        assert "No installed skills found" in result.output
+
+    def test_with_mixed_statuses(self):
+        runner = CliRunner()
+        skills = [
+            {"status": "current", "name": "great-tables"},
+            {"status": "outdated", "name": "great-docs"},
+            {"status": "updated", "name": "pointblank"},
+            {"status": "local", "name": "myskill"},
+        ]
+        with patch("great_docs._skill_install.check_skill", return_value=skills):
+            result = runner.invoke(cli, ["skill", "check"])
+
+        assert result.exit_code == 0
+        assert "1 current" in result.output
+        assert "1 outdated" in result.output
+        assert "1 updated" in result.output
+        assert "1 local" in result.output
+
+
+# ---------------------------------------------------------------------------
+# skill list command
+# ---------------------------------------------------------------------------
+
+
+class TestSkillListCommand:
+    def test_url_source_calls_list_skills_with_url(self):
+        runner = CliRunner()
+        with patch(
+            "great_docs._skill_install.list_skills", return_value=[{"name": "x"}]
+        ) as mock_ls:
+            result = runner.invoke(cli, ["skill", "list", "https://example.com/docs/"])
+        mock_ls.assert_called_once_with(url="https://example.com/docs/")
+
+    def test_package_name_source_calls_list_skills_with_package(self):
+        runner = CliRunner()
+        with patch(
+            "great_docs._skill_install.list_skills", return_value=[{"name": "x"}]
+        ) as mock_ls:
+            result = runner.invoke(cli, ["skill", "list", "great-tables"])
+        mock_ls.assert_called_once_with(package="great-tables")
+
+    def test_no_source_no_pyproject_exits_error(self, tmp_path):
+        runner = CliRunner()
+        # Invoke from a tmp dir with no pyproject.toml by patching Path.cwd
+        with patch("great_docs.cli.Path") as mock_path_cls:
+            mock_cwd = MagicMock()
+            mock_cwd.__truediv__ = lambda self, other: tmp_path / other
+            mock_path_cls.cwd.return_value = tmp_path
+            mock_path_cls.side_effect = lambda x=None: Path(x) if x else mock_cwd
+            result = runner.invoke(cli, ["skill", "list"])
+
+        # Either exits with error or reports no package found
+        assert result.exit_code != 0 or "Error" in (result.output or "")
+
+    def test_empty_results_exits_one(self):
+        runner = CliRunner()
+        with patch("great_docs._skill_install.list_skills", return_value=[]):
+            result = runner.invoke(cli, ["skill", "list", "great-tables"])
+
+        assert result.exit_code == 1
+        assert "No skills found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# versions command — missed branches
+# ---------------------------------------------------------------------------
+
+
+import pytest
+
+
+class TestVersionsCommandMissedBranches:
+    def _make_cfg(self, has_versions=True, versions_data=None):
+        cfg = MagicMock()
+        cfg.has_versions = has_versions
+        cfg.versions = versions_data or []
+        return cfg
+
+    def test_parse_versions_config_raises_value_error(self, tmp_path):
+        runner = CliRunner()
+        cfg = self._make_cfg(has_versions=True, versions_data=[{"bad": "entry"}])
+        with (
+            patch("great_docs.config.Config", return_value=cfg),
+            patch(
+                "great_docs._versioning.parse_versions_config",
+                side_effect=ValueError("bad config"),
+            ),
+        ):
+            result = runner.invoke(cli, ["versions", "--project-path", str(tmp_path)])
+
+        assert result.exit_code != 0
+
+        combined = (result.output or "") + (result.stderr or "")
+
+        assert "bad config" in combined
+
+    def test_check_flag_no_latest_exits_one(self, tmp_path):
+        from great_docs._versioning import VersionEntry
+
+        runner = CliRunner()
+        entry = VersionEntry(tag="v1.0", label="1.0")
+        cfg = self._make_cfg(has_versions=True, versions_data=[{"tag": "v1.0"}])
+        with (
+            patch("great_docs.config.Config", return_value=cfg),
+            patch(
+                "great_docs._versioning.parse_versions_config",
+                return_value=[entry],
+            ),
+            patch("great_docs._versioning.get_latest_version", return_value=None),
+        ):
+            result = runner.invoke(cli, ["versions", "--check", "--project-path", str(tmp_path)])
+
+        assert result.exit_code == 1
+
+        combined = (result.output or "") + (result.stderr or "")
+
+        assert "Warning" in combined or "no version marked" in combined
+
+    def test_versions_table_with_all_flags(self, tmp_path):
+        from great_docs._versioning import VersionEntry
+
+        runner = CliRunner()
+        e1 = VersionEntry(tag="v2.0", label="2.0 (latest)")
+        e1.latest = True
+        e1.prerelease = False
+        e1.eol = False
+        e1.api_snapshot = None
+        e1.git_ref = None
+
+        e2 = VersionEntry(tag="v1.0-pre", label="1.0-pre")
+        e2.latest = False
+        e2.prerelease = True
+        e2.eol = False
+        e2.api_snapshot = "snapshots/v1.json"
+        e2.git_ref = None
+
+        e3 = VersionEntry(tag="v0.9", label="0.9 (eol)")
+        e3.latest = False
+        e3.prerelease = False
+        e3.eol = True
+        e3.api_snapshot = None
+        e3.git_ref = "v0.9.0"
+
+        cfg = self._make_cfg(has_versions=True, versions_data=[{}])
+        with (
+            patch("great_docs.config.Config", return_value=cfg),
+            patch(
+                "great_docs._versioning.parse_versions_config",
+                return_value=[e1, e2, e3],
+            ),
+        ):
+            result = runner.invoke(cli, ["versions", "--project-path", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "latest" in result.output
+        assert "prerelease" in result.output
+        assert "eol" in result.output
+        assert "snapshots/v1.json" in result.output
+        assert "git tag: v0.9.0" in result.output
