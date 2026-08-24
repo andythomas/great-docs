@@ -1371,8 +1371,8 @@ if not _MCP_V1 and _V2_HANDLERS:
     )
     try:
         server.instructions = _INSTRUCTIONS
-    except AttributeError:
-        pass
+    except AttributeError:  # pragma: no cover
+        pass  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
