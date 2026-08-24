@@ -311,3 +311,68 @@ def test_is_git_repo_os_error(mock_run):
     """Returns False on OSError."""
     mock_run.side_effect = OSError("permission denied")
     assert is_git_repository(Path("/project")) is False
+
+
+def test_get_file_created_date_git_exception_returns_mtime_fallback(tmp_path: Path):
+    """get_file_created_date falls back to mtime when git subprocess raises."""
+    f = tmp_path / "doc.md"
+    f.write_text("hello")
+
+    with patch("subprocess.run", side_effect=FileNotFoundError("git not found")):
+        result = get_file_created_date(f, project_root=tmp_path, fallback_to_mtime=True)
+
+    assert result is not None
+
+
+def test_get_file_created_date_fallback_file_not_found_returns_none(tmp_path: Path):
+    """get_file_created_date returns None when file is missing and git fails."""
+    missing = tmp_path / "ghost.md"
+
+    with patch("subprocess.run", side_effect=FileNotFoundError("no git")):
+        result = get_file_created_date(missing, project_root=tmp_path, fallback_to_mtime=True)
+
+    assert result is None
+
+
+def test_get_file_modified_date_fallback_file_not_found_returns_none(tmp_path: Path):
+    """get_file_modified_date returns None when file is missing and git fails."""
+    missing = tmp_path / "ghost.md"
+
+    with patch("subprocess.run", side_effect=FileNotFoundError("no git")):
+        result = get_file_modified_date(missing, project_root=tmp_path, fallback_to_mtime=True)
+
+    assert result is None
+
+
+def test_get_file_contributors_filepath_outside_project_root(tmp_path: Path):
+    """get_file_contributors handles a filepath that is not relative to project_root."""
+    other_root = tmp_path / "other"
+    other_root.mkdir()
+    f = tmp_path / "outside.md"
+    f.write_text("hi")
+
+    # project_root is other_root; filepath is not under it -> ValueError -> uses absolute path
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = ""
+    with patch("subprocess.run", return_value=mock_result):
+        result = get_file_contributors(f, project_root=other_root)
+
+    assert isinstance(result, list)
+
+
+def test_get_file_created_date_empty_iso_date_falls_through_to_mtime(tmp_path: Path):
+    """get_file_created_date returns mtime when git returns empty date string."""
+    f = tmp_path / "doc.md"
+    f.write_text("hello")
+
+    # Simulate git returning empty stdout for the date
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "   "  # whitespace only =? iso_date strips to "" -> falsy
+
+    with patch("subprocess.run", return_value=mock_result):
+        result = get_file_created_date(f, project_root=tmp_path, fallback_to_mtime=True)
+
+    # Should have fallen through to mtime fallback
+    assert result is not None
