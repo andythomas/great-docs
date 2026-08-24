@@ -353,3 +353,45 @@ def test_directive_only_seealso_renders_every_reference_without_a_subject():
     assert renderer.docstring_subject is None
     assert "first" in body
     assert "second" in body
+
+
+def test_add_seealso_noop_when_all_entries_already_present():
+    """add_seealso returns the text unchanged when all entries are already in the section."""
+    from great_docs._builtin.directives._seealso import add_seealso
+
+    # Pre-seed the object with a docstring that already contains the seealso entries
+    obj = _obj("%seealso existing_func")
+    add_seealso(obj)
+
+    # Call add_seealso again (all entries already present, nothing to add)
+    text_before = obj.docstring.value if obj.docstring else ""
+    add_seealso(obj)
+    text_after = obj.docstring.value if obj.docstring else ""
+
+    # The docstring content should not have grown with duplicate entries
+    assert text_after.count("existing_func") == text_before.count("existing_func")
+
+
+def test_existing_names_unmatched_part_is_silently_skipped():
+    """_existing_names silently skips parts that don't match the name regex."""
+    from great_docs._builtin.directives._seealso import _existing_names
+
+    # "!!!" is not a valid identifier, so the regex won't match
+    contents = "valid_func\n!!!"
+    names = _existing_names(contents)
+
+    assert "valid_func" in names
+    assert "!!!" not in names
+
+
+def test_merge_seealso_no_new_entries_returns_text_unchanged():
+    """_merge_seealso returns text unchanged when all entries are already present."""
+    from great_docs._builtin.directives._seealso import _merge_seealso
+
+    # Text already has a See Also section with 'existing_func'
+    text = "Summary.\n\nSee Also\n--------\nexisting_func\n"
+
+    # Entries list has only names already in the section
+    result = _merge_seealso(text, [("existing_func", "")])
+
+    assert result == text
