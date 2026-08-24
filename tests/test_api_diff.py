@@ -1753,6 +1753,7 @@ def test_tag_range_filtering(mock_tags, mock_hist):
 
     # symbol_history should have been called with filtered tags
     _, kwargs = mock_hist.call_args
+
     assert kwargs["tags"] == ["v2", "v3"]
 
 
@@ -1784,6 +1785,7 @@ def test_unquoted():
 
 def test_multiple():
     result = _parse_marker_attrs('symbol="build" old_version="v1.0" changes_only="false"')
+
     assert result == {
         "symbol": "build",
         "old_version": "v1.0",
@@ -1818,6 +1820,7 @@ def test_passes_attributes(mock_render):
     process_evolution_markers(content, "/fake")
 
     _, kwargs = mock_render.call_args
+
     assert kwargs["old_version"] == "v1"
     assert kwargs["new_version"] == "v2"
     assert kwargs["changes_only"] is False
@@ -1850,6 +1853,7 @@ def test_no_markers_returns_unchanged(mock_render):
     result = process_evolution_markers(content, "/fake")
 
     assert result == content
+
     mock_render.assert_not_called()
 
 
@@ -1871,6 +1875,7 @@ def test_summary_attr(mock_render):
     process_evolution_markers(content, "/fake")
 
     _, kwargs = mock_render.call_args
+
     assert kwargs["summary_text"] == "Build history"
 
 
@@ -1881,6 +1886,7 @@ def test_package_attr_overrides_argument(mock_render):
     process_evolution_markers(content, "/fake", package="default_pkg")
 
     _, kwargs = mock_render.call_args
+
     assert kwargs["package"] == "other_pkg"
 
 
@@ -1893,6 +1899,7 @@ def test_reads_and_processes(mock_render, tmp_path):
     result = process_evolution_markers_in_file(qmd, "/fake")
 
     assert "<table>result</table>" in result
+
     # File should NOT be modified (in_place=False)
     assert "<!-- %evolution" in qmd.read_text()
 
@@ -1918,7 +1925,7 @@ def test_no_markers_skips_write(mock_render, tmp_path):
 
     process_evolution_markers_in_file(qmd, "/fake", in_place=True)
 
-    # File unchanged — should not be rewritten
+    # File unchanged (should not be rewritten)
     assert qmd.stat().st_mtime == original_mtime
     mock_render.assert_not_called()
 
@@ -1945,6 +1952,7 @@ def test_extension_yml_declares_shortcode():
     ext_yml = _ext_dir() / "_extension.yml"
     with open(ext_yml) as f:
         data = yaml.safe_load(f)
+
     assert "contributes" in data
     assert "shortcodes" in data["contributes"]
     assert "evolution.lua" in data["contributes"]["shortcodes"]
@@ -1952,6 +1960,7 @@ def test_extension_yml_declares_shortcode():
 
 def test_lua_defines_evolution_function():
     lua_src = (_ext_dir() / "evolution.lua").read_text()
+
     # Must return a table with an "evolution" key
     assert '["evolution"]' in lua_src
     assert "function(args, kwargs)" in lua_src
@@ -1970,6 +1979,7 @@ def test_python_bridge_parses_args():
         text=True,
         timeout=10,
     )
+
     assert result.returncode == 0
     assert "symbol" in result.stdout.lower()
 
@@ -1992,6 +2002,7 @@ def _base_data() -> dict:
 
 def test_basic_rendering():
     html = render_evolution_table_from_dict(_base_data())
+
     assert "gd-evolution-table" in html
     assert "v1.0" in html
     assert "v2.0" in html
@@ -2001,40 +2012,47 @@ def test_basic_rendering():
 def test_empty_versions_returns_comment():
     data = {"symbol": "build", "versions": []}
     result = render_evolution_table_from_dict(data)
+
     assert result == "<!-- no evolution data -->"
 
 
 def test_missing_versions_key():
     data = {"symbol": "build"}
     result = render_evolution_table_from_dict(data)
+
     assert result == "<!-- no evolution data -->"
 
 
 def test_includes_css_by_default():
     html = render_evolution_table_from_dict(_base_data())
+
     assert "gd-evolution-table" in html
     assert "<style>" in html
 
 
 def test_css_excluded():
     html = render_evolution_table_from_dict(_base_data(), include_css=False)
+
     assert "<style>" not in html
     assert "gd-evolution-table" in html
 
 
 def test_disclosure_wrapper():
     html = render_evolution_table_from_dict(_base_data(), disclosure=True)
+
     assert "<details" in html
     assert "<summary>" in html
 
 
 def test_no_disclosure():
     html = render_evolution_table_from_dict(_base_data())
+
     assert "<details" not in html
 
 
 def test_render_from_dict_custom_summary():
     html = render_evolution_table_from_dict(_base_data(), disclosure=True, summary_text="My Title")
+
     assert "My Title" in html
 
 
@@ -2047,6 +2065,7 @@ def test_null_cells_render_absent():
         ],
     }
     html = render_evolution_table_from_dict(data)
+
     assert "gd-evo-absent" in html
     assert "\u2014" in html
 
@@ -2067,6 +2086,7 @@ def test_separator_slot():
         ],
     }
     html = render_evolution_table_from_dict(data)
+
     assert "gd-evo-separator" in html
 
 
@@ -2074,6 +2094,7 @@ def test_returns_row():
     data = _base_data()
     data["returns"] = ["None", "int"]
     html = render_evolution_table_from_dict(data)
+
     assert "gd-evo-return-label" in html
     assert "Returns:" in html
     assert "int" in html
@@ -2083,6 +2104,7 @@ def test_dates_as_tooltips():
     data = _base_data()
     data["dates"] = ["2024-01-01", "2024-06-15"]
     html = render_evolution_table_from_dict(data)
+
     assert 'title="2024-01-01"' in html
     assert 'title="2024-06-15"' in html
 
@@ -2091,7 +2113,9 @@ def test_dates_partial():
     data = _base_data()
     data["dates"] = ["2024-01-01"]
     html = render_evolution_table_from_dict(data)
+
     assert 'title="2024-01-01"' in html
+
     # v2.0 has no date, no title attr
     assert html.count("title=") == 1
 
@@ -2105,6 +2129,7 @@ def test_default_values_shown():
         ],
     }
     html = render_evolution_table_from_dict(data)
+
     assert "= 42" in html
 
 
@@ -2115,6 +2140,7 @@ def test_roundtrip_with_demo_json():
         pytest.skip("demo JSON not found")
     data = json.loads(demo.read_text())
     html = render_evolution_table_from_dict(data)
+
     assert "gd-evolution-table" in html
     assert data["versions"][0] in html
 
@@ -2190,6 +2216,7 @@ def test_describe_param_change_retyped():
         new_value="int",
     )
     desc = _describe_param_change(pc)
+
     assert "type" in desc
     assert "str" in desc
     assert "int" in desc
@@ -2204,6 +2231,7 @@ def test_describe_param_change_default_changed():
         new_value="0",
     )
     desc = _describe_param_change(pc)
+
     assert "default" in desc
 
 
@@ -2216,6 +2244,7 @@ def test_describe_param_change_kind_changed():
         new_value="KEYWORD_ONLY",
     )
     desc = _describe_param_change(pc)
+
     assert "kind" in desc
 
 
@@ -2228,6 +2257,7 @@ def test_describe_param_change_reordered():
         new_value="b, a",
     )
     desc = _describe_param_change(pc)
+
     assert "reordered" in desc.lower()
 
 
@@ -2238,6 +2268,7 @@ def test_describe_param_change_unknown():
         change_type="custom_change",
     )
     desc = _describe_param_change(pc)
+
     assert "custom_change" in desc
 
 
@@ -2249,6 +2280,7 @@ def test_describe_param_change_breaking_prefix():
         is_breaking=True,
     )
     desc = _describe_param_change(pc)
+
     assert desc.startswith("⚠")
 
 
@@ -2257,6 +2289,7 @@ def test_diff_symbol_async_added():
     old = SymbolInfo(name="f", kind="function", is_async=False)
     new = SymbolInfo(name="f", kind="function", is_async=True)
     change = _diff_symbol("f", old, new)
+
     assert change is not None
     assert change.is_breaking
     assert any("async" in d.lower() for d in change.details)
@@ -2267,6 +2300,7 @@ def test_diff_symbol_async_removed():
     old = SymbolInfo(name="f", kind="function", is_async=True)
     new = SymbolInfo(name="f", kind="function", is_async=False)
     change = _diff_symbol("f", old, new)
+
     assert change is not None
     assert change.is_breaking
     assert any("no longer async" in d.lower() for d in change.details)
@@ -2275,23 +2309,27 @@ def test_diff_symbol_async_removed():
 def test_detect_package_name_from_pyproject(tmp_path):
     """Reads package name from pyproject.toml."""
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "my-package"\n')
+
     assert _detect_package_name(tmp_path) == "my_package"
 
 
 def test_detect_package_name_no_pyproject(tmp_path):
     """Returns None when pyproject.toml doesn't exist."""
+
     assert _detect_package_name(tmp_path) is None
 
 
 def test_detect_package_name_no_project_name(tmp_path):
     """Returns None when [project].name is missing."""
     (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+
     assert _detect_package_name(tmp_path) is None
 
 
 def test_detect_package_name_invalid_toml(tmp_path):
     """Returns None on invalid TOML."""
     (tmp_path / "pyproject.toml").write_text("not valid toml {{{")
+
     assert _detect_package_name(tmp_path) is None
 
 
@@ -2303,6 +2341,7 @@ def test_list_version_tags_success(mock_run):
         stdout="v0.1.0\nv1.0.0\nv1.1.0\nsome-tag\nrelease-2\n",
     )
     tags = list_version_tags(Path("/project"))
+
     assert tags == ["v0.1.0", "v1.0.0", "v1.1.0"]
 
 
@@ -2310,6 +2349,7 @@ def test_list_version_tags_success(mock_run):
 def test_list_version_tags_failure(mock_run):
     """Returns empty list on git failure."""
     mock_run.return_value = MagicMock(returncode=128, stdout="")
+
     assert list_version_tags(Path("/project")) == []
 
 
@@ -2317,6 +2357,7 @@ def test_list_version_tags_failure(mock_run):
 def test_list_version_tags_timeout(mock_run):
     """Returns empty list on timeout."""
     mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=10)
+
     assert list_version_tags(Path("/project")) == []
 
 
@@ -2325,6 +2366,7 @@ def test_extract_package_at_tag_not_found(mock_run):
     """Returns None when package dir not in git tree."""
     mock_run.return_value = MagicMock(returncode=1, stdout="")
     result = _extract_package_at_tag(Path("/project"), "v1.0", "mypkg")
+
     assert result is None
 
 
@@ -2345,6 +2387,7 @@ def test_extract_package_at_tag_archive_fails(mock_run):
 
     mock_run.side_effect = fake_run
     result = _extract_package_at_tag(Path("/project"), "v1.0", "mypkg")
+
     assert result is None
 
 
@@ -2352,6 +2395,7 @@ def test_extract_package_at_tag_archive_fails(mock_run):
 def test_snapshot_at_tag_extraction_fails(mock_extract):
     """Returns None when extraction fails."""
     result = snapshot_at_tag(Path("/project"), "v1.0", "mypkg")
+
     assert result is None
 
 
@@ -2374,6 +2418,7 @@ def test_build_timeline_success(mock_tags, mock_snap):
     )
     mock_snap.side_effect = [snap1, snap2]
     timeline = build_timeline(Path("/project"), "pkg")
+
     assert len(timeline) == 2
     assert timeline[0]["version"] == "v1.0"
     assert timeline[0]["symbols"] == 1
@@ -2386,6 +2431,7 @@ def test_build_timeline_success(mock_tags, mock_snap):
 def test_build_timeline_skip_failed(mock_tags, mock_snap):
     """Skips tags where snapshot fails."""
     timeline = build_timeline(Path("/project"), "pkg")
+
     assert timeline == []
 
 
@@ -2393,6 +2439,7 @@ def test_build_timeline_skip_failed(mock_tags, mock_snap):
 def test_api_diff_no_package_name(mock_detect):
     """Returns None when package name not detected."""
     result = api_diff(Path("/project"), "v1.0", "v2.0")
+
     assert result is None
 
 
@@ -2403,6 +2450,7 @@ def test_api_diff_head_version(mock_griffe, mock_tag):
     mock_griffe.return_value = ApiSnapshot(version="HEAD", package_name="pkg", symbols={})
     result = api_diff(Path("/project"), "v1.0", "HEAD", package_name="pkg")
     mock_griffe.assert_called_once()
+
     # old_snap is None so returns None
     assert result is None
 
@@ -2422,6 +2470,7 @@ def test_api_diff_success(mock_tag, mock_diff):
         removed=[],
     )
     result = api_diff(Path("/project"), "v1.0", "v2.0", package_name="pkg")
+
     assert result is not None
     assert result.old_version == "v1.0"
 
@@ -2442,6 +2491,7 @@ def test_snapshot_from_griffe_no_exports():
 
     with patch("griffe.load", return_value=mock_pkg):
         snap = snapshot_from_griffe("mypkg", "v1.0")
+
     assert "public_fn" in snap.symbols
     assert "_private" not in snap.symbols
 
@@ -2471,6 +2521,7 @@ class TestDeepSnapshot:
             documented_names=["TopClass", "sub.Widget", "sub.Widget.fit"],
             search_paths=[str(tmp_path)],
         )
+
         assert set(snap.symbols) == {"TopClass", "sub.Widget", "sub.Widget.fit"}
         assert snap.symbols["sub.Widget"].kind == "class"
         assert snap.symbols["sub.Widget.fit"].kind == "function"
@@ -2484,12 +2535,14 @@ class TestDeepSnapshot:
             documented_names=["sub.Widget", "sub.Nonexistent"],
             search_paths=[str(tmp_path)],
         )
+
         assert set(snap.symbols) == {"sub.Widget"}
 
     def test_default_behavior_unchanged_top_level(self, tmp_path: Path):
         """Default behavior (no documented_names) unchanged — captures top-level only."""
         _write_griffe_pkg(tmp_path)
         snap = snapshot_from_griffe("mypkg", version="dev", search_paths=[str(tmp_path)])
+
         assert set(snap.symbols) == {"TopClass", "sub"}
 
 
@@ -2536,6 +2589,7 @@ class TestSnapshotAtTagDeep:
         documented = ["sub.Widget", "sub.Widget.fit", "sub.Widget.transform", "sub.Gadget"]
         s1 = snapshot_at_tag(tmp_path, "v0.1.0", "mypkg", documented_names=documented)
         s2 = snapshot_at_tag(tmp_path, "v0.2.0", "mypkg", documented_names=documented)
+
         assert set(s1.symbols) == {"sub.Widget", "sub.Widget.fit"}
         assert set(s2.symbols) == {
             "sub.Widget",
@@ -2544,3 +2598,15 @@ class TestSnapshotAtTagDeep:
             "sub.Gadget",
         }
         assert set(s1.symbols) != set(s2.symbols)
+
+
+def test_render_evolution_table_callable_via_top_level_import():
+    """great_docs.render_evolution_table wraps _api_diff.render_evolution_table."""
+    import great_docs
+
+    with patch("great_docs._api_diff.render_evolution_table", return_value="<html/>") as mock:
+        result = great_docs.render_evolution_table("/fake", "sym")
+
+    mock.assert_called_once_with("/fake", "sym")
+
+    assert result == "<html/>"
