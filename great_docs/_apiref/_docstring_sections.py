@@ -156,7 +156,7 @@ class _DocstringSectionPatched(gf.DocstringSection):
             for title, body in splits:
                 sub_cls = cls._registry.get(title.lower(), gf.DocstringSectionText)
                 results.append(sub_cls(body, title))
-        elif isinstance(el, gf.DocstringSectionAdmonition):
+        elif isinstance(el, gf.DocstringSectionAdmonition):  # pragma: no branch
             sub_cls = cls._registry.get(el.title.lower(), None)
             if sub_cls:
                 results.append(sub_cls(el.value.contents, el.title))
