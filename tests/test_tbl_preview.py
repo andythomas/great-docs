@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+import sys
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -1748,3 +1750,240 @@ class TestParameterComboSnapshots:
         cells = _extract_data_cells(html)
         assert cells[0] == ["", "1"]
         assert cells[2] == ["", "3"]
+
+
+# ---------------------------------------------------------------------------
+# _arrow_dtype_short fallback path
+# ---------------------------------------------------------------------------
+
+
+class TestArrowDtypeShortFallback:
+    """Covers the fallback branch in _arrow_dtype_short (dtype not in direct map)."""
+
+    def test_parameterized_with_base_in_map(self):
+        """A parameterized dtype whose base exists in _ARROW_DTYPE_SHORT."""
+        from great_docs._tbl_preview import _arrow_dtype_short
+
+        # "int64(scale=2)" is not a map key; base "int64" is → "i64"
+        result = _arrow_dtype_short("int64(scale=2)")
+        assert result == "i64"
+
+    def test_completely_unknown_dtype(self):
+        """A dtype with no map entry; returns first 4 chars of the base."""
+        from great_docs._tbl_preview import _arrow_dtype_short
+
+        result = _arrow_dtype_short("unknown_dtype")
+        assert result == "unkn"
+
+    def test_unknown_parameterized_dtype(self):
+        """Unknown base with bracket suffix; base is not in map."""
+        from great_docs._tbl_preview import _arrow_dtype_short
+
+        result = _arrow_dtype_short("custom[param]")
+        assert result == "cust"
+
+
+# ---------------------------------------------------------------------------
+# Pandas fallback paths in file readers (Polars mocked away)
+# ---------------------------------------------------------------------------
+
+
+class TestFromCsvPandasFallback:
+    """_from_csv uses pandas when polars is unavailable."""
+
+    @pytest.fixture(autouse=True)
+    def _require_pandas(self):
+        pytest.importorskip("pandas")
+
+    def test_csv_falls_back_to_pandas(self, tmp_path: Path):
+        from great_docs._tbl_preview import _from_csv
+
+        csv = tmp_path / "test.csv"
+        csv.write_text("a,b\n1,x\n2,y\n")
+
+        with patch.dict(sys.modules, {"polars": None}):
+            names, dtypes, rows, n, tbl_type = _from_csv(str(csv))
+
+        assert names == ["a", "b"]
+        assert n == 2
+        assert tbl_type == "csv"
+
+    def test_csv_both_missing_raises(self, tmp_path: Path):
+        from great_docs._tbl_preview import _from_csv
+
+        csv = tmp_path / "test.csv"
+        csv.write_text("a,b\n1,x\n")
+
+        with patch.dict(sys.modules, {"polars": None, "pandas": None}):
+            with pytest.raises(ImportError, match="CSV"):
+                _from_csv(str(csv))
+
+
+class TestFromTsvPandasFallback:
+    """_from_tsv uses pandas when polars is unavailable."""
+
+    @pytest.fixture(autouse=True)
+    def _require_pandas(self):
+        pytest.importorskip("pandas")
+
+    def test_tsv_falls_back_to_pandas(self, tmp_path: Path):
+        from great_docs._tbl_preview import _from_tsv
+
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("a\tb\n1\tx\n2\ty\n")
+
+        with patch.dict(sys.modules, {"polars": None}):
+            names, dtypes, rows, n, tbl_type = _from_tsv(str(tsv))
+
+        assert names == ["a", "b"]
+        assert n == 2
+        assert tbl_type == "tsv"
+
+    def test_tsv_both_missing_raises(self, tmp_path: Path):
+        from great_docs._tbl_preview import _from_tsv
+
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("a\tb\n1\tx\n")
+
+        with patch.dict(sys.modules, {"polars": None, "pandas": None}):
+            with pytest.raises(ImportError, match="TSV"):
+                _from_tsv(str(tsv))
+
+
+class TestFromJsonlPandasFallback:
+    """_from_jsonl uses pandas when polars is unavailable."""
+
+    @pytest.fixture(autouse=True)
+    def _require_pandas(self):
+        pytest.importorskip("pandas")
+
+    def test_jsonl_falls_back_to_pandas(self, tmp_path: Path):
+        from great_docs._tbl_preview import _from_jsonl
+
+        jsonl = tmp_path / "test.jsonl"
+        jsonl.write_text('{"a": 1, "b": "x"}\n{"a": 2, "b": "y"}\n')
+
+        with patch.dict(sys.modules, {"polars": None}):
+            names, dtypes, rows, n, tbl_type = _from_jsonl(str(jsonl))
+
+        assert "a" in names
+        assert n == 2
+        assert tbl_type == "jsonl"
+
+    def test_jsonl_both_missing_raises(self, tmp_path: Path):
+        from great_docs._tbl_preview import _from_jsonl
+
+        jsonl = tmp_path / "test.jsonl"
+        jsonl.write_text('{"a": 1}\n')
+
+        with patch.dict(sys.modules, {"polars": None, "pandas": None}):
+            with pytest.raises(ImportError, match="JSONL"):
+                _from_jsonl(str(jsonl))
+
+
+class TestFromParquetPandasFallback:
+    """_from_parquet uses pandas when polars is unavailable."""
+
+    @pytest.fixture(autouse=True)
+    def _require_both(self):
+        pytest.importorskip("polars")
+        pytest.importorskip("pandas")
+        pytest.importorskip("pyarrow")  # Pandas needs pyarrow to read parquet
+
+    def test_parquet_falls_back_to_pandas(self, tmp_path: Path):
+        import polars as pl
+        from great_docs._tbl_preview import _from_parquet
+
+        pq = tmp_path / "test.parquet"
+        pl.DataFrame({"a": [1, 2], "b": ["x", "y"]}).write_parquet(str(pq))
+
+        with patch.dict(sys.modules, {"polars": None}):
+            names, dtypes, rows, n, tbl_type = _from_parquet(str(pq))
+
+        assert names == ["a", "b"]
+        assert n == 2
+        assert tbl_type == "parquet"
+
+    def test_parquet_both_missing_raises(self, tmp_path: Path):
+        import polars as pl
+        from great_docs._tbl_preview import _from_parquet
+
+        pq = tmp_path / "test.parquet"
+        pl.DataFrame({"a": [1]}).write_parquet(str(pq))
+
+        with patch.dict(sys.modules, {"polars": None, "pandas": None}):
+            with pytest.raises(ImportError, match="Parquet"):
+                _from_parquet(str(pq))
+
+
+class TestFromFeatherPandasFallback:
+    """_from_feather uses pandas when polars is unavailable."""
+
+    @pytest.fixture(autouse=True)
+    def _require_both(self):
+        pytest.importorskip("polars")
+        pytest.importorskip("pandas")
+        pytest.importorskip("pyarrow")  # Pandas needs pyarrow to read feather
+
+    def test_feather_falls_back_to_pandas(self, tmp_path: Path):
+        import polars as pl
+        from great_docs._tbl_preview import _from_feather
+
+        feather = tmp_path / "test.feather"
+        pl.DataFrame({"a": [1, 2], "b": ["x", "y"]}).write_ipc(str(feather))
+
+        try:
+            with patch.dict(sys.modules, {"polars": None}):
+                names, dtypes, rows, n, tbl_type = _from_feather(str(feather))
+        except Exception as exc:
+            # Skip if the test environment has a pyarrow extension-type conflict
+            # (can happen when polars and pandas both use pyarrow in the same session)
+            if "already defined" in str(exc) or "ArrowKeyError" in type(exc).__name__:
+                pytest.skip(f"pyarrow extension-type conflict in test env: {exc}")
+            raise
+
+        assert names == ["a", "b"]
+        assert n == 2
+        assert tbl_type == "feather"
+
+    def test_feather_both_missing_raises(self, tmp_path: Path):
+        import polars as pl
+        from great_docs._tbl_preview import _from_feather
+
+        feather = tmp_path / "test.feather"
+        pl.DataFrame({"a": [1]}).write_ipc(str(feather))
+
+        with patch.dict(sys.modules, {"polars": None, "pandas": None}):
+            with pytest.raises(ImportError, match="Feather"):
+                _from_feather(str(feather))
+
+
+# ---------------------------------------------------------------------------
+# _compute_col_widths: branch where total >= min_tbl_width (no scaling)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeColWidthsNoScaling:
+    """Covers the branch where total >= min_tbl_width so scaling is skipped."""
+
+    def test_no_scaling_when_min_tbl_width_zero(self):
+        """With min_tbl_width=0, the scaling block is always skipped."""
+        from great_docs._tbl_preview import tbl_preview
+
+        # Use a small table; min_tbl_width=0 ensures total > min always
+        data = {"a": [1, 2], "b": ["x", "y"]}
+        result = tbl_preview(data, show_all=True, min_tbl_width=0)
+        html = result.as_html()
+        # Table should still render correctly
+        assert "gt_table" in html
+        assert "1" in html
+
+    def test_wide_table_exceeds_min_width(self):
+        """A table with many wide columns naturally exceeds the default 500px min."""
+        from great_docs._tbl_preview import tbl_preview
+
+        # Create 10 columns with long content so natural width >> 500px
+        data = {f"column_{i}": [f"long_value_entry_{i}_{j}" for j in range(3)] for i in range(10)}
+        result = tbl_preview(data, show_all=True, min_tbl_width=500)
+        html = result.as_html()
+        assert "gt_table" in html

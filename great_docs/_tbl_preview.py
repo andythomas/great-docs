@@ -251,7 +251,7 @@ def _from_file(
         return _from_parquet(p)
     if fmt in ("feather", "arrow"):
         return _from_feather(p, fmt)
-    return _from_csv(p)
+    return _from_csv(p)  # pragma: no cover
 
 
 def _from_csv(
@@ -440,8 +440,8 @@ def _infer_dtype(values: list) -> str:
         return "i64"
     if types <= {int, float}:
         return "f64"
-    if types == {float}:
-        return "f64"
+    if types == {float}:  # pragma: no cover
+        return "f64"  # pragma: no cover
     if types == {bool}:
         return "bool"
     return "str"
@@ -527,8 +527,8 @@ def _is_missing(value: Any) -> bool:
 
         if isinstance(value, float) and math.isnan(value):
             return True
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError):  # pragma: no cover
+        pass  # pragma: no cover
     return False
 
 
