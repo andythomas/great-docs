@@ -13,6 +13,7 @@ from great_docs._term_player.script import (
     Cut,
     Highlight,
     Script,
+    Snippet,
     SpeedSegment,
     _apply_cuts,
     _apply_speed_map,
@@ -339,3 +340,108 @@ settings:
 
         script = load_script(f)
         assert script.prompt is None
+
+    def test_load_with_snippets(self, tmp_path: Path):
+        """Snippets section is parsed into Script.snippets."""
+        content = """\
+snippets:
+  - at: 1.0
+    text: "pip install mylib"
+    duration: 4.0
+    label: Install
+  - at: 5.0
+    match: "def my_func"
+    label: Definition
+"""
+        f = tmp_path / "test.yml"
+        f.write_text(content, encoding="utf-8")
+
+        script = load_script(f)
+        assert len(script.snippets) == 2
+        assert script.snippets[0].text == "pip install mylib"
+        assert script.snippets[0].duration == 4.0
+        assert script.snippets[0].label == "Install"
+        assert script.snippets[1].match == "def my_func"
+
+    def test_load_invalid_list_items_skipped(self, tmp_path: Path):
+        """Non-dict or incomplete items in lists are silently skipped."""
+        content = """\
+chapters:
+  - 42
+  - missing_at_key: value
+  - at: 1.0
+    label: Valid
+
+cuts:
+  - not_a_cut: true
+  - from: 1.0
+    to: 2.0
+
+annotations:
+  - missing_at: x
+  - at: 3.0
+    text: Note
+
+speed_map:
+  - bad_item: 1
+  - from: 0.0
+    to: 2.0
+    speed: 2.0
+
+snippets:
+  - missing_at: true
+  - at: 1.0
+    duration: 2.0
+  - at: 2.0
+    text: Valid snippet
+"""
+        f = tmp_path / "test.yml"
+        f.write_text(content, encoding="utf-8")
+
+        script = load_script(f)
+        assert len(script.chapters) == 1
+        assert script.chapters[0].label == "Valid"
+        assert len(script.cuts) == 1
+        assert len(script.annotations) == 1
+        assert len(script.speed_map) == 1
+        assert len(script.snippets) == 1
+        assert script.snippets[0].text == "Valid snippet"
+
+    def test_load_non_dict_settings_ignored(self, tmp_path: Path):
+        """When settings: is not a dict, defaults are used."""
+        content = "settings: null\n"
+        f = tmp_path / "test.yml"
+        f.write_text(content, encoding="utf-8")
+
+        script = load_script(f)
+        assert script.speed == 1.0
+        assert script.window_chrome == "none"
+
+    def test_load_highlight_non_dict_target_defaults_empty(self, tmp_path: Path):
+        """A non-dict 'target' value is treated as an empty target."""
+        content = """\
+highlights:
+  - at: 1.0
+    target: "not a dict"
+    style: outline
+"""
+        f = tmp_path / "test.yml"
+        f.write_text(content, encoding="utf-8")
+
+        script = load_script(f)
+        assert len(script.highlights) == 1
+        hl = script.highlights[0]
+        assert hl.target.region is None
+        assert hl.target.match is None
+
+
+class TestApplyScriptSpeedMap:
+    def test_speed_map_applied_through_apply_script(self):
+        """apply_script with a speed_map processes events through _apply_speed_map."""
+        events = _events(0.0, 2.0, 4.0, 6.0)
+        rec = _recording(events)
+        script = Script(speed_map=[SpeedSegment(start=2.0, end=4.0, speed=2.0)])
+        result = apply_script(rec, script)
+        # Events at 0 and 2 remap to 0; event at 4 → 3; event at 6 → 5
+        assert result.events[2].time == pytest.approx(3.0)
+        assert result.events[3].time == pytest.approx(5.0)
