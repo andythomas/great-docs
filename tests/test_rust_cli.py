@@ -1,9 +1,9 @@
 # pyright: reportPrivateUsage=false
 """Tests for Rust CLI project detection and introspection.
 
-Local fixtures in ``tests/fixtures/`` are used exclusively (no external repository clones are
-required). Tests that actually compile Rust code are skipped automatically when the ``cargo``
-compiler is not on PATH.
+Local fixtures in `tests/fixtures/` are used exclusively (no external repository clones are
+required). Tests that actually compile Rust code are skipped automatically when the `cargo` compiler
+is not on the PATH.
 """
 
 from __future__ import annotations
@@ -660,3 +660,186 @@ class TestRustHelloFixtureIntegration:
         output = result.stdout + result.stderr
         assert "greet" in output
         assert "version" in output
+
+
+# ---------------------------------------------------------------------------
+# Uncovered branch / line tests
+# ---------------------------------------------------------------------------
+
+
+class TestDetectRustCliProjectEdgeCases:
+    def test_cargo_text_none_returns_none(self, tmp_path: Path):
+        """_read_cargo_toml returning None causes detect to return None."""
+        (tmp_path / "Cargo.toml").write_text("irrelevant")
+        with patch("great_docs._rust_cli._read_cargo_toml", return_value=None):
+            assert detect_rust_cli_project(tmp_path) is None
+
+    def test_no_package_name_returns_none(self, tmp_path: Path):
+        """Cargo.toml with no [package] name causes detect to return None."""
+        (tmp_path / "Cargo.toml").write_text("[workspace]\nmembers = []\n")
+        assert detect_rust_cli_project(tmp_path) is None
+
+
+class TestReadCargoToml:
+    def test_oserror_returns_none(self, tmp_path: Path):
+        """OSError when reading Cargo.toml returns None."""
+        from great_docs._rust_cli import _read_cargo_toml
+
+        cargo = tmp_path / "Cargo.toml"
+        cargo.write_text("dummy")
+        with patch.object(type(cargo), "read_text", side_effect=OSError("perm")):
+            assert _read_cargo_toml(cargo) is None
+
+
+class TestParsePackageNameEdgeCases:
+    def test_section_break_before_name_returns_none(self):
+        """[package] section interrupted by another section returns None."""
+        cargo = '[package]\nversion = "0.1.0"\n[lib]\nname = "mylib"\n'
+        assert _parse_package_name(cargo) is None
+
+    def test_non_name_lines_before_name(self):
+        """Non-name lines under [package] are skipped before name is found."""
+        cargo = '[package]\nversion = "0.1.0"\nedition = "2021"\nname = "myapp"\n'
+        assert _parse_package_name(cargo) == "myapp"
+
+
+class TestFindBinaryTargetsEdgeCases:
+    def test_bin_section_followed_by_other_section(self, tmp_path: Path):
+        """[[bin]] followed by another section before name resets in_bin."""
+        cargo = '[package]\nname = "app"\n\n[[bin]]\n[lib]\nname = "never"\n'
+        result = _find_binary_targets(tmp_path, cargo, "app")
+        assert result == []
+
+    def test_non_name_line_before_bin_name(self, tmp_path: Path):
+        """Non-name lines under [[bin]] are skipped before name is found."""
+        cargo = '[package]\nname = "app"\n\n[[bin]]\npath = "src/cli.rs"\nname = "mycli"\n'
+        result = _find_binary_targets(tmp_path, cargo, "app")
+        assert result == ["mycli"]
+
+
+class TestBuildRustBinaryEdgeCases:
+    def test_binary_not_found_after_build_returns_none(self, tmp_path: Path):
+        """Successful cargo build but missing output binary returns None."""
+        rust_project = RustCliProject(
+            project_root=tmp_path,
+            package_name="myapp",
+            binary_names=["myapp"],
+            uses_clap=False,
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        with patch("subprocess.run", return_value=mock_result):
+            result = build_rust_binary(rust_project, output_dir=tmp_path)
+        assert result is None
+
+
+class TestIntrospectRustCliEdgeCases:
+    def test_extract_commands_none_returns_none(self, tmp_path: Path):
+        """When _extract_clap_commands returns None, introspect returns None."""
+        rust_project = RustCliProject(
+            project_root=tmp_path,
+            package_name="myapp",
+            binary_names=["myapp"],
+            uses_clap=True,
+        )
+        fake_binary = tmp_path / "myapp"
+        fake_binary.write_text("fake")
+        with (
+            patch("great_docs._rust_cli.build_rust_binary", return_value=fake_binary),
+            patch("great_docs._rust_cli._extract_clap_commands", return_value=None),
+        ):
+            result = introspect_rust_cli(rust_project)
+        assert result is None
+
+
+class TestParseClapFlagEdgeCases:
+    def test_possible_values_stripped_from_description(self):
+        """[possible values: ...] annotation is stripped from help text."""
+        line = "      --format <FORMAT>  Output format [possible values: json, yaml, toml]"
+        opt = _parse_clap_flag(line)
+        assert opt is not None
+        assert "possible values" not in opt["help"]
+        assert opt["type"] == "format"
+
+
+class TestParseClapHelpBranches:
+    def test_option_line_not_starting_with_dash_skipped(self):
+        """Line in Options section not starting with '-' is ignored."""
+        help_text = textwrap.dedent("""\
+            A tool
+
+            Options:
+              This is a description continuation line without a dash
+              -h, --help  Print help
+        """)
+        result = _parse_clap_help(help_text, "tool", Path("/tmp/bin"), [])
+        opt_names = [n for opt in result["options"] for n in opt["names"]]
+        assert "--help" in opt_names
+        assert len(result["options"]) == 1
+
+    def test_unparseable_flag_line_skipped(self):
+        """A '-' starting line that fails _parse_clap_flag is ignored."""
+        help_text = textwrap.dedent("""\
+            A tool
+
+            Options:
+              -not-a-valid-flag-format-at-all
+              -h, --help  Print help
+        """)
+        result = _parse_clap_help(help_text, "tool", Path("/tmp/bin"), [])
+        opt_names = [n for opt in result["options"] for n in opt["names"]]
+        assert "--help" in opt_names
+
+    def test_argument_line_not_matching_regex_skipped(self):
+        """Non-matching line in Arguments section is ignored."""
+        help_text = textwrap.dedent("""\
+            A tool
+
+            Arguments:
+              plain text line here
+              <SCRIPT>  The script to run
+
+            Options:
+        """)
+        result = _parse_clap_help(help_text, "tool", Path("/tmp/bin"), [])
+        assert len(result["arguments"]) == 1
+        assert result["arguments"][0]["name"] == "SCRIPT"
+
+    def test_command_line_not_matching_regex_skipped(self):
+        """Non-matching line in Commands section is ignored.
+
+        _COMMAND_LINE_RE requires 2+ spaces between name and description;
+        a line with only 1 space does not match and is silently skipped.
+        """
+        help_text = textwrap.dedent("""\
+            A tool
+
+            Commands:
+              no-match-only-one-space Run the tool
+              run  Run the tool
+
+            Options:
+        """)
+        result = _parse_clap_help(help_text, "tool", Path("/tmp/bin"), [])
+        names = [c["name"] for c in result["commands"]]
+        assert "run" in names
+        assert "no-match-only-one-space" not in names
+
+    def test_builtin_help_command_filtered(self):
+        """Built-in 'help' subcommand is excluded from commands."""
+        help_text = textwrap.dedent("""\
+            A tool
+
+            Commands:
+              run   Run the tool
+              help  Print this message or the help of the given subcommand(s)
+
+            Options:
+              -h, --help  Print help
+        """)
+        result = _parse_clap_help(help_text, "tool", Path("/tmp/bin"), [])
+        names = [c["name"] for c in result["commands"]]
+
+        assert "run" in names
+        assert "help" not in names
