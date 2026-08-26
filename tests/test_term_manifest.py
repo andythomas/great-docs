@@ -516,3 +516,291 @@ class TestPromptSubstitutionIntegration:
         last_frame_file = sorted(out.glob("frame-*.svg"))[-1]
         svg = last_frame_file.read_text()
         assert "→" in svg
+
+
+# ---------------------------------------------------------------------------
+# _serialize_highlight — uncovered branches
+# ---------------------------------------------------------------------------
+
+
+class TestSerializeHighlight:
+    """Cover branches in Manifest._serialize_highlight via to_json()."""
+
+    def _highlight(self, **kw):
+        return Highlight(
+            time=1.0,
+            duration=0.5,
+            target=HighlightTarget(
+                **{
+                    k: v
+                    for k, v in kw.items()
+                    if k in ("region", "match", "group", "lines", "track_scroll")
+                }
+            ),
+            **{
+                k: v
+                for k, v in kw.items()
+                if k not in ("region", "match", "group", "lines", "track_scroll")
+            },
+        )
+
+    def test_match_target(self):
+        h = self._highlight(match="error")
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["target"]["match"] == "error"
+
+    def test_match_with_group(self):
+        h = self._highlight(match="(error)", group=1)
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["target"]["group"] == 1
+
+    def test_match_without_group_no_group_key(self):
+        """match set but group=0 (default) → group key absent."""
+        h = self._highlight(match="error")
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert "group" not in j["highlights"][0]["target"]
+
+    def test_lines_target(self):
+        h = self._highlight(lines=[3, 4, 5])
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["target"]["lines"] == [3, 4, 5]
+
+    def test_track_scroll(self):
+        h = self._highlight(track_scroll=True)
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["target"]["track_scroll"] is True
+
+    def test_badge_icon(self):
+        h = Highlight(
+            time=1.0,
+            duration=0.5,
+            target=HighlightTarget(region={"row": 0, "col": 0, "width": 5, "height": 1}),
+            badge_icon="warning",
+        )
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["badge_icon"] == "warning"
+
+    def test_custom_fade_in(self):
+        h = Highlight(
+            time=1.0,
+            duration=0.5,
+            target=HighlightTarget(),
+            fade_in=0.1,
+        )
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["fade_in"] == 0.1
+
+    def test_custom_fade_out(self):
+        h = Highlight(
+            time=1.0,
+            duration=0.5,
+            target=HighlightTarget(),
+            fade_out=0.5,
+        )
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["fade_out"] == 0.5
+
+    def test_pulse(self):
+        h = Highlight(
+            time=1.0,
+            duration=0.5,
+            target=HighlightTarget(),
+            pulse=True,
+        )
+        m = Manifest(highlights=[h])
+        j = json.loads(m.to_json())
+        assert j["highlights"][0]["pulse"] is True
+
+
+# ---------------------------------------------------------------------------
+# generate_manifest — uncovered branches
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateManifestBranches:
+    def test_script_theme_applied(self, tmp_path: Path):
+        """script.theme being a Theme object overrides the default theme."""
+        from great_docs._term_player.parser import Theme
+
+        rec = _minimal_recording(2.0)
+        script = Script(theme=Theme(bg="#1e1e1e", fg="#d4d4d4"))
+        out = tmp_path / "themed"
+        generate_manifest(rec, script, output_dir=out)
+        svg = (out / "frame-000.svg").read_text()
+        assert "#1e1e1e" in svg
+
+    def test_script_line_height_applied(self, tmp_path: Path):
+        """script.line_height being set passes it through to the render."""
+        rec = _minimal_recording(2.0)
+        script = Script(line_height=1.5)
+        out = tmp_path / "lh"
+        generate_manifest(rec, script, output_dir=out)
+        svg = (out / "frame-000.svg").read_text()
+        assert svg.startswith("<svg")
+
+    def test_resize_events_processed(self, tmp_path: Path):
+        """'r' events in generate_manifest are handled (resize path)."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.5, code="r", data="40x20"),
+            Event(time=1.0, code="o", data="hello"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        out = tmp_path / "resize"
+        manifest = generate_manifest(rec, output_dir=out)
+        assert len(manifest.keyframes) > 0
+
+    def test_resize_event_bad_format_ignored(self, tmp_path: Path):
+        """'r' event with no 'x' separator (len(parts) != 2) is skipped."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.5, code="r", data="badformat"),
+            Event(time=1.0, code="o", data="hello"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        out = tmp_path / "bad_resize"
+        manifest = generate_manifest(rec, output_dir=out)
+        assert len(manifest.keyframes) > 0
+
+    def test_resize_event_non_integer_ignored(self, tmp_path: Path):
+        """'r' event with non-integer dimensions raises ValueError, which is caught."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.5, code="r", data="abcxdef"),
+            Event(time=1.0, code="o", data="hello"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        out = tmp_path / "bad_resize2"
+        manifest = generate_manifest(rec, output_dir=out)
+        assert len(manifest.keyframes) > 0
+
+    def test_prompt_replacement_no_prefix_no_pattern(self, tmp_path: Path):
+        """prompt set, no input events (prefix=None), no prompt_pattern → no substitution."""
+        events = [
+            Event(time=0.0, code="o", data="$ hello\r\n"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=40, rows=10))
+        script = Script(prompt="❯")  # no input events → prefix=None, no pattern
+        out = tmp_path / "no_prefix"
+        manifest = generate_manifest(rec, script, output_dir=out)
+        assert len(manifest.keyframes) > 0
+
+
+# ---------------------------------------------------------------------------
+# _detect_prompt_prefix — uncovered branches
+# ---------------------------------------------------------------------------
+
+
+class TestDetectPromptPrefixBranches:
+    def test_resize_event_in_recording(self):
+        """'r' events are processed in _detect_prompt_prefix without error."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.3, code="r", data="40x20"),
+            Event(time=0.5, code="i", data="ls"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        prefix = _detect_prompt_prefix(rec)
+        assert prefix is not None
+
+    def test_resize_bad_format_ignored(self):
+        """'r' event with bad format (no 'x') is skipped in _detect_prompt_prefix."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.3, code="r", data="badformat"),
+            Event(time=0.5, code="i", data="ls"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        prefix = _detect_prompt_prefix(rec)
+        assert prefix == "$ "
+
+    def test_resize_non_integer_caught(self):
+        """'r' event with non-integer dimensions raises ValueError, which is caught."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.3, code="r", data="abcxdef"),
+            Event(time=0.5, code="i", data="ls"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        prefix = _detect_prompt_prefix(rec)
+        assert prefix == "$ "
+
+    def test_marker_event_ignored(self):
+        """'m' events (code != 'o'/'r'/'i') are skipped gracefully."""
+        events = [
+            Event(time=0.0, code="o", data="$ "),
+            Event(time=0.2, code="m", data="chapter"),
+            Event(time=0.5, code="i", data="ls"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        prefix = _detect_prompt_prefix(rec)
+        assert prefix == "$ "
+
+    def test_input_event_at_col_zero_skipped(self):
+        """'i' event when cursor_col == 0 is skipped (no text captured)."""
+        # Only an input event with cursor at col 0 → nothing appended → returns None
+        events = [
+            Event(time=0.5, code="i", data="x"),
+        ]
+        rec = Recording(events=events, term=TermInfo(cols=80, rows=24))
+        prefix = _detect_prompt_prefix(rec)
+        assert prefix is None
+
+
+# ---------------------------------------------------------------------------
+# _apply_prompt_substitution — char_info is None path
+# ---------------------------------------------------------------------------
+
+
+class TestApplyPromptSubstitutionNone:
+    def _make_screen(self, rows_text: list[str], cols: int = 80):
+        from great_docs._term_player.emulator import Cell, CellStyle, ScreenState
+
+        cells = []
+        for text in rows_text:
+            row = [
+                Cell(char=text[i] if i < len(text) else " ", style=CellStyle()) for i in range(cols)
+            ]
+            cells.append(row)
+        return ScreenState(cols=cols, rows=len(rows_text), cells=cells)
+
+    def test_no_prompt_char_in_prefix_returns_original(self):
+        """prefix with no known prompt char → char_info is None → returns state unchanged."""
+        state = self._make_screen(["hello world"])
+        result = _apply_prompt_substitution(state, "hello ", "❯")
+        # "hello " has no $, %, ❯, etc. → returns state as-is
+        assert result.cells[0][0].char == "h"
+
+
+# ---------------------------------------------------------------------------
+# _apply_prompt_pattern_substitution — space-only match end
+# ---------------------------------------------------------------------------
+
+
+class TestApplyPromptPatternSubstitutionBranches:
+    def _make_screen(self, rows_text: list[str], cols: int = 80):
+        from great_docs._term_player.emulator import Cell, CellStyle, ScreenState
+
+        cells = []
+        for text in rows_text:
+            row = [
+                Cell(char=text[i] if i < len(text) else " ", style=CellStyle()) for i in range(cols)
+            ]
+            cells.append(row)
+        return ScreenState(cols=cols, rows=len(rows_text), cells=cells)
+
+    def test_match_ending_in_spaces_iterates_to_nonspace(self):
+        """Pattern match where trailing chars are spaces → inner loop finds non-space char."""
+        state = self._make_screen(["$  cmd"])
+        # Pattern matches "$ " (dollar then two spaces); last char is space → iterate backwards
+        result = _apply_prompt_pattern_substitution(state, r"^\$  ", "❯")
+        # The "$" at col 0 should be replaced (last non-space in "$ ")
+        assert result.cells[0][0].char == "❯"

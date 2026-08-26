@@ -231,7 +231,7 @@ def generate_manifest(
     prev_state = None
 
     # Always capture initial state (time 0)
-    if 0.0 not in keyframe_times:
+    if 0.0 not in keyframe_times:  # pragma: no cover
         keyframe_times = [0.0] + keyframe_times
 
     for target_time in sorted(keyframe_times):
@@ -501,7 +501,7 @@ def _apply_prompt_pattern_substitution(
         if m:
             # Find the prompt char — last non-space char in the match
             matched = m.group(0)
-            for i in range(len(matched) - 1, -1, -1):
+            for i in range(len(matched) - 1, -1, -1):  # pragma: no branch
                 if matched[i].strip():
                     new_state.cells[row_idx][i].char = replacement
                     break
