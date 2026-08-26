@@ -11,8 +11,10 @@ from great_docs._lint import (
     _check_directive_consistency,
     _check_docstring_style,
     _check_missing_docstrings,
+    _extract_frontmatter_upcoming,
     _lost_sections,
     _section_kinds,
+    _version_distance,
     run_lint,
 )
 from great_docs._utils import QUARTO_YML_HEADER
@@ -392,6 +394,17 @@ class TestCheckDocstringStyle:
         assert len(result.issues) == 1
         assert result.issues[0].symbol == "MyClass.do_stuff"
 
+    def test_invalid_config_style_appends_error(self):
+        """Unknown config_style appends a config error and returns early."""
+        pkg = _make_pkg({"func_a": _make_griffe_obj(docstring="Short.")})
+        result = LintResult()
+        _check_docstring_style(pkg, "mypkg", ["func_a"], "jsdoc", result)
+
+        assert len(result.issues) == 1
+        assert result.issues[0].check == "config"
+        assert result.issues[0].severity == "error"
+        assert "jsdoc" in result.issues[0].message
+
 
 class TestCheckDirectiveConsistency:
     @pytest.mark.parametrize("directive", sorted(DIRECTIVES))
@@ -439,6 +452,12 @@ class TestRunLint:
 
         assert result.status == "fail"
         assert "Unknown check" in result.issues[0].message
+
+    @patch("great_docs.core.GreatDocs", side_effect=RuntimeError("constructor boom"))
+    def test_constructor_exception_propagates_when_not_quiet(self, mock_gd_cls, tmp_path):
+        """Exception from GreatDocs() when quiet=False is re-raised to caller."""
+        with pytest.raises(RuntimeError, match="constructor boom"):
+            run_lint(tmp_path)
 
     @patch("great_docs.core.GreatDocs")
     def test_no_package_detected(self, mock_gd_cls, tmp_path):
@@ -807,6 +826,20 @@ class TestCheckMissingDocstringsEdgeCases:
         result = LintResult()
         _check_missing_docstrings(pkg, "mypkg", ["weird_obj"], result)
 
+    def test_class_method_with_docstring_loop_continues(self):
+        """Class method WITH a docstring: no issue added, loop continues."""
+        method = _make_griffe_obj(kind="function", docstring="Fully documented.")
+        cls = _make_griffe_obj(
+            kind="class",
+            docstring="Class.",
+            members={"do_stuff": method},
+        )
+        pkg = _make_pkg({"MyClass": cls})
+        result = LintResult()
+        _check_missing_docstrings(pkg, "mypkg", ["MyClass"], result)
+
+        assert len(result.issues) == 0
+
 
 class TestCheckCrossReferencesEdgeCases:
     def test_export_not_in_pkg_members(self):
@@ -964,6 +997,16 @@ class TestCheckDocstringStyleEdgeCases:
 
         assert len(result.issues) == 0
 
+    def test_class_method_no_docstring_not_checked(self):
+        """Class method without a docstring: loop continues without calling _check_one."""
+        method = _make_griffe_obj(kind="function", docstring=None)
+        cls = _make_griffe_obj(kind="class", docstring="Short.", members={"do_stuff": method})
+        pkg = _make_pkg({"MyClass": cls})
+        result = LintResult()
+        _check_docstring_style(pkg, "mypkg", ["MyClass"], "numpy", result)
+
+        assert len(result.issues) == 0
+
 
 class TestCheckDirectiveConsistencyEdgeCases:
     def test_export_not_in_pkg(self):
@@ -1023,6 +1066,16 @@ class TestCheckDirectiveConsistencyEdgeCases:
         pkg = _make_pkg({"func_a": _make_griffe_obj(docstring=None)})
         result = LintResult()
         _check_directive_consistency(pkg, "mypkg", ["func_a"], result)
+
+        assert len(result.issues) == 0
+
+    def test_class_method_no_docstring_loop_continues(self):
+        """Class method without docstring: member_doc is falsy, loop continues."""
+        method = _make_griffe_obj(kind="function", docstring=None)
+        cls = _make_griffe_obj(kind="class", docstring="Short.", members={"do_stuff": method})
+        pkg = _make_pkg({"MyClass": cls})
+        result = LintResult()
+        _check_directive_consistency(pkg, "mypkg", ["MyClass"], result)
 
         assert len(result.issues) == 0
 
@@ -1316,3 +1369,239 @@ class TestCheckStaleVersions:
         stale = [i for i in result.issues if i.check == "stale-badge"]
         assert len(stale) == 1
         assert stale[0].symbol == "user_guide/page.qmd:7"
+
+    def test_yaml_parse_error_skips(self, tmp_path):
+        """Invalid YAML in great-docs.yml returns silently."""
+        from great_docs._lint import _check_stale_versions
+
+        (tmp_path / "great-docs.yml").write_text("versions: [\n  unclosed bracket")
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        assert result.issues == []
+
+    def test_empty_versions_after_parse_skips(self, tmp_path):
+        """When parse_versions_config returns empty list, returns silently."""
+        from great_docs._lint import _check_stale_versions
+
+        (tmp_path / "great-docs.yml").write_text("versions:\n  - tag: v0.1\n    label: '0.1'\n")
+        result = LintResult()
+        with patch("great_docs._versioning.parse_versions_config", return_value=[]):
+            _check_stale_versions(tmp_path, result)
+        assert result.issues == []
+
+    def test_no_latest_marked_falls_back_to_first_nonprerelease(self, tmp_path):
+        """No version has latest=True: fallback loop sets latest_entry to first non-prerelease."""
+        from great_docs._lint import _check_stale_versions
+        from great_docs._versioning import VersionEntry
+
+        # Return versions with no latest=True so the fallback loop (lines 584-587) is exercised
+        versions_no_latest = [
+            VersionEntry(tag="0.5", label="0.5", latest=False),
+            VersionEntry(tag="0.2", label="0.2", latest=False),
+            VersionEntry(tag="0.1", label="0.1", latest=False),
+        ]
+        (tmp_path / "great-docs.yml").write_text("versions:\n  - tag: '0.5'\n    label: '0.5'\n")
+        result = LintResult()
+        with patch("great_docs._versioning.parse_versions_config", return_value=versions_no_latest):
+            _check_stale_versions(tmp_path, result)
+        # Ran without error; latest_entry was set to 0.5 via fallback loop
+
+    def test_only_prerelease_versions_skips(self, tmp_path):
+        """When all versions are prerelease, latest_entry stays None and returns."""
+        from great_docs._lint import _check_stale_versions
+
+        versions_yaml = '  - label: "dev"\n    tag: dev\n    prerelease: true\n'
+        self._make_project(
+            tmp_path,
+            versions_yaml,
+            {"page.qmd": "---\ntitle: T\n---\n\nContent.\n"},
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        assert result.issues == []
+
+    def test_version_field_added_to_released_set(self, tmp_path):
+        """Non-prerelease version with a version field: version string added to released set."""
+        from great_docs._lint import _check_stale_versions
+
+        versions_yaml = (
+            '  - label: "0.7"\n'
+            '    tag: "0.7"\n'
+            '    version: "0.7.0"\n'
+            "    latest: true\n"
+            '  - label: "0.1"\n'
+            '    tag: "0.1"\n'
+        )
+        self._make_project(
+            tmp_path,
+            versions_yaml,
+            # upcoming value matches v.version string (not tag) → stale-upcoming fires
+            {"page.qmd": '---\ntitle: T\nupcoming: "0.7.0"\n---\n\nContent.\n'},
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        stale = [i for i in result.issues if i.check == "stale-upcoming"]
+        assert len(stale) == 1
+        assert "0.7.0" in stale[0].message
+
+    def test_qmd_file_read_error_skipped(self, tmp_path):
+        """Files that raise OSError when read are silently skipped."""
+        from pathlib import Path
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {"page.qmd": "---\ntitle: T\n---\n\n[version-badge new 0.1]\n"},
+        )
+        original_read_text = Path.read_text
+
+        def _raise_for_qmd(self, encoding="utf-8"):
+            if self.suffix == ".qmd":
+                raise OSError("unreadable")
+            return original_read_text(self, encoding=encoding)
+
+        result = LintResult()
+        with patch.object(Path, "read_text", _raise_for_qmd):
+            _check_stale_versions(tmp_path, result)
+        assert result.issues == []
+
+    def test_badge_without_version_number_skipped(self, tmp_path):
+        """Badge with no version arg ([version-badge new]) is skipped."""
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {"page.qmd": "---\ntitle: T\n---\n\n[version-badge new]\n"},
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        assert not any(i.check == "stale-badge" for i in result.issues)
+
+    def test_expired_new_badge_advice(self, tmp_path):
+        """Expired 'new' badge shows 'consider removing' advice."""
+        from great_docs._lint import _check_stale_versions
+
+        config = f"versions:\n{self._versions_yaml}\nnew_is_old: '3 releases'\n"
+        (tmp_path / "great-docs.yml").write_text(config)
+        qmd = tmp_path / "page.qmd"
+        qmd.write_text("---\ntitle: T\n---\n\n[version-badge new 0.1]\n")
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        stale = [i for i in result.issues if i.check == "stale-badge"]
+        assert len(stale) == 1
+        assert "consider removing" in stale[0].message
+
+    def test_stale_changed_badge(self, tmp_path):
+        """Stale 'changed' badge uses 'still displays in all versions' advice."""
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {"page.qmd": "---\ntitle: T\n---\n\n[version-badge changed 0.1]\n"},
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        stale = [i for i in result.issues if i.check == "stale-badge"]
+        assert len(stale) == 1
+        assert "still displays in all versions" in stale[0].message
+
+    def test_version_note_without_version_attr_skipped(self, tmp_path):
+        """::: {.version-note} without a version= attribute is skipped."""
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {"page.qmd": "---\ntitle: T\n---\n\n::: {.version-note}\nSome note.\n:::\n"},
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        assert not any(i.check == "stale-callout" for i in result.issues)
+
+    def test_deprecated_callout_without_version_attr_skipped(self, tmp_path):
+        """::: {.version-deprecated} without a version= attribute is skipped."""
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            {"page.qmd": "---\ntitle: T\n---\n\n::: {.version-deprecated}\nUse new().\n:::\n"},
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        assert not any(i.check == "stale-callout" for i in result.issues)
+
+    def test_fresh_deprecated_callout_not_flagged(self, tmp_path):
+        """Deprecated callout that is within the threshold is not reported."""
+        from great_docs._lint import _check_stale_versions
+
+        self._make_project(
+            tmp_path,
+            self._versions_yaml,
+            # 0.6 is only 1 release behind latest (0.7) → below threshold (4)
+            {
+                "page.qmd": (
+                    "---\ntitle: T\n---\n\n"
+                    '::: {.version-deprecated version="0.6"}\n'
+                    "Use new_func().\n"
+                    ":::\n"
+                )
+            },
+        )
+        result = LintResult()
+        _check_stale_versions(tmp_path, result)
+        assert not any(i.check == "stale-callout" for i in result.issues)
+
+
+# ---------------------------------------------------------------------------
+# _version_distance helper
+# ---------------------------------------------------------------------------
+
+
+class TestVersionDistance:
+    """Tests for the _version_distance() helper."""
+
+    def _entry(self, tag: str, prerelease: bool = False):
+        from great_docs._versioning import VersionEntry
+
+        return VersionEntry(tag=tag, label=tag, prerelease=prerelease)
+
+    def test_returns_none_for_unknown_version(self):
+        versions = [self._entry("0.3"), self._entry("0.2"), self._entry("0.1")]
+        result = _version_distance("unknown", versions[0], versions)
+        assert result is None
+
+    def test_returns_none_when_badge_version_is_prerelease(self):
+        """Prerelease entry not in non_pre list → badge_idx stays None."""
+        dev = self._entry("dev", prerelease=True)
+        v03 = self._entry("0.3")
+        v01 = self._entry("0.1")
+        versions = [dev, v03, v01]
+        result = _version_distance("dev", v03, versions)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _extract_frontmatter_upcoming helper
+# ---------------------------------------------------------------------------
+
+
+class TestExtractFrontmatterUpcoming:
+    """Tests for the _extract_frontmatter_upcoming() helper."""
+
+    def test_returns_none_when_no_frontmatter(self):
+        result = _extract_frontmatter_upcoming("# Just content\nNo frontmatter here.")
+        assert result is None
+
+    def test_returns_none_when_no_upcoming_key(self):
+        content = "---\ntitle: My Page\n---\n\nContent here."
+        result = _extract_frontmatter_upcoming(content)
+        assert result is None
+
+    def test_returns_upcoming_value(self):
+        content = '---\ntitle: My Page\nupcoming: "0.9"\n---\n\nContent here.'
+        result = _extract_frontmatter_upcoming(content)
+        assert result == "0.9"
