@@ -79,7 +79,7 @@ def record_session(
     # Fork PTY
     pid, master_fd = pty.fork()
 
-    if pid == 0:
+    if pid == 0:  # pragma: no cover — child process exec path
         # Child process: exec shell
         # Set terminal size
         winsize = struct.pack("HHHH", rows, cols, 0, 0)
