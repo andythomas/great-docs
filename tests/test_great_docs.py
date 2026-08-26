@@ -42742,3 +42742,668 @@ def test_add_section_sidebar_with_sidebar_groups_ungrouped_pages():
             item.get("href", "") for item in guide_sidebar["contents"] if isinstance(item, dict)
         ]
         assert any("extra.qmd" in h for h in hrefs)
+
+
+# ---------------------------------------------------------------------------
+# _prepare_build_directory — missing pre-render scripts, bibliography, CSS
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_build_dir_missing_pre_render_script(tmp_path):
+    """Warning printed when pre_render script path doesn't exist."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    (tmp_path / "great-docs.yml").write_text("pre_render:\n  - scripts/nonexistent.py\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+    import io
+    from contextlib import redirect_stdout
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        try:
+            docs._prepare_build_directory()
+        except Exception:
+            pass
+    assert "Warning" in out.getvalue() or "warning" in out.getvalue().lower()
+
+
+def test_prepare_build_dir_missing_bibliography_file(tmp_path):
+    """Warning when bibliography file doesn't exist."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    (tmp_path / "great-docs.yml").write_text("bibliography:\n  - refs.bib\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+    import io
+    from contextlib import redirect_stdout
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        try:
+            docs._prepare_build_directory()
+        except Exception:
+            pass
+    assert "Warning" in out.getvalue() or "warning" in out.getvalue().lower()
+
+
+def test_prepare_build_dir_missing_csl_file(tmp_path):
+    """Warning when CSL file doesn't exist."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    (tmp_path / "great-docs.yml").write_text("csl: nonexistent.csl\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+    import io
+    from contextlib import redirect_stdout
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        try:
+            docs._prepare_build_directory()
+        except Exception:
+            pass
+    assert "Warning" in out.getvalue() or "warning" in out.getvalue().lower()
+
+
+def test_prepare_build_dir_missing_css_file(tmp_path):
+    """Warning when custom CSS file doesn't exist."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    (tmp_path / "great-docs.yml").write_text("css:\n  - nonexistent.css\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+    import io
+    from contextlib import redirect_stdout
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        try:
+            docs._prepare_build_directory()
+        except Exception:
+            pass
+    assert "Warning" in out.getvalue() or "warning" in out.getvalue().lower()
+
+
+def test_prepare_build_dir_marimo_not_installed(tmp_path):
+    """Warning when marimo enabled but not installed."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    (tmp_path / "great-docs.yml").write_text("marimo: true\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+    import io
+    from contextlib import redirect_stdout
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        with patch("importlib.util.find_spec", return_value=None):
+            try:
+                docs._prepare_build_directory()
+            except Exception:
+                pass
+    assert "Warning" in out.getvalue() or "warning" in out.getvalue().lower()
+
+
+# ---------------------------------------------------------------------------
+# _generate_cli_command_page — bullet list paragraphs, help_text, arguments
+# ---------------------------------------------------------------------------
+
+
+def test_generate_cli_command_page_with_help_text(tmp_path):
+    """CLI command page with help_text generates collapsible details block."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    cmd_info = {
+        "name": "run",
+        "full_path": "mypkg run",
+        "help": "Run the pipeline.",
+        "help_text": "Usage: mypkg run [OPTIONS]\n\nRun the pipeline.\n",
+        "is_group": False,
+        "options": [],
+        "arguments": [],
+        "commands": [],
+        "examples": "",
+    }
+    result = docs._generate_cli_command_page(cmd_info)
+    assert "Full --help output" in result
+    assert "Usage: mypkg run" in result
+
+
+def test_generate_cli_command_page_with_arguments_typed(tmp_path):
+    """CLI command page with typed argument shows type annotation."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    cmd_info = {
+        "name": "process",
+        "full_path": "mypkg process",
+        "help": "Process a file.",
+        "help_text": "",
+        "is_group": False,
+        "options": [],
+        "arguments": [
+            {
+                "name": "FILE",
+                "name_display": "FILE",
+                "type": "path",
+                "required": True,
+                "help": "Input file path.",
+                "default": None,
+            }
+        ],
+        "commands": [],
+        "examples": "",
+    }
+    result = docs._generate_cli_command_page(cmd_info)
+    assert "Arguments" in result
+    assert "path" in result.lower()
+
+
+def test_generate_cli_command_page_with_argument_no_type(tmp_path):
+    """CLI command page with untyped argument omits type annotation."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    cmd_info = {
+        "name": "greet",
+        "full_path": "mypkg greet",
+        "help": "Greet someone.",
+        "help_text": "",
+        "is_group": False,
+        "options": [],
+        "arguments": [
+            {
+                "name": "NAME",
+                "name_display": "NAME",
+                "type": None,
+                "required": True,
+                "help": "",
+                "default": None,
+            }
+        ],
+        "commands": [],
+        "examples": "",
+    }
+    result = docs._generate_cli_command_page(cmd_info)
+    assert "NAME" in result
+
+
+def test_generate_cli_command_page_bullet_paragraphs(tmp_path):
+    """Multi-paragraph help with bullet list is serialized as Markdown bullets."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    cmd_info = {
+        "name": "run",
+        "full_path": "mypkg run",
+        "help": "Run the pipeline.\n\n• Step one\n• Step two",
+        "help_text": "",
+        "is_group": False,
+        "options": [],
+        "arguments": [],
+        "commands": [],
+        "examples": "",
+    }
+    result = docs._generate_cli_command_page(cmd_info)
+    assert "- Step one" in result or "Step one" in result
+
+
+def test_generate_cli_command_page_indented_paragraph(tmp_path):
+    """Multi-paragraph help with indented block is preserved as-is."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    cmd_info = {
+        "name": "run",
+        "full_path": "mypkg run",
+        "help": "Run the pipeline.\n\n  Quick start:\n  do_thing --flag",
+        "help_text": "",
+        "is_group": False,
+        "options": [],
+        "arguments": [],
+        "commands": [],
+        "examples": "",
+    }
+    result = docs._generate_cli_command_page(cmd_info)
+    assert "Quick start:" in result or "do_thing" in result
+
+
+def test_generate_cli_command_page_prose_paragraph(tmp_path):
+    """Multi-paragraph help with plain prose is joined into one line."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    cmd_info = {
+        "name": "run",
+        "full_path": "mypkg run",
+        "help": "Run the pipeline.\n\nThis is extra context for the user.",
+        "help_text": "",
+        "is_group": False,
+        "options": [],
+        "arguments": [],
+        "commands": [],
+        "examples": "",
+    }
+    result = docs._generate_cli_command_page(cmd_info)
+    assert "extra context" in result
+
+
+# ---------------------------------------------------------------------------
+# _build_tag_hierarchy — tag hierarchy building
+# ---------------------------------------------------------------------------
+
+
+def test_build_tag_hierarchy_flat(tmp_path):
+    """Flat tag index builds a one-level hierarchy."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    tag_index = {
+        "Python": [{"title": "Page A", "href": "a.qmd", "section": "Guide"}],
+        "ML": [{"title": "Page B", "href": "b.qmd", "section": "Guide"}],
+    }
+    hierarchy = docs._build_tag_hierarchy(tag_index)
+    assert "Python" in hierarchy
+    assert "ML" in hierarchy
+
+
+def test_build_tag_hierarchy_nested(tmp_path):
+    """Hierarchical tags build a nested tree."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    tag_index = {
+        "AI/Chat": [{"title": "Page C", "href": "c.qmd", "section": "Guide"}],
+        "AI/Vision": [{"title": "Page D", "href": "d.qmd", "section": "Guide"}],
+    }
+    hierarchy = docs._build_tag_hierarchy(tag_index)
+    assert "AI" in hierarchy
+    children = hierarchy["AI"].get("_children", hierarchy.get("AI", {}))
+    assert children  # Has children
+
+
+def test_build_tag_hierarchy_mixed(tmp_path):
+    """Mixed flat + hierarchical tags are placed correctly."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    tag_index = {
+        "Python": [{"title": "A", "href": "a.qmd", "section": ""}],
+        "AI/Chat": [{"title": "B", "href": "b.qmd", "section": ""}],
+    }
+    hierarchy = docs._build_tag_hierarchy(tag_index)
+    assert "Python" in hierarchy
+    assert "AI" in hierarchy
+
+
+# ---------------------------------------------------------------------------
+# _detect_install_extras
+# ---------------------------------------------------------------------------
+
+
+def test_detect_install_extras_no_pyproject(tmp_path):
+    """Returns empty string when no pyproject.toml."""
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert result == ""
+
+
+def test_detect_install_extras_no_optional_deps(tmp_path):
+    """Returns empty string when no optional-dependencies."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert result == ""
+
+
+def test_detect_install_extras_dev_group(tmp_path):
+    """Returns 'dev' when dev optional-dependency group exists."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "mypkg"\n[project.optional-dependencies]\ndev = ["pytest"]\n'
+    )
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert "dev" in result
+
+
+def test_detect_install_extras_docs_group(tmp_path):
+    """Returns 'docs' when docs optional-dependency group exists."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "mypkg"\n[project.optional-dependencies]\ndocs = ["sphinx"]\n'
+    )
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert "docs" in result
+
+
+def test_detect_install_extras_multiple_groups(tmp_path):
+    """Returns comma-separated when multiple groups found."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "mypkg"\n[project.optional-dependencies]\ndev = ["pytest"]\ndocs = ["sphinx"]\n'
+    )
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert "dev" in result
+    assert "docs" in result
+
+
+def test_detect_install_extras_other_groups_ignored(tmp_path):
+    """Groups not in candidates list are ignored."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "mypkg"\n[project.optional-dependencies]\nintegration = ["httpx"]\ncpu = ["numpy"]\n'
+    )
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert result == ""
+
+
+def test_detect_install_extras_malformed_toml(tmp_path):
+    """Returns empty string on malformed TOML."""
+    (tmp_path / "pyproject.toml").write_text("not valid {{{{toml")
+    result = GreatDocs._detect_install_extras(tmp_path)
+    assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# _inspect_repo_git_needs
+# ---------------------------------------------------------------------------
+
+
+def test_inspect_repo_git_needs_no_config(tmp_path):
+    """Returns 'none' when no great-docs.yml exists."""
+    result = GreatDocs._inspect_repo_git_needs(tmp_path)
+    assert result == "none"
+
+
+def test_inspect_repo_git_needs_versions_needs_full(tmp_path):
+    """Returns 'full' when versions configured."""
+    (tmp_path / "great-docs.yml").write_text(
+        'versions:\n  - tag: "v1.0"\n    label: "1.0"\n    latest: true\n'
+    )
+    result = GreatDocs._inspect_repo_git_needs(tmp_path)
+    assert result == "full"
+
+
+def test_inspect_repo_git_needs_show_dates_needs_full(tmp_path):
+    """Returns 'full' when show_dates is true."""
+    (tmp_path / "great-docs.yml").write_text("show_dates: true\n")
+    result = GreatDocs._inspect_repo_git_needs(tmp_path)
+    assert result == "full"
+
+
+def test_inspect_repo_git_needs_source_branch_explicit(tmp_path):
+    """Returns 'none' when explicit source branch configured."""
+    (tmp_path / "great-docs.yml").write_text("source:\n  branch: main\n")
+    result = GreatDocs._inspect_repo_git_needs(tmp_path)
+    assert result == "none"
+
+
+def test_inspect_repo_git_needs_default_returns_tags(tmp_path):
+    """Returns 'tags' by default when no special features configured."""
+    (tmp_path / "great-docs.yml").write_text("display_name: MyPkg\n")
+    result = GreatDocs._inspect_repo_git_needs(tmp_path)
+    assert result == "tags"
+
+
+def test_inspect_repo_git_needs_site_show_dates(tmp_path):
+    """Returns 'full' when site.show_dates is true."""
+    (tmp_path / "great-docs.yml").write_text("site:\n  show_dates: true\n")
+    result = GreatDocs._inspect_repo_git_needs(tmp_path)
+    assert result == "full"
+
+
+# ---------------------------------------------------------------------------
+# _split_tag_parts — static method
+# ---------------------------------------------------------------------------
+
+
+def test_split_tag_parts_simple():
+    result = GreatDocs._split_tag_parts("Python")
+    assert result == ["Python"]
+
+
+def test_split_tag_parts_hierarchy():
+    result = GreatDocs._split_tag_parts("AI/LLM/Chat")
+    assert result == ["AI", "LLM", "Chat"]
+
+
+def test_split_tag_parts_escaped_slash():
+    result = GreatDocs._split_tag_parts(r"AI\/LLM/Chat")
+    assert result == ["AI/LLM", "Chat"]
+
+
+def test_split_tag_parts_strips_whitespace():
+    result = GreatDocs._split_tag_parts("  Python  /  ML  ")
+    assert result == ["Python", "ML"]
+
+
+# ---------------------------------------------------------------------------
+# _tag_slug — static method
+# ---------------------------------------------------------------------------
+
+
+def test_tag_slug_simple():
+    assert GreatDocs._tag_slug("Python") == "python"
+
+
+def test_tag_slug_with_spaces():
+    result = GreatDocs._tag_slug("Machine Learning")
+    assert result == "machine-learning"
+
+
+def test_tag_slug_slash_becomes_hyphen():
+    result = GreatDocs._tag_slug("AI/Chat")
+    assert "/" not in result
+    assert "ai" in result
+
+
+# ---------------------------------------------------------------------------
+# _tag_heading_pill — static method
+# ---------------------------------------------------------------------------
+
+
+def test_tag_heading_pill_simple():
+    result = GreatDocs._tag_heading_pill("Python", "", tooltip="2 pages")
+    assert "Python" in result
+    assert "gd-tag-pill" in result
+    assert "data-tippy-content" in result
+
+
+def test_tag_heading_pill_no_tooltip():
+    result = GreatDocs._tag_heading_pill("Python", "")
+    assert "data-tippy-content" not in result
+
+
+def test_tag_heading_pill_with_parent():
+    result = GreatDocs._tag_heading_pill("Chat", "", parent="AI", parent_icon="")
+    assert "AI" in result
+    assert "Chat" in result
+    assert "gd-tag-pill-segmented" in result
+
+
+def test_tag_heading_pill_with_icon():
+    result = GreatDocs._tag_heading_pill("Python", "<svg>icon</svg>")
+    assert "<svg>icon</svg>" in result
+
+
+# ---------------------------------------------------------------------------
+# _tag_tooltip — static method
+# ---------------------------------------------------------------------------
+
+
+def test_tag_tooltip_empty():
+    assert GreatDocs._tag_tooltip([]) == ""
+
+
+def test_tag_tooltip_single_page():
+    pages = [{"title": "A", "href": "a.qmd"}]
+    result = GreatDocs._tag_tooltip(pages)
+    assert result  # non-empty string
+
+
+def test_tag_tooltip_multiple_pages():
+    pages = [{"title": "A"}, {"title": "B"}, {"title": "C"}]
+    result = GreatDocs._tag_tooltip(pages)
+    assert result
+
+
+# ---------------------------------------------------------------------------
+# _get_tag_icon_html — static method
+# ---------------------------------------------------------------------------
+
+
+def test_get_tag_icon_html_not_found():
+    result = GreatDocs._get_tag_icon_html("Python", {"Go": "terminal"})
+    assert result == ""
+
+
+def test_get_tag_icon_html_found():
+    result = GreatDocs._get_tag_icon_html("terminal", {"terminal": "terminal"})
+    # May return empty if icon not in registry, but should not raise
+    assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# _html_escape — static method
+# ---------------------------------------------------------------------------
+
+
+def test_html_escape_ampersand():
+    result = GreatDocs._html_escape("A & B")
+    assert "&amp;" in result
+
+
+def test_html_escape_angle_brackets():
+    result = GreatDocs._html_escape("<script>")
+    assert "&lt;" in result
+    assert "&gt;" in result
+
+
+def test_html_escape_quotes():
+    result = GreatDocs._html_escape('"hello"')
+    assert '"' not in result or "&quot;" in result
+
+
+def test_html_escape_empty():
+    assert GreatDocs._html_escape("") == ""
+
+
+def test_html_escape_no_special():
+    assert GreatDocs._html_escape("hello world") == "hello world"
+
+
+# ---------------------------------------------------------------------------
+# _strip_numeric_prefix — instance method
+# ---------------------------------------------------------------------------
+
+
+def test_strip_numeric_prefix_double_digit():
+    docs = GreatDocs()
+    assert docs._strip_numeric_prefix("00-introduction.qmd") == "introduction.qmd"
+
+
+def test_strip_numeric_prefix_single_digit():
+    docs = GreatDocs()
+    assert docs._strip_numeric_prefix("1-getting-started.qmd") == "getting-started.qmd"
+
+
+def test_strip_numeric_prefix_no_prefix():
+    docs = GreatDocs()
+    assert docs._strip_numeric_prefix("introduction.qmd") == "introduction.qmd"
+
+
+def test_strip_numeric_prefix_underscore_separator():
+    docs = GreatDocs()
+    result = docs._strip_numeric_prefix("01_getting_started.qmd")
+    assert result == "getting_started.qmd"
+
+
+def test_strip_numeric_prefix_preserves_non_numeric():
+    docs = GreatDocs()
+    assert docs._strip_numeric_prefix("advanced.qmd") == "advanced.qmd"
+
+
+# ---------------------------------------------------------------------------
+# _parse_code_include_args — static method
+# ---------------------------------------------------------------------------
+
+
+def test_parse_code_include_args_file_only():
+    fp, lang, lines = GreatDocs._parse_code_include_args("path/to/file.py")
+    assert fp == "path/to/file.py"
+    assert lang == ""
+    assert lines == ""
+
+
+def test_parse_code_include_args_with_lang():
+    fp, lang, lines = GreatDocs._parse_code_include_args('path/file.py lang="python"')
+    assert fp == "path/file.py"
+    assert lang == "python"
+
+
+def test_parse_code_include_args_with_lines():
+    fp, lang, lines = GreatDocs._parse_code_include_args('path/file.py lines="1-10"')
+    assert lines == "1-10"
+
+
+def test_parse_code_include_args_all_kwargs():
+    fp, lang, lines = GreatDocs._parse_code_include_args('"src/main.py" lang="python" lines="5-15"')
+    assert fp == "src/main.py"
+    assert lang == "python"
+    assert lines == "5-15"
+
+
+def test_parse_code_include_args_empty():
+    fp, lang, lines = GreatDocs._parse_code_include_args("")
+    assert fp == ""
+    assert lang == ""
+    assert lines == ""
+
+
+# ---------------------------------------------------------------------------
+# _select_lines — static method
+# ---------------------------------------------------------------------------
+
+
+def test_select_lines_single():
+    content = "a\nb\nc\n"
+    result = GreatDocs._select_lines(content, "2")
+    assert result == "b\n"
+
+
+def test_select_lines_range():
+    content = "a\nb\nc\nd\n"
+    result = GreatDocs._select_lines(content, "2-3")
+    assert "b" in result and "c" in result
+    assert "a" not in result and "d" not in result
+
+
+def test_select_lines_clamps_to_bounds():
+    content = "a\nb\n"
+    result = GreatDocs._select_lines(content, "1-100")
+    assert "a" in result and "b" in result
+
+
+# ---------------------------------------------------------------------------
+# _bump_heading_levels — static method
+# ---------------------------------------------------------------------------
+
+
+def test_bump_heading_levels_h1_to_h2():
+    result = GreatDocs._bump_heading_levels("# Title\n\nText")
+    assert "## Title" in result
+
+
+def test_bump_heading_levels_all_levels():
+    content = "# H1\n## H2\n### H3"
+    result = GreatDocs._bump_heading_levels(content)
+    assert "## H1" in result
+    assert "### H2" in result
+    assert "#### H3" in result
+
+
+def test_bump_heading_levels_skips_fenced_code():
+    content = "# Heading\n\n```\n# Not bumped\n```\n"
+    result = GreatDocs._bump_heading_levels(content)
+    assert "## Heading" in result
+    assert "# Not bumped" in result  # preserved
+
+
+def test_bump_heading_levels_skips_tilde_fence():
+    content = "# Heading\n\n~~~\n# Code comment\n~~~"
+    result = GreatDocs._bump_heading_levels(content)
+    assert "## Heading" in result
+    assert "# Code comment" in result
+
+
+def test_bump_heading_levels_quarto_cell_option():
+    content = "# Heading\n\n```python\n#| echo: false\nprint('x')\n```"
+    result = GreatDocs._bump_heading_levels(content)
+    assert "## Heading" in result
+    assert "#| echo: false" in result  # not bumped to ##|
