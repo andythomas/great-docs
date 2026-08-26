@@ -33693,6 +33693,14 @@ def _make_function_page(name="my_func"):
     return content.Page(path=f"reference/{name}", contents=[doc])
 
 
+def _front_matter_title(rendered: str) -> str:
+    """Return the parsed YAML front-matter title, format-independent."""
+    import re, yaml
+
+    m = re.match(r"^---\n(.*?)\n---\n", rendered, re.DOTALL)
+    return yaml.safe_load(m.group(1)).get("title", "") if m else ""
+
+
 def _make_class_page_with_members(name="MyClass"):
     """Build a Page containing a class with an attribute and a method.
 
@@ -33737,7 +33745,7 @@ def test_render_api_page_single_object_renders_title_once():
         os.environ.pop("GITHUB_REPO_URL", None)
         rendered = str(RenderAPIPage(node=page, level=1))
 
-    assert 'title: "[my_func()]' in rendered
+    assert "[my_func()]" in _front_matter_title(rendered)
     assert "\n# [my_func()]" not in rendered
     # Body content survives despite the suppressed inner title.
     assert "```python\nmy_func()" in rendered
@@ -33751,7 +33759,7 @@ def test_render_api_page_class_with_members_renders_title_once():
         os.environ.pop("GITHUB_REPO_URL", None)
         rendered = str(RenderAPIPage(node=page, level=1))
 
-    assert 'title: "[MyClass]' in rendered
+    assert "[MyClass]" in _front_matter_title(rendered)
     assert "\n# [MyClass]" not in rendered
     assert "## Attributes" in rendered
     assert "## Methods" in rendered
@@ -33765,7 +33773,7 @@ def test_render_api_page_renders_body_header_at_level_2():
         os.environ.pop("GITHUB_REPO_URL", None)
         rendered = str(RenderAPIPage(node=page, level=2))
 
-    assert 'title: "[my_func()]' in rendered
+    assert "[my_func()]" in _front_matter_title(rendered)
     assert "\n## [my_func()]" in rendered
 
 
@@ -42366,7 +42374,9 @@ def test_update_gitignore_noop_when_all_entries_present():
             encoding="utf-8",
         )
         original_mtime = gitignore.stat().st_mtime
-        import time; time.sleep(0.01)
+        import time
+
+        time.sleep(0.01)
         docs = GreatDocs(project_path=str(tmp_dir))
         docs._update_project_gitignore(force=True)
         # mtime unchanged means file wasn't written
@@ -42442,8 +42452,7 @@ def test_get_package_metadata_dep_with_extras():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         (tmp / "pyproject.toml").write_text(
-            '[project]\nname = "mypkg"\nversion = "1.0"\n'
-            'dependencies = ["httpx[http2]>=0.24"]\n',
+            '[project]\nname = "mypkg"\nversion = "1.0"\ndependencies = ["httpx[http2]>=0.24"]\n',
             encoding="utf-8",
         )
         docs = GreatDocs(project_path=str(tmp_dir))
@@ -42473,7 +42482,7 @@ def test_get_package_metadata_optional_dep_group_with_extras():
         tmp = Path(tmp_dir)
         (tmp / "pyproject.toml").write_text(
             '[project]\nname = "mypkg"\nversion = "1.0"\n'
-            '[project.optional-dependencies]\n'
+            "[project.optional-dependencies]\n"
             'full = ["httpx[http2]>=0.24", "boto3[s3]"]\n',
             encoding="utf-8",
         )
@@ -42492,7 +42501,7 @@ def test_get_package_metadata_optional_dep_with_marker():
         tmp = Path(tmp_dir)
         (tmp / "pyproject.toml").write_text(
             '[project]\nname = "mypkg"\nversion = "1.0"\n'
-            '[project.optional-dependencies]\n'
+            "[project.optional-dependencies]\n"
             'windows = ["pywin32>=1; sys_platform == \\"win32\\""]\n',
             encoding="utf-8",
         )
@@ -42618,7 +42627,7 @@ def test_copy_blog_files_returns_metadata():
         src = tmp / "blog"
         src.mkdir()
         (src / "my-post.qmd").write_text(
-            '---\ntitle: My Post\ndescription: A great post.\n---\nContent.\n',
+            "---\ntitle: My Post\ndescription: A great post.\n---\nContent.\n",
             encoding="utf-8",
         )
         dest = tmp / "dest"
@@ -42730,8 +42739,6 @@ def test_add_section_sidebar_with_sidebar_groups_ungrouped_pages():
         guide_sidebar = next((s for s in sidebars if s.get("id") == "guides"), None)
         assert guide_sidebar is not None
         hrefs = [
-            item.get("href", "")
-            for item in guide_sidebar["contents"]
-            if isinstance(item, dict)
+            item.get("href", "") for item in guide_sidebar["contents"] if isinstance(item, dict)
         ]
         assert any("extra.qmd" in h for h in hrefs)
