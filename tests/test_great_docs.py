@@ -133,12 +133,14 @@ from great_docs._apiref.inventory import (
 )
 from great_docs._apiref.resolve import (
     ObjectNotFoundError,
-    _is_external_alias,
     _Resolver,
+    _autogenerate_sections,
+    _is_external_alias,
+    _join_path,
     _sections_from_package,
     _to_simple_dict,
 )
-from great_docs._apiref.spec import ChildrenStyle, SpecObject, SpecOptions, SpecSection
+from great_docs._apiref.spec import ChildrenStyle, SpecObject, SpecOptions, SpecSection, SpecText
 from great_docs._apiref.typing_information import TypeInformation, TypeSections
 from great_docs._apiref.write import _insert_contents
 from great_docs._apiref.write import merge_frontmatter as _merge_frontmatter
@@ -7246,6 +7248,415 @@ def test_resolver_get_object_or_raise_missing(tmp_path, monkeypatch):
     resolver.current_package = "gdmiss"
     with pytest.raises(ObjectNotFoundError, match="Cannot find an object named"):
         resolver.get_object_or_raise("gdmiss:does_not_exist")
+
+
+def test_join_path_none_package():
+    assert _join_path(None, "my_func") == "my_func"
+
+
+def test_join_path_with_colon_in_pkg():
+    assert _join_path("pkg:mod", "func") == "pkg:mod.func"
+
+
+def test_join_path_with_colon_in_name():
+    assert _join_path("pkg", "mod:func") == "pkg.mod:func"
+
+
+def test_join_path_no_colon():
+    assert _join_path("pkg", "func") == "pkg:func"
+
+
+def test_scoped_updates_options():
+    from great_docs._apiref.api_reference import Settings
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "pkg"
+    initial_options = resolver.options
+    new_options = SpecOptions(include_private=True)
+    with resolver._scoped(options=new_options):
+        assert resolver.options is new_options
+    assert resolver.options is initial_options
+
+
+def test_resolve_entry_with_spectext():
+    from great_docs._apiref.api_reference import Settings
+    from great_docs._apiref.content import Text
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = None
+    text_entry = SpecText(contents="some text")
+    result = resolver._resolve_entry(text_entry)
+    assert isinstance(result, Text)
+    assert result.contents == "some text"
+
+
+def test_resolve_entry_unknown_type_raises():
+    from great_docs._apiref.api_reference import Settings
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = None
+    with pytest.raises(TypeError, match="Cannot resolve section entry of type"):
+        resolver._resolve_entry("not_a_valid_type")  # type: ignore[arg-type]
+
+
+def _make_class_with_method(method_name: str = "my_method", method_doc: str = "A method.") -> tuple:
+    import griffe as gf
+
+    cls = gf.Class("MyClass")
+    cls.docstring = gf.Docstring("A class.", parent=cls)
+    method = gf.Function(method_name, parent=cls)
+    method.docstring = gf.Docstring(method_doc, parent=method)
+    cls.set_member(method_name, method)
+    return cls, method
+
+
+def test_resolve_members_skips_nodoc_member():
+    """member_doc is None -> continue"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    cls, method = _make_class_with_method(method_doc="%nodoc")
+    objects = {"mymod:MyClass": cls, "mymod:MyClass.my_method": method}
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "mymod"
+    resolver.get_object = lambda path, **kwargs: objects.get(path)
+
+    section = SpecSection(
+        title="T", contents=[SpecObject(name="MyClass", children=ChildrenStyle.embedded)]
+    )
+    [resolved] = resolver.resolve_sections([section])
+    doc = resolved.contents[0].contents[0]
+    assert doc.members == []
+
+
+def test_resolve_members_skips_module_member():
+    """member is a module -> continue"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    cls = gf.Class("MyClass")
+    cls.docstring = gf.Docstring("A class.", parent=cls)
+    submod = gf.Module("submod", parent=cls)
+    submod.docstring = gf.Docstring("A submodule.", parent=submod)
+    cls.set_member("submod", submod)
+    method = gf.Function("my_method", parent=cls)
+    method.docstring = gf.Docstring("A method.", parent=method)
+    cls.set_member("my_method", method)
+
+    objects = {
+        "mymod:MyClass": cls,
+        "mymod:MyClass.submod": submod,
+        "mymod:MyClass.my_method": method,
+    }
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "mymod"
+    resolver.get_object = lambda path, **kwargs: objects.get(path)
+
+    section = SpecSection(
+        title="T", contents=[SpecObject(name="MyClass", children=ChildrenStyle.embedded)]
+    )
+    [resolved] = resolver.resolve_sections([section])
+    doc = resolved.contents[0].contents[0]
+    member_names = [m.name for m in doc.members]
+    assert "my_method" in member_names
+    assert "submod" not in member_names
+
+
+def test_resolve_members_children_separate():
+    """ChildrenStyle.separate produces MemberPage"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+    from great_docs._apiref.content import MemberPage
+
+    cls, method = _make_class_with_method()
+    objects = {"mymod:MyClass": cls, "mymod:MyClass.my_method": method}
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "mymod"
+    resolver.get_object = lambda path, **kwargs: objects.get(path)
+
+    section = SpecSection(
+        title="T", contents=[SpecObject(name="MyClass", children=ChildrenStyle.separate)]
+    )
+    [resolved] = resolver.resolve_sections([section])
+    doc = resolved.contents[0].contents[0]
+    assert len(doc.members) == 1
+    assert isinstance(doc.members[0], MemberPage)
+
+
+def test_resolve_members_children_linked():
+    """ChildrenStyle.linked produces Link"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+    from great_docs._apiref.content import Link
+
+    cls, method = _make_class_with_method()
+    objects = {"mymod:MyClass": cls, "mymod:MyClass.my_method": method}
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "mymod"
+    resolver.get_object = lambda path, **kwargs: objects.get(path)
+
+    section = SpecSection(
+        title="T", contents=[SpecObject(name="MyClass", children=ChildrenStyle.linked)]
+    )
+    [resolved] = resolver.resolve_sections([section])
+    doc = resolved.contents[0].contents[0]
+    assert len(doc.members) == 1
+    assert isinstance(doc.members[0], Link)
+
+
+def test_resolve_members_children_invalid_raises():
+    """Unsupported children value raises ValueError"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+    from unittest.mock import MagicMock
+
+    cls, method = _make_class_with_method()
+    objects = {"mymod:MyClass": cls, "mymod:MyClass.my_method": method}
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.current_package = "mymod"
+    resolver.get_object = lambda path, **kwargs: objects.get(path)
+
+    el = MagicMock(spec=SpecObject)
+    el.name = "MyClass"
+    el.package = None
+    el.dynamic = None
+    el.children = "BOGUS_STYLE"
+    el.member_options = None
+    el.members = ["my_method"]
+    el.signature_name = "relative"
+    el.with_defaults.return_value = el
+
+    with pytest.raises(ValueError, match="Unsupported value of children"):
+        resolver._resolve_members(el, cls, path="mymod:MyClass", dynamic=False)
+
+
+def test_fetch_members_module_with_exports_filters_unexported():
+    """obj.is_module and obj.exports is not None filters to exported only"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    mod.exports = ["pub_func"]
+    fn = gf.Function("pub_func", parent=mod)
+    fn.docstring = gf.Docstring("Pub.", parent=fn)
+    mod.set_member("pub_func", fn)
+    fn2 = gf.Function("priv_func", parent=mod)
+    fn2.docstring = gf.Docstring("Priv.", parent=fn2)
+    mod.set_member("priv_func", fn2)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod").with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert result == ["pub_func"]
+    assert "priv_func" not in result
+
+
+def test_fetch_members_module_exclude_imports():
+    """not el.include_imports and obj.is_module filters aliases"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    fn = gf.Function("my_func", parent=mod)
+    fn.docstring = gf.Docstring("Func.", parent=fn)
+    mod.set_member("my_func", fn)
+    alias = gf.Alias("imported_name", target=gf.Function("other_func"))
+    mod.set_member("imported_name", alias)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", include_imports=False).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "my_func" in result
+    assert "imported_name" not in result
+
+
+def test_fetch_members_exclude_attributes():
+    """include_attributes=False removes attribute members"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    attr = gf.Attribute("my_attr", parent=mod)
+    attr.docstring = gf.Docstring("Attr.", parent=attr)
+    mod.set_member("my_attr", attr)
+    fn = gf.Function("my_func", parent=mod)
+    fn.docstring = gf.Docstring("Func.", parent=fn)
+    mod.set_member("my_func", fn)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", include_attributes=False).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "my_func" in result
+    assert "my_attr" not in result
+
+
+def test_fetch_members_exclude_classes():
+    """include_classes=False removes class members"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    cls = gf.Class("MyClass", parent=mod)
+    cls.docstring = gf.Docstring("Class.", parent=cls)
+    mod.set_member("MyClass", cls)
+    fn = gf.Function("my_func", parent=mod)
+    fn.docstring = gf.Docstring("Func.", parent=fn)
+    mod.set_member("my_func", fn)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", include_classes=False).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "my_func" in result
+    assert "MyClass" not in result
+
+
+def test_fetch_members_exclude_functions():
+    """include_functions=False removes function members"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    attr = gf.Attribute("my_attr", parent=mod)
+    attr.docstring = gf.Docstring("Attr.", parent=attr)
+    mod.set_member("my_attr", attr)
+    fn = gf.Function("my_func", parent=mod)
+    fn.docstring = gf.Docstring("Func.", parent=fn)
+    mod.set_member("my_func", fn)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", include_functions=False).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "my_attr" in result
+    assert "my_func" not in result
+
+
+def test_fetch_members_exclude_list():
+    """el.exclude filters listed names"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    fn1 = gf.Function("keep_me", parent=mod)
+    fn1.docstring = gf.Docstring("Keep.", parent=fn1)
+    mod.set_member("keep_me", fn1)
+    fn2 = gf.Function("exclude_me", parent=mod)
+    fn2.docstring = gf.Docstring("Exclude.", parent=fn2)
+    mod.set_member("exclude_me", fn2)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", exclude=["exclude_me"]).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "keep_me" in result
+    assert "exclude_me" not in result
+
+
+def test_fetch_members_source_order():
+    """member_order='source' returns insertion order"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    for name in ["b_func", "a_func", "c_func"]:
+        fn = gf.Function(name, parent=mod)
+        fn.docstring = gf.Docstring("Func.", parent=fn)
+        mod.set_member(name, fn)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", member_order="source").with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert result == ["b_func", "a_func", "c_func"]
+
+
+def test_fetch_members_invalid_order_raises():
+    """Unknown member_order raises ValueError"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    fn = gf.Function("my_func", parent=mod)
+    fn.docstring = gf.Docstring("Func.", parent=fn)
+    mod.set_member("my_func", fn)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod").with_defaults(SpecOptions())
+    el = el.replace(member_order="bad_order")
+
+    with pytest.raises(ValueError, match="Unsupported value of member_order"):
+        resolver._fetch_members(el, mod)
+
+
+def test_fetch_members_include_private_skips_private_filter():
+    """include_private=True bypasses the private-name filter"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    fn = gf.Function("_private_func", parent=mod)
+    fn.docstring = gf.Docstring("Private.", parent=fn)
+    mod.set_member("_private_func", fn)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", include_private=True).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "_private_func" in result
+
+
+def test_fetch_members_include_empty_skips_docstring_filter():
+    """include_empty=True bypasses the docstring-presence filter"""
+    import griffe as gf
+    from great_docs._apiref.api_reference import Settings
+
+    mod = gf.Module("mymod")
+    fn_with_doc = gf.Function("documented", parent=mod)
+    fn_with_doc.docstring = gf.Docstring("Has docs.", parent=fn_with_doc)
+    mod.set_member("documented", fn_with_doc)
+    fn_no_doc = gf.Function("undocumented", parent=mod)
+    mod.set_member("undocumented", fn_no_doc)
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    el = SpecObject(name="mymod", include_empty=True).with_defaults(SpecOptions())
+    result = resolver._fetch_members(el, mod)
+    assert "documented" in result
+    assert "undocumented" in result
+
+
+def test_autogenerate_sections_returns_sections(capsys):
+    """_autogenerate_sections with a valid module returns sections"""
+    import griffe as gf
+
+    mod = gf.Module("mymod")
+    fn = gf.Function("my_func", parent=mod)
+    fn.docstring = gf.Docstring("Summary.", parent=fn)
+    mod.set_member("my_func", fn)
+
+    from great_docs._apiref.api_reference import Settings
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.get_object_or_raise = lambda path, **kwargs: mod
+
+    sections = _autogenerate_sections(resolver, "mymod")
+    assert len(sections) == 1
+    assert sections[0].title == "mymod"
+    captured = capsys.readouterr()
+    assert "Autogenerating" in captured.out
+    assert "api-reference" in captured.out
+
+
+def test_autogenerate_sections_empty_result_raises(capsys):
+    """_autogenerate_sections raises when _sections_from_package returns empty"""
+    import griffe as gf
+    from unittest.mock import patch
+
+    mod = gf.Module("mymod")
+
+    from great_docs._apiref.api_reference import Settings
+
+    resolver = _Resolver(Settings(parser="numpy"))
+    resolver.get_object_or_raise = lambda path, **kwargs: mod
+
+    with patch("great_docs._apiref.resolve._sections_from_package", return_value=[]):
+        with pytest.raises(ValueError, match="No API sections could be generated"):
+            _autogenerate_sections(resolver, "mymod")
 
 
 def test_spec_object_records_specified_fields():
