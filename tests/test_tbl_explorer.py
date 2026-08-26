@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -175,12 +175,10 @@ class TestGetJsSource:
         assert "function" in js.lower() or "const" in js.lower() or "var" in js.lower()
 
     def test_raises_when_file_missing(self, tmp_path: Path):
-        with patch(
-            "great_docs._tbl_explorer.Path.__truediv__",
-            return_value=tmp_path / "nonexistent.js",
-        ):
-            # Can't easily mock Path(__file__).parent, so test via the actual function
-            pass  # covered by the positive test above
+        # Patch the asset name to something that doesn't exist in the assets dir
+        with patch("great_docs._tbl_explorer._JS_ASSET_NAME", "does-not-exist-xyz.js"):
+            with pytest.raises(FileNotFoundError, match="does-not-exist-xyz.js"):
+                _get_js_source()
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +186,7 @@ class TestGetJsSource:
 # ---------------------------------------------------------------------------
 
 
-class TestTblExplorer:
+class TestTblExplorerFunction:
     """Tests for tbl_explorer() function."""
 
     def test_dict_input(self):
