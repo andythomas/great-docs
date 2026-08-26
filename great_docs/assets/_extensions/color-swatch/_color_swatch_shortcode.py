@@ -49,12 +49,12 @@ def _load_contrast_module() -> None:
         _apca_contrast = _ac
         _relative_luminance_apca = _rl
         return
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
 
-    # Walk ancestors to find contrast.py
-    cur = Path(__file__).resolve().parent
-    for ancestor in cur.parents:
+    # Walk ancestors to find contrast.py  (only reached outside an installed package)
+    cur = Path(__file__).resolve().parent  # pragma: no cover
+    for ancestor in cur.parents:  # pragma: no cover
         contrast_path = ancestor / "great_docs" / "contrast.py"
         if contrast_path.exists():
             spec = importlib.util.spec_from_file_location("contrast", contrast_path)
@@ -66,7 +66,7 @@ def _load_contrast_module() -> None:
             _relative_luminance_apca = mod._relative_luminance_apca
             return
 
-    raise ImportError("Cannot locate great_docs/contrast.py")
+    raise ImportError("Cannot locate great_docs/contrast.py")  # pragma: no cover
 
 
 _load_contrast_module()
@@ -335,7 +335,7 @@ try:
             return data
         return []
 
-except ImportError:
+except ImportError:  # pragma: no cover
     # Minimal YAML-subset parser for simple list-of-dicts (no external dep)
 
     def _parse_yaml(text: str) -> list[dict[str, Any]]:  # type: ignore[misc]
