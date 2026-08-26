@@ -78,46 +78,46 @@ def test_build_from_repo_watch_rejected():
     assert "--watch is not supported" in result.output
 
 
-def test_build_project_path_ignored_with_from_repo():
+def test_build_project_path_ignored_with_from_repo(tmp_path, monkeypatch):
     """--project-path emits a warning when --from-repo is used."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("dummy").mkdir()
-        with patch.object(GreatDocs, "build_from_repo") as mock_bfr:
-            result = runner.invoke(
-                cli,
-                [
-                    "build",
-                    "--from-repo",
-                    "https://github.com/x/y.git",
-                    "--project-path",
-                    "dummy",
-                ],
-            )
-            assert "--project-path is ignored" in result.output
-            mock_bfr.assert_called_once()
+    monkeypatch.chdir(tmp_path)
+    Path("dummy").mkdir()
+    with patch.object(GreatDocs, "build_from_repo") as mock_bfr:
+        result = runner.invoke(
+            cli,
+            [
+                "build",
+                "--from-repo",
+                "https://github.com/x/y.git",
+                "--project-path",
+                "dummy",
+            ],
+        )
+        assert "--project-path is ignored" in result.output
+        mock_bfr.assert_called_once()
 
 
-def test_build_branch_ignored_without_from_repo():
+def test_build_branch_ignored_without_from_repo(tmp_path, monkeypatch):
     """--branch without --from-repo emits a warning."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("pyproject.toml").write_text('[project]\nname = "x"\n')
-        Path("great-docs.yml").write_text("name: x\n")
-        with patch.object(GreatDocs, "build") as mock_build:
-            result = runner.invoke(cli, ["build", "--branch", "main", "--project-path", "."])
-        assert "--branch is ignored" in result.output
+    monkeypatch.chdir(tmp_path)
+    Path("pyproject.toml").write_text('[project]\nname = "x"\n')
+    Path("great-docs.yml").write_text("name: x\n")
+    with patch.object(GreatDocs, "build") as mock_build:
+        result = runner.invoke(cli, ["build", "--branch", "main", "--project-path", "."])
+    assert "--branch is ignored" in result.output
 
 
-def test_build_output_dir_ignored_without_from_repo():
+def test_build_output_dir_ignored_without_from_repo(tmp_path, monkeypatch):
     """--output-dir without --from-repo emits a warning."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("pyproject.toml").write_text('[project]\nname = "x"\n')
-        Path("great-docs.yml").write_text("name: x\n")
-        with patch.object(GreatDocs, "build") as mock_build:
-            result = runner.invoke(cli, ["build", "--output-dir", "./out", "--project-path", "."])
-        assert "--output-dir is ignored" in result.output
+    monkeypatch.chdir(tmp_path)
+    Path("pyproject.toml").write_text('[project]\nname = "x"\n')
+    Path("great-docs.yml").write_text("name: x\n")
+    with patch.object(GreatDocs, "build") as mock_build:
+        result = runner.invoke(cli, ["build", "--output-dir", "./out", "--project-path", "."])
+    assert "--output-dir is ignored" in result.output
 
 
 def test_build_from_repo_clone_failure():
@@ -297,15 +297,15 @@ def test_build_shallow_cli_flag():
         )
 
 
-def test_build_shallow_ignored_without_from_repo():
+def test_build_shallow_ignored_without_from_repo(tmp_path, monkeypatch):
     """--shallow without --from-repo emits a warning."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("pyproject.toml").write_text('[project]\nname = "x"\n')
-        Path("great-docs.yml").write_text("name: x\n")
-        with patch.object(GreatDocs, "build") as mock_build:
-            result = runner.invoke(cli, ["build", "--shallow", "--project-path", "."])
-        assert "--shallow is ignored" in result.output
+    monkeypatch.chdir(tmp_path)
+    Path("pyproject.toml").write_text('[project]\nname = "x"\n')
+    Path("great-docs.yml").write_text("name: x\n")
+    with patch.object(GreatDocs, "build") as mock_build:
+        result = runner.invoke(cli, ["build", "--shallow", "--project-path", "."])
+    assert "--shallow is ignored" in result.output
 
 
 # ── --preview flag tests ──────────────────────────────────────────────────────
@@ -351,49 +351,49 @@ def test_build_preview_default_output_dir():
         assert site_arg.endswith("great-docs/_site")
 
 
-def test_build_preview_ignored_without_from_repo():
+def test_build_preview_ignored_without_from_repo(tmp_path, monkeypatch):
     """--preview without --from-repo emits a warning."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("pyproject.toml").write_text('[project]\nname = "x"\n')
-        Path("great-docs.yml").write_text("name: x\n")
-        with patch.object(GreatDocs, "build") as mock_build:
-            result = runner.invoke(cli, ["build", "--preview", "--project-path", "."])
-        assert "--preview is ignored" in result.output
+    monkeypatch.chdir(tmp_path)
+    Path("pyproject.toml").write_text('[project]\nname = "x"\n')
+    Path("great-docs.yml").write_text("name: x\n")
+    with patch.object(GreatDocs, "build") as mock_build:
+        result = runner.invoke(cli, ["build", "--preview", "--project-path", "."])
+    assert "--preview is ignored" in result.output
 
 
 # ── preview --site-dir tests ─────────────────────────────────────────────────
 
 
-def test_preview_site_dir():
+def test_preview_site_dir(tmp_path, monkeypatch):
     """preview --site-dir calls preview_site with the given path."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("mysite").mkdir()
-        (Path("mysite") / "index.html").write_text("<html></html>")
-        site_path = str(Path("mysite").resolve())
-        with patch.object(GreatDocs, "preview_site") as mock_preview:
-            result = runner.invoke(cli, ["preview", "--site-dir", site_path])
-            mock_preview.assert_called_once_with(
-                site_path, port=3000, open_path="", open_browser=True
-            )
+    monkeypatch.chdir(tmp_path)
+    Path("mysite").mkdir()
+    (Path("mysite") / "index.html").write_text("<html></html>")
+    site_path = str(Path("mysite").resolve())
+    with patch.object(GreatDocs, "preview_site") as mock_preview:
+        result = runner.invoke(cli, ["preview", "--site-dir", site_path])
+        mock_preview.assert_called_once_with(
+            site_path, port=3000, open_path="", open_browser=True
+        )
 
 
-def test_preview_site_dir_project_path_warning():
+def test_preview_site_dir_project_path_warning(tmp_path, monkeypatch):
     """preview --site-dir with --project-path emits a warning."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("mysite").mkdir()
-        (Path("mysite") / "index.html").write_text("<html></html>")
-        Path("proj").mkdir()
-        site_path = str(Path("mysite").resolve())
-        proj_path = str(Path("proj").resolve())
-        with patch.object(GreatDocs, "preview_site"):
-            result = runner.invoke(
-                cli,
-                ["preview", "--site-dir", site_path, "--project-path", proj_path],
-            )
-            assert "--project-path is ignored" in result.output
+    monkeypatch.chdir(tmp_path)
+    Path("mysite").mkdir()
+    (Path("mysite") / "index.html").write_text("<html></html>")
+    Path("proj").mkdir()
+    site_path = str(Path("mysite").resolve())
+    proj_path = str(Path("proj").resolve())
+    with patch.object(GreatDocs, "preview_site"):
+        result = runner.invoke(
+            cli,
+            ["preview", "--site-dir", site_path, "--project-path", proj_path],
+        )
+        assert "--project-path is ignored" in result.output
 
 
 def test_preview_site_missing_index():

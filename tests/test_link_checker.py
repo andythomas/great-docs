@@ -1,10 +1,8 @@
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, Mock
-
+from unittest.mock import Mock, patch
 
 from great_docs import GreatDocs
-
 
 # ============================================================================
 # URL Extraction Tests
@@ -237,7 +235,9 @@ https://example.com/three
             )
 
             assert "user_guide/test.md" in results["by_file"]
-            assert "https://example.com/page" in results["by_file"]["user_guide/test.md"]
+            assert (
+                "https://example.com/page" in results["by_file"]["user_guide/test.md"]
+            )
 
 
 # ============================================================================
@@ -782,7 +782,9 @@ title: "Test"
             docs_dir.mkdir()
 
             test_qmd = docs_dir / "test.qmd"
-            test_qmd.write_text("Visit http://fake.example.com{.gd-no-link} for more info")
+            test_qmd.write_text(
+                "Visit http://fake.example.com{.gd-no-link} for more info"
+            )
 
             quarto_yml = docs_dir / "_quarto.yml"
             quarto_yml.write_text("project:\n  type: website\n")
@@ -1070,7 +1072,9 @@ class TestErrorHandling:
         """Test handling of SSL certificate errors."""
         import requests
 
-        mock_head.side_effect = requests.exceptions.SSLError("Certificate verify failed")
+        mock_head.side_effect = requests.exceptions.SSLError(
+            "Certificate verify failed"
+        )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             docs_dir = Path(tmp_dir) / "user_guide"
@@ -1248,7 +1252,9 @@ class TestResultStructure:
 
             test_md = docs_dir / "test.md"
             # Use a definitely broken URL
-            test_md.write_text("https://this-domain-definitely-does-not-exist-12345.com/page")
+            test_md.write_text(
+                "https://this-domain-definitely-does-not-exist-12345.com/page"
+            )
 
             quarto_yml = docs_dir / "_quarto.yml"
             quarto_yml.write_text("project:\n  type: website\n")
@@ -1321,7 +1327,9 @@ https://example.com/also-skip
             )
 
             # Total should equal checked + skipped
-            checked = len(results["ok"]) + len(results["redirects"]) + len(results["broken"])
+            checked = (
+                len(results["ok"]) + len(results["redirects"]) + len(results["broken"])
+            )
             assert results["total"] == checked + len(results["skipped"])
 
 
@@ -1336,6 +1344,7 @@ class TestCLIIntegration:
     def test_cli_command_exists(self):
         """Test that check-links command is registered."""
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
@@ -1347,6 +1356,7 @@ class TestCLIIntegration:
     def test_cli_check_links_help(self):
         """Test check-links command help output."""
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
@@ -1360,119 +1370,125 @@ class TestCLIIntegration:
         assert "--verbose" in result.output
         assert "--json-output" in result.output
 
-    def test_cli_returns_error_code_on_broken_links(self):
+    def test_cli_returns_error_code_on_broken_links(self, tmp_path, monkeypatch):
         """Test that CLI returns non-zero exit code when broken links found."""
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            # Create minimal project structure
-            Path("docs").mkdir()
-            Path("user_guide").mkdir()
-            Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
-            Path("user_guide/test.md").write_text(
-                "https://this-url-definitely-does-not-exist-xyz123.com/"
-            )
+        monkeypatch.chdir(tmp_path)
+        # Create minimal project structure
+        Path("docs").mkdir()
+        Path("user_guide").mkdir()
+        Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
+        Path("user_guide/test.md").write_text(
+            "https://this-url-definitely-does-not-exist-xyz123.com/"
+        )
 
-            result = runner.invoke(cli, ["check-links", "--docs-only", "--timeout", "2"])
+        result = runner.invoke(cli, ["check-links", "--docs-only", "--timeout", "2"])
 
-            # Should exit with error due to broken link
-            assert result.exit_code == 1
+        # Should exit with error due to broken link
+        assert result.exit_code == 1
 
-    def test_cli_returns_success_on_all_valid(self):
+    def test_cli_returns_success_on_all_valid(self, tmp_path, monkeypatch):
         """Test that CLI returns zero exit code when all links valid."""
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            # Create minimal project with no URLs
-            Path("docs").mkdir()
-            Path("user_guide").mkdir()
-            Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
-            Path("user_guide/test.md").write_text("No URLs here")
+        monkeypatch.chdir(tmp_path)
+        # Create minimal project with no URLs
+        Path("docs").mkdir()
+        Path("user_guide").mkdir()
+        Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
+        Path("user_guide/test.md").write_text("No URLs here")
 
-            result = runner.invoke(cli, ["check-links", "--docs-only"])
+        result = runner.invoke(cli, ["check-links", "--docs-only"])
 
-            assert result.exit_code == 0
+        assert result.exit_code == 0
 
-    def test_cli_json_output_format(self):
+    def test_cli_json_output_format(self, tmp_path, monkeypatch):
         """Test that --json-output produces valid JSON."""
         import json
+
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            Path("docs").mkdir()
-            Path("user_guide").mkdir()
-            Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
-            Path("user_guide/test.md").write_text("https://localhost:8000/test")
+        monkeypatch.chdir(tmp_path)
+        Path("docs").mkdir()
+        Path("user_guide").mkdir()
+        Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
+        Path("user_guide/test.md").write_text("https://localhost:8000/test")
 
-            result = runner.invoke(cli, ["check-links", "--docs-only", "--json-output"])
+        result = runner.invoke(cli, ["check-links", "--docs-only", "--json-output"])
 
-            # Find the JSON in the output (skip any prefix messages)
-            output_lines = result.output.strip().split("\n")
-            # Look for the line starting with { which begins the JSON
-            json_start = 0
-            for i, line in enumerate(output_lines):
-                if line.strip().startswith("{"):
-                    json_start = i
-                    break
+        # Find the JSON in the output (skip any prefix messages)
+        output_lines = result.output.strip().split("\n")
+        # Look for the line starting with { which begins the JSON
+        json_start = 0
+        for i, line in enumerate(output_lines):
+            if line.strip().startswith("{"):
+                json_start = i
+                break
 
-            json_output = "\n".join(output_lines[json_start:])
+        json_output = "\n".join(output_lines[json_start:])
 
-            # Output should be valid JSON
-            output = json.loads(json_output)
-            assert "total" in output
-            assert "ok" in output
-            assert "broken" in output
-            assert "redirects" in output
-            assert "skipped" in output
+        # Output should be valid JSON
+        output = json.loads(json_output)
+        assert "total" in output
+        assert "ok" in output
+        assert "broken" in output
+        assert "redirects" in output
+        assert "skipped" in output
 
-    def test_cli_verbose_shows_progress(self):
+    def test_cli_verbose_shows_progress(self, tmp_path, monkeypatch):
         """Test that --verbose shows progress for each URL."""
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            Path("docs").mkdir()
-            Path("user_guide").mkdir()
-            Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
-            Path("user_guide/test.md").write_text("https://localhost:8000/test")
+        monkeypatch.chdir(tmp_path)
+        Path("docs").mkdir()
+        Path("user_guide").mkdir()
+        Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
+        Path("user_guide/test.md").write_text("https://localhost:8000/test")
 
-            result = runner.invoke(cli, ["check-links", "--docs-only", "--verbose"])
+        result = runner.invoke(cli, ["check-links", "--docs-only", "--verbose"])
 
-            # Verbose output should show the URL being processed
-            assert "localhost" in result.output or "Skipped" in result.output
+        # Verbose output should show the URL being processed
+        assert "localhost" in result.output or "Skipped" in result.output
 
-    def test_cli_multiple_ignore_flags(self):
+    def test_cli_multiple_ignore_flags(self, tmp_path, monkeypatch):
         """Test that multiple -i/--ignore flags work."""
         from click.testing import CliRunner
+
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            Path("docs").mkdir()
-            Path("user_guide").mkdir()
-            Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
-            Path("user_guide/test.md").write_text("""
+        monkeypatch.chdir(tmp_path)
+        Path("docs").mkdir()
+        Path("user_guide").mkdir()
+        Path("docs/_quarto.yml").write_text("project:\n  type: website\n")
+        Path("user_guide/test.md").write_text("""
 https://skip1.example.com/
 https://skip2.example.com/
 """)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "check-links",
-                    "--docs-only",
-                    "-i",
-                    "skip1",
-                    "-i",
-                    "skip2",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "check-links",
+                "--docs-only",
+                "-i",
+                "skip1",
+                "-i",
+                "skip2",
+            ],
+        )
 
-            assert result.exit_code == 0
+        assert result.exit_code == 0

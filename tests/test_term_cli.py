@@ -10,13 +10,14 @@ from click.testing import CliRunner
 
 from great_docs.cli import cli
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_termshow_file(tmp_path: Path, name: str = "test.termshow", duration: float = 3.0) -> Path:
+def _make_termshow_file(
+    tmp_path: Path, name: str = "test.termshow", duration: float = 3.0
+) -> Path:
     """Create a minimal .termshow file for testing."""
     header = {
         "version": 1,
@@ -56,7 +57,9 @@ class TestTermRender:
         out_dir = tmp_path / "output"
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["termshow", "render", str(source), "-o", str(out_dir)])
+        result = runner.invoke(
+            cli, ["termshow", "render", str(source), "-o", str(out_dir)]
+        )
 
         assert result.exit_code == 0
         assert "Rendered" in result.output
@@ -68,7 +71,16 @@ class TestTermRender:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["termshow", "render", str(source), "-o", str(out_dir), "--interval", "1.0"]
+            cli,
+            [
+                "termshow",
+                "render",
+                str(source),
+                "-o",
+                str(out_dir),
+                "--interval",
+                "1.0",
+            ],
         )
 
         assert result.exit_code == 0
@@ -88,7 +100,15 @@ class TestTermRender:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["termshow", "render", str(source), "-o", str(out_dir), "--script", str(script)],
+            [
+                "termshow",
+                "render",
+                str(source),
+                "-o",
+                str(out_dir),
+                "--script",
+                str(script),
+            ],
         )
 
         assert result.exit_code == 0
@@ -105,25 +125,29 @@ class TestTermRender:
         out_dir = tmp_path / "output"
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["termshow", "render", str(source), "-o", str(out_dir)])
+        result = runner.invoke(
+            cli, ["termshow", "render", str(source), "-o", str(out_dir)]
+        )
 
         assert result.exit_code == 0
         assert "Chapters: 1" in result.output
 
-    def test_render_default_output_dir(self, tmp_path: Path):
+    def test_render_default_output_dir(self, tmp_path: Path, monkeypatch):
         source = _make_termshow_file(tmp_path)
 
         runner = CliRunner()
-        with runner.isolated_filesystem(temp_dir=tmp_path):
-            # Copy source into CWD
-            Path("test.termshow").write_text(source.read_text())
-            result = runner.invoke(cli, ["termshow", "render", "test.termshow"])
+        monkeypatch.chdir(tmp_path)
+        # Copy source into CWD
+        Path("test.termshow").write_text(source.read_text())
+        result = runner.invoke(cli, ["termshow", "render", "test.termshow"])
 
         assert result.exit_code == 0
 
     def test_render_nonexistent_file(self, tmp_path: Path):
         runner = CliRunner()
-        result = runner.invoke(cli, ["termshow", "render", str(tmp_path / "missing.termshow")])
+        result = runner.invoke(
+            cli, ["termshow", "render", str(tmp_path / "missing.termshow")]
+        )
         assert result.exit_code != 0
 
 
@@ -138,7 +162,9 @@ class TestTermImportCast:
         output = tmp_path / "imported.termshow"
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["termshow", "import-cast", str(source), str(output)])
+        result = runner.invoke(
+            cli, ["termshow", "import-cast", str(source), str(output)]
+        )
 
         assert result.exit_code == 0
         assert "Imported" in result.output
@@ -149,7 +175,9 @@ class TestTermImportCast:
         output = tmp_path / "imported"  # No .termshow extension
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["termshow", "import-cast", str(source), str(output)])
+        result = runner.invoke(
+            cli, ["termshow", "import-cast", str(source), str(output)]
+        )
 
         assert result.exit_code == 0
         assert (tmp_path / "imported.termshow").exists()
@@ -159,7 +187,9 @@ class TestTermImportCast:
         output = tmp_path / "out.termshow"
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["termshow", "import-cast", str(source), str(output)])
+        result = runner.invoke(
+            cli, ["termshow", "import-cast", str(source), str(output)]
+        )
 
         assert "Duration:" in result.output
         assert "Events:" in result.output
@@ -191,7 +221,9 @@ class TestStripRecorderMessages:
 
     def _build_events(self, event_tuples: list[tuple]) -> list[str]:
         """Build event list from (interval, code, data) tuples with a header."""
-        header = json.dumps({"version": 1, "format": "termshow", "term": {"cols": 80, "rows": 24}})
+        header = json.dumps(
+            {"version": 1, "format": "termshow", "term": {"cols": 80, "rows": 24}}
+        )
         return [header] + [json.dumps(list(t)) for t in event_tuples]
 
     def test_strips_recording_started(self):
@@ -200,7 +232,11 @@ class TestStripRecorderMessages:
         events = self._build_events(
             [
                 (0.5, "o", "$ "),
-                (0.3, "o", "\x1b[36m\x1b[1m● Recording started\x1b[0m (Ctrl+D to stop)\r\n"),
+                (
+                    0.3,
+                    "o",
+                    "\x1b[36m\x1b[1m● Recording started\x1b[0m (Ctrl+D to stop)\r\n",
+                ),
                 (1.0, "o", "$ hello\r\n"),
             ]
         )
@@ -217,7 +253,11 @@ class TestStripRecorderMessages:
         events = self._build_events(
             [
                 (0.5, "o", "real output\r\n"),
-                (0.2, "o", "\x1b[36m● Recording stopped\x1b[0m (5 events captured, 3.2s)\r\n"),
+                (
+                    0.2,
+                    "o",
+                    "\x1b[36m● Recording stopped\x1b[0m (5 events captured, 3.2s)\r\n",
+                ),
                 (0.5, "o", "$ "),
             ]
         )

@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from great_docs._skill_install import (
     _find_existing_installations,
     _find_package_skills,
@@ -17,7 +15,6 @@ from great_docs._skill_install import (
     install_skill,
     list_skills,
 )
-
 
 # ---------------------------------------------------------------------------
 # _parse_frontmatter
@@ -491,7 +488,9 @@ class TestMultiSkillWellKnown:
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Create pyproject.toml
             pyproject = Path(tmp_dir) / "pyproject.toml"
-            pyproject.write_text('[project]\nname = "multi-pkg"\ndescription = "Multi"\n')
+            pyproject.write_text(
+                '[project]\nname = "multi-pkg"\ndescription = "Multi"\n'
+            )
 
             # Create skills directory
             skills_dir = Path(tmp_dir) / "skills"
@@ -549,7 +548,9 @@ class TestMultiSkillWellKnown:
 
             # Check individual skill directories
             for name in ["authoring", "reviewing"]:
-                skill_md = great_docs_dir / ".well-known" / "agent-skills" / name / "SKILL.md"
+                skill_md = (
+                    great_docs_dir / ".well-known" / "agent-skills" / name / "SKILL.md"
+                )
                 assert skill_md.exists()
 
             # Check legacy fallback uses first skill
@@ -613,50 +614,50 @@ class TestSkillCLI:
         assert result.exit_code == 0
         assert "--url" in result.output
 
-    def test_skill_install_no_source(self):
+    def test_skill_install_no_source(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
 
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(cli, ["skill", "install"])
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(cli, ["skill", "install"])
 
-            assert result.exit_code != 0
+        assert result.exit_code != 0
 
-    def test_skill_check_empty(self):
+    def test_skill_check_empty(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
 
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(cli, ["skill", "check"])
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(cli, ["skill", "check"])
 
-            assert result.exit_code == 0
-            assert "No installed skills found" in result.output
+        assert result.exit_code == 0
+        assert "No installed skills found" in result.output
 
-    def test_skill_install_from_url_live(self):
+    def test_skill_install_from_url_live(self, tmp_path, monkeypatch):
         """Integration test: install from the live Great Docs site."""
         from click.testing import CliRunner
 
         from great_docs.cli import cli
 
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(
-                cli,
-                [
-                    "skill",
-                    "install",
-                    "https://posit-dev.github.io/great-docs/",
-                    "--agent",
-                    "claude",
-                ],
-            )
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(
+            cli,
+            [
+                "skill",
+                "install",
+                "https://posit-dev.github.io/great-docs/",
+                "--agent",
+                "claude",
+            ],
+        )
 
-            assert result.exit_code == 0
-            assert Path(".claude/skills/great-docs/SKILL.md").exists()
+        assert result.exit_code == 0
+        assert Path(".claude/skills/great-docs/SKILL.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -793,7 +794,9 @@ class TestFindSkillFromUrl:
 
         from great_docs._skill_install import _find_skill_from_url
 
-        with patch.object(urllib.request, "urlopen", side_effect=urllib.error.URLError("fail")):
+        with patch.object(
+            urllib.request, "urlopen", side_effect=urllib.error.URLError("fail")
+        ):
             result = _find_skill_from_url("https://example.com")
 
         assert result is None
@@ -886,7 +889,9 @@ class TestInstallSkillMorePaths:
         from great_docs._skill_install import install_skill
 
         content = "---\nname: my-skill\n---\nBody"
-        with patch("great_docs._skill_install._find_existing_installations", return_value=[]):
+        with patch(
+            "great_docs._skill_install._find_existing_installations", return_value=[]
+        ):
             result = install_skill(skill_content=content, detect=True, root=tmp_path)
 
         assert result == []
@@ -897,7 +902,8 @@ class TestInstallSkillMorePaths:
 
         content = "---\nname: my-skill\n---\nBody"
         with patch(
-            "great_docs._skill_install._find_existing_installations", return_value=["claude"]
+            "great_docs._skill_install._find_existing_installations",
+            return_value=["claude"],
         ):
             result = install_skill(skill_content=content, detect=True, root=tmp_path)
 
@@ -925,7 +931,9 @@ class TestCheckSkillStatusPaths:
         content = "---\nname: my-skill\n---\nBody"
         _make_skill_md(tmp_path, "claude", "my-skill", content)
 
-        with patch("great_docs._skill_install._get_package_version", return_value="1.0.0"):
+        with patch(
+            "great_docs._skill_install._get_package_version", return_value="1.0.0"
+        ):
             results = check_skill(root=tmp_path, quiet=True)
 
         assert any(r["status"] == "outdated" for r in results)
@@ -942,7 +950,7 @@ class TestCheckSkillStatusPaths:
 
     def test_content_hash_current(self, tmp_path: Path):
         """Skill with matching content_hash is reported as 'current'."""
-        from great_docs._skill_install import _content_hash, _stamp_install_metadata
+        from great_docs._skill_install import _stamp_install_metadata
 
         raw = "---\nname: my-skill\n---\nBody"
         stamped = _stamp_install_metadata(raw, "1.0.0")
@@ -954,8 +962,12 @@ class TestCheckSkillStatusPaths:
         bundled.write_text(raw, encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             results = check_skill(root=tmp_path, quiet=True)
 
@@ -963,31 +975,40 @@ class TestCheckSkillStatusPaths:
 
     def test_version_comparison_fallback_current(self, tmp_path: Path):
         """Skill with pkg_version metadata equal to installed uses version comparison."""
-        from great_docs._skill_install import _stamp_install_metadata
 
         raw = "---\nname: my-skill\n---\nBody"
         # Stamp with only package_version, no content_hash
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '1.0.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '1.0.0'\n---\nBody"
+        )
         _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
-        with patch("great_docs._skill_install._get_package_version", return_value="1.0.0"):
+        with patch(
+            "great_docs._skill_install._get_package_version", return_value="1.0.0"
+        ):
             results = check_skill(root=tmp_path, quiet=True)
 
         assert any(r["status"] == "current" for r in results)
 
     def test_version_comparison_fallback_outdated(self, tmp_path: Path):
         """Skill with older package_version metadata and no hash is 'outdated'."""
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
-        with patch("great_docs._skill_install._get_package_version", return_value="1.0.0"):
+        with patch(
+            "great_docs._skill_install._get_package_version", return_value="1.0.0"
+        ):
             results = check_skill(root=tmp_path, quiet=True)
 
         assert any(r["status"] == "outdated" for r in results)
 
     def test_update_reinstalls_outdated_skill(self, tmp_path: Path):
         """check_skill with update=True reinstalls outdated skills."""
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         skill_md = _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
         bundled_dir = tmp_path / "bundled_skills" / "my-skill"
@@ -996,8 +1017,12 @@ class TestCheckSkillStatusPaths:
         bundled.write_text("---\nname: my-skill\n---\nNew body", encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             results = check_skill(root=tmp_path, update=True, quiet=True)
 
@@ -1032,7 +1057,9 @@ class TestListSkillsUrl:
 
         from great_docs._skill_install import list_skills
 
-        index = json.dumps({"skills": [{"name": "gt-skill", "description": "A skill"}]}).encode()
+        index = json.dumps(
+            {"skills": [{"name": "gt-skill", "description": "A skill"}]}
+        ).encode()
         resp = MagicMock()
         resp.read.return_value = index
         resp.__enter__ = lambda s: s
@@ -1052,7 +1079,9 @@ class TestListSkillsUrl:
 
         from great_docs._skill_install import list_skills
 
-        with patch.object(urllib.request, "urlopen", side_effect=urllib.error.URLError("fail")):
+        with patch.object(
+            urllib.request, "urlopen", side_effect=urllib.error.URLError("fail")
+        ):
             results = list_skills(url="https://example.com", quiet=False)
 
         assert results == []
@@ -1135,7 +1164,7 @@ class TestStampInstallMetadata:
 
     def test_hash_is_of_original_not_stamped(self):
         """content_hash is computed before stamping so it's stable across re-installs."""
-        from great_docs._skill_install import _content_hash, _stamp_install_metadata
+        from great_docs._skill_install import _stamp_install_metadata
 
         raw = "---\nname: s\n---\nBody"
         stamped = _stamp_install_metadata(raw, "1.0")
@@ -1161,8 +1190,12 @@ class TestCheckContentFreshness:
         bundled = tmp_path / "SKILL.md"
         bundled.write_text(content, encoding="utf-8")
 
-        with patch("great_docs._skill_install._find_package_skills", return_value=[bundled]):
-            result = _check_content_freshness("mypkg", "my-skill", _content_hash(content))
+        with patch(
+            "great_docs._skill_install._find_package_skills", return_value=[bundled]
+        ):
+            result = _check_content_freshness(
+                "mypkg", "my-skill", _content_hash(content)
+            )
 
         assert result == "current"
 
@@ -1173,7 +1206,9 @@ class TestCheckContentFreshness:
         bundled = tmp_path / "SKILL.md"
         bundled.write_text(content, encoding="utf-8")
 
-        with patch("great_docs._skill_install._find_package_skills", return_value=[bundled]):
+        with patch(
+            "great_docs._skill_install._find_package_skills", return_value=[bundled]
+        ):
             result = _check_content_freshness("mypkg", "my-skill", "stale_hash_000000")
 
         assert result == "outdated"
@@ -1193,7 +1228,9 @@ class TestCheckContentFreshness:
         bundled = tmp_path / "SKILL.md"
         bundled.write_text(content, encoding="utf-8")
 
-        with patch("great_docs._skill_install._find_package_skills", return_value=[bundled]):
+        with patch(
+            "great_docs._skill_install._find_package_skills", return_value=[bundled]
+        ):
             result = _check_content_freshness("mypkg", "my-skill", "anyhash")
 
         assert result == "outdated"
@@ -1247,8 +1284,12 @@ class TestInstallSkillQuietBranches:
     def test_detect_no_installs_quiet_true(self, tmp_path: Path):
         """install_skill detect mode with quiet=True and no installs returns [] silently."""
         content = "---\nname: s\n---\nBody"
-        with patch("great_docs._skill_install._find_existing_installations", return_value=[]):
-            result = install_skill(skill_content=content, detect=True, root=tmp_path, quiet=True)
+        with patch(
+            "great_docs._skill_install._find_existing_installations", return_value=[]
+        ):
+            result = install_skill(
+                skill_content=content, detect=True, root=tmp_path, quiet=True
+            )
 
         assert result == []
 
@@ -1262,7 +1303,9 @@ class TestInstallSkillQuietBranches:
         """install_skill with path= installs directly to that path."""
         content = "---\nname: my-skill\n---\nBody"
         target = tmp_path / "custom_skills" / "my-skill"
-        result = install_skill(skill_content=content, path=str(target), root=tmp_path, quiet=True)
+        result = install_skill(
+            skill_content=content, path=str(target), root=tmp_path, quiet=True
+        )
 
         assert len(result) == 1
         assert (target / "SKILL.md").exists()
@@ -1294,8 +1337,12 @@ class TestInstallSkillQuietBranches:
         bundled.write_text(content, encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
-            patch("great_docs._skill_install._get_package_version", return_value="1.2.3"),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.2.3"
+            ),
         ):
             result = install_skill(package="mypkg", root=tmp_path, quiet=True)
 
@@ -1326,7 +1373,9 @@ class TestCheckSkillScanRoots:
         """check_skill with global_=True scans Path.home()."""
         skill_dir = tmp_path / ".claude" / "skills" / "my-skill"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\nBody", encoding="utf-8")
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\n---\nBody", encoding="utf-8"
+        )
 
         with (
             patch("great_docs._skill_install._get_package_version", return_value=None),
@@ -1338,7 +1387,7 @@ class TestCheckSkillScanRoots:
 
     def test_current_status_prints_checkmark(self, tmp_path: Path, capsys):
         """check_skill prints a checkmark line for current skills."""
-        from great_docs._skill_install import _content_hash, _stamp_install_metadata
+        from great_docs._skill_install import _stamp_install_metadata
 
         raw = "---\nname: my-skill\n---\nBody"
         stamped = _stamp_install_metadata(raw, "1.0.0")
@@ -1349,8 +1398,12 @@ class TestCheckSkillScanRoots:
         bundled.write_text(raw, encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             check_skill(root=tmp_path, quiet=False)
 
@@ -1360,10 +1413,14 @@ class TestCheckSkillScanRoots:
 
     def test_outdated_status_prints_warning(self, tmp_path: Path, capsys):
         """check_skill prints a warning line for outdated skills."""
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
-        with patch("great_docs._skill_install._get_package_version", return_value="1.0.0"):
+        with patch(
+            "great_docs._skill_install._get_package_version", return_value="1.0.0"
+        ):
             check_skill(root=tmp_path, quiet=False)
 
         out = capsys.readouterr().out
@@ -1372,7 +1429,9 @@ class TestCheckSkillScanRoots:
 
     def test_update_with_extra_files_copies_them(self, tmp_path: Path):
         """check_skill update=True copies extra files alongside SKILL.md."""
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         skill_md = _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
         bundled_dir = tmp_path / "bundled" / "my-skill"
@@ -1383,8 +1442,12 @@ class TestCheckSkillScanRoots:
         extra.write_text("#!/bin/bash\necho hi", encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             results = check_skill(root=tmp_path, update=True, quiet=True)
 
@@ -1393,7 +1456,9 @@ class TestCheckSkillScanRoots:
 
     def test_update_prints_message(self, tmp_path: Path, capsys):
         """check_skill update=True prints 'Updated' when not quiet."""
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
         bundled_dir = tmp_path / "bundled" / "my-skill"
@@ -1402,8 +1467,12 @@ class TestCheckSkillScanRoots:
         bundled.write_text("---\nname: my-skill\n---\nNew body", encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             check_skill(root=tmp_path, update=True, quiet=False)
 
@@ -1425,7 +1494,9 @@ class TestListSkillsQuiet:
         bundled.parent.mkdir(parents=True)
         bundled.write_text(content, encoding="utf-8")
 
-        with patch("great_docs._skill_install._find_package_skills", return_value=[bundled]):
+        with patch(
+            "great_docs._skill_install._find_package_skills", return_value=[bundled]
+        ):
             list_skills(package="mypkg", quiet=False)
 
         out = capsys.readouterr().out
@@ -1459,7 +1530,7 @@ class TestFinalBranches:
         skills_dir.mkdir(parents=True)
         (skills_dir / "SKILL.md").write_text("---\nname: my-skill\n---\nBody")
 
-        import importlib, types
+        import types
 
         fake_mod = types.ModuleType("mypkg")
         fake_mod.__file__ = str(pkg_dir / "__init__.py")
@@ -1476,7 +1547,9 @@ class TestFinalBranches:
         # Put a skill in the global (home) location
         skill_dir = tmp_path / ".claude" / "skills" / "g-skill"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text("---\nname: g-skill\n---\nBody", encoding="utf-8")
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: g-skill\n---\nBody", encoding="utf-8"
+        )
 
         with (
             patch("great_docs._skill_install._get_package_version", return_value=None),
@@ -1488,7 +1561,9 @@ class TestFinalBranches:
 
     def test_update_skips_unmatched_bundled_skills(self, tmp_path: Path):
         """check_skill update iterates multiple bundled skills but only updates matching one."""
-        fm_only = "---\nname: target-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: target-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         skill_md = _make_skill_md(tmp_path, "claude", "target-skill", fm_only)
 
         bundled_dir = tmp_path / "bundled"
@@ -1501,7 +1576,9 @@ class TestFinalBranches:
         matching.write_text("---\nname: target-skill\n---\nNew body", encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
             patch(
                 "great_docs._skill_install._find_package_skills",
                 return_value=[other, matching],
@@ -1514,7 +1591,9 @@ class TestFinalBranches:
 
     def test_update_no_pkg_version_skips_stamp(self, tmp_path: Path):
         """check_skill update with pkg_ver=None installs without stamping."""
-        fm_only = "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: my-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         skill_md = _make_skill_md(tmp_path, "claude", "my-skill", fm_only)
 
         bundled_dir = tmp_path / "bundled" / "my-skill"
@@ -1530,8 +1609,13 @@ class TestFinalBranches:
             return None  # Second call: inside update stamping
 
         with (
-            patch("great_docs._skill_install._get_package_version", side_effect=fake_pkg_version),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version",
+                side_effect=fake_pkg_version,
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             results = check_skill(root=tmp_path, update=True, quiet=True)
 
@@ -1543,9 +1627,12 @@ class TestFinalBranches:
         """list_skills with URL failure and quiet=True returns [] silently."""
         import urllib.error
         import urllib.request
+
         from great_docs._skill_install import list_skills
 
-        with patch.object(urllib.request, "urlopen", side_effect=urllib.error.URLError("fail")):
+        with patch.object(
+            urllib.request, "urlopen", side_effect=urllib.error.URLError("fail")
+        ):
             results = list_skills(url="https://example.com", quiet=True)
 
         assert results == []
@@ -1554,7 +1641,9 @@ class TestFinalBranches:
 class TestUpdateNoMatch:
     def test_update_no_matching_bundled_skill(self, tmp_path: Path):
         """check_skill update leaves skill unchanged when no bundled file matches by name."""
-        fm_only = "---\nname: wanted-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        fm_only = (
+            "---\nname: wanted-skill\nmetadata:\n  package_version: '0.9.0'\n---\nBody"
+        )
         skill_md = _make_skill_md(tmp_path, "claude", "wanted-skill", fm_only)
         original_text = skill_md.read_text()
 
@@ -1565,8 +1654,12 @@ class TestUpdateNoMatch:
         bundled.write_text("---\nname: other-skill\n---\nOther body", encoding="utf-8")
 
         with (
-            patch("great_docs._skill_install._get_package_version", return_value="1.0.0"),
-            patch("great_docs._skill_install._find_package_skills", return_value=[bundled]),
+            patch(
+                "great_docs._skill_install._get_package_version", return_value="1.0.0"
+            ),
+            patch(
+                "great_docs._skill_install._find_package_skills", return_value=[bundled]
+            ),
         ):
             results = check_skill(root=tmp_path, update=True, quiet=True)
 

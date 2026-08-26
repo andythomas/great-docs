@@ -25,7 +25,9 @@ from great_docs.cli import cli
 from great_docs.core import GreatDocs
 
 _harper_available = find_harper_cli() is not None
-requires_harper = pytest.mark.skipif(not _harper_available, reason="harper-cli not installed")
+requires_harper = pytest.mark.skipif(
+    not _harper_available, reason="harper-cli not installed"
+)
 
 
 @requires_harper
@@ -227,7 +229,9 @@ The griffe library is useful.
             i for i in results_without["issues"] if "griffe" in i["matched_text"]
         ]
         results_with = gd.proofread(custom_dictionary=["griffe"])
-        griffe_issues_with = [i for i in results_with["issues"] if "griffe" in i["matched_text"]]
+        griffe_issues_with = [
+            i for i in results_with["issues"] if "griffe" in i["matched_text"]
+        ]
         assert len(griffe_issues_with) <= len(griffe_issues_without)
 
 
@@ -262,38 +266,38 @@ def test_proofread_help():
 
 
 @requires_harper
-def test_proofread_no_files():
+def test_proofread_no_files(tmp_path, monkeypatch):
     """Proofread with no documentation files exits cleanly."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        result = runner.invoke(cli, ["proofread"])
-        assert "No documentation files found" in result.output or result.exit_code == 0
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(cli, ["proofread"])
+    assert "No documentation files found" in result.output or result.exit_code == 0
 
 
 @requires_harper
-def test_proofread_json_output():
+def test_proofread_json_output(tmp_path, monkeypatch):
     """Proofread with JSON output produces valid JSON."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("README.md").write_text("# Test\n\nThis is a tset.")
-        result = runner.invoke(cli, ["proofread", "README.md", "--json-output"])
-        try:
-            data = json.loads(result.output)
-            assert "total_issues" in data
-            assert "issues" in data
-        except json.JSONDecodeError:
-            pytest.fail("Output is not valid JSON")
+    monkeypatch.chdir(tmp_path)
+    Path("README.md").write_text("# Test\n\nThis is a tset.")
+    result = runner.invoke(cli, ["proofread", "README.md", "--json-output"])
+    try:
+        data = json.loads(result.output)
+        assert "total_issues" in data
+        assert "issues" in data
+    except json.JSONDecodeError:
+        pytest.fail("Output is not valid JSON")
 
 
 @requires_harper
-def test_proofread_compact_output():
+def test_proofread_compact_output(tmp_path, monkeypatch):
     """Proofread with compact output has file:line:col format."""
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        Path("README.md").write_text("# Test\n\nThis is a tset.")
-        result = runner.invoke(cli, ["proofread", "README.md", "--compact"])
-        if result.exit_code == 1:
-            assert "README.md:" in result.output
+    monkeypatch.chdir(tmp_path)
+    Path("README.md").write_text("# Test\n\nThis is a tset.")
+    result = runner.invoke(cli, ["proofread", "README.md", "--compact"])
+    if result.exit_code == 1:
+        assert "README.md:" in result.output
 
 
 def test_extract_prose_plain_text():
@@ -381,14 +385,18 @@ def test_get_default_ignore_rules():
 @patch("great_docs._harper.shutil.which")
 def test_find_harper_cli_from_path(mock_which):
     """Finds harper-cli on PATH."""
-    mock_which.side_effect = lambda name: "/usr/bin/harper-cli" if name == "harper-cli" else None
+    mock_which.side_effect = lambda name: (
+        "/usr/bin/harper-cli" if name == "harper-cli" else None
+    )
     assert find_harper_cli() == "/usr/bin/harper-cli"
 
 
 @patch("great_docs._harper.shutil.which")
 def test_find_harper_cli_alternative_name(mock_which):
     """Falls back to 'harper' if 'harper-cli' not found."""
-    mock_which.side_effect = lambda name: "/usr/bin/harper" if name == "harper" else None
+    mock_which.side_effect = lambda name: (
+        "/usr/bin/harper" if name == "harper" else None
+    )
     assert find_harper_cli() == "/usr/bin/harper"
 
 
@@ -531,7 +539,9 @@ def test_run_harper_invalid_json(mock_run):
 @patch("great_docs._harper.subprocess.run")
 def test_run_harper_stderr_error(mock_run):
     """Raises HarperError when stderr has real errors (not Note: lines)."""
-    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error: file not found\n")
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="Error: file not found\n"
+    )
     with pytest.raises(HarperError, match="harper-cli error"):
         run_harper([Path("file.md")], harper_path="/usr/bin/harper-cli")
 
