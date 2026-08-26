@@ -261,10 +261,176 @@ class TestHelperImports:
         assert "vs White" not in html
         assert "WCAG" not in html
 
+    # -- parse_colors edge cases --
+
+    def test_parse_colors_body_missing_hex_skipped(self):
+        """Entry without 'hex' key is skipped (covers the continue branch)."""
+        body = "- name: OnlyName\n  shade: light\n"
+        colors = self.mod.parse_colors(body, "")
+        assert colors == []
+
+    def test_parse_yaml_non_list_body_returns_empty(self):
+        """YAML that parses to a non-list (e.g. a mapping) returns []."""
+        body = "key: value\nanother: 42\n"
+        colors = self.mod.parse_colors(body, "")
+        assert colors == []
+
+    # -- render_circles extra branches --
+
+    def test_render_circles_description(self):
+        """description kwarg is rendered into the output."""
+        colors = [{"name": "Red", "hex": "#ff0000"}]
+        html = self.mod.render_circles(colors, description="A red swatch")
+        assert "gd-cs-description" in html
+        assert "A red swatch" in html
+
+    def test_render_circles_extra_class(self):
+        """extra_class kwarg is appended to the wrapper class."""
+        colors = [{"name": "Red", "hex": "#ff0000"}]
+        html = self.mod.render_circles(colors, extra_class="my-custom")
+        assert "my-custom" in html
+
+    def test_render_circles_ring_on_very_light_color(self):
+        """Very light color triggers ring attr and style."""
+        colors = [{"name": "White", "hex": "#fefefe"}]
+        html = self.mod.render_circles(colors)
+        assert 'data-needs-ring="true"' in html
+        assert "--gd-ring-color:" in html
+
+    # -- render_rectangles extra branches --
+
+    def test_render_rectangles_extra_class(self):
+        """extra_class kwarg appended to rectangles wrapper."""
+        colors = [{"name": "Green", "hex": "#22c55e"}]
+        html = self.mod.render_rectangles(colors, extra_class="rect-custom")
+        assert "rect-custom" in html
+
+    def test_render_rectangles_title(self):
+        """title kwarg is rendered for rectangles."""
+        colors = [{"name": "Green", "hex": "#22c55e"}]
+        html = self.mod.render_rectangles(colors, title="Rect Palette")
+        assert "gd-cs-title" in html
+        assert "Rect Palette" in html
+
+    def test_render_rectangles_description(self):
+        """description kwarg is rendered for rectangles."""
+        colors = [{"name": "Green", "hex": "#22c55e"}]
+        html = self.mod.render_rectangles(colors, description="Rectangle desc")
+        assert "gd-cs-description" in html
+        assert "Rectangle desc" in html
+
+    def test_render_circles_no_border(self):
+        """border='false' omits the bordered CSS class from circles."""
+        colors = [{"name": "Red", "hex": "#ff0000"}]
+        html = self.mod.render_circles(colors, border="false")
+        assert "gd-color-swatch--bordered" not in html
+
+    def test_render_rectangles_no_border(self):
+        """border='false' omits the bordered CSS class from rectangles."""
+        colors = [{"name": "Green", "hex": "#22c55e"}]
+        html = self.mod.render_rectangles(colors, border="false")
+        assert "gd-color-swatch--bordered" not in html
+
+    def test_render_rectangles_no_names(self):
+        """show_names='false' omits name span from rectangles."""
+        colors = [{"name": "Green", "hex": "#22c55e"}]
+        html = self.mod.render_rectangles(colors, show_names="false")
+        assert "gd-swatch-rect-name" not in html
+
+    def test_render_rectangles_no_hex(self):
+        """show_hex='false' omits hex span from rectangles."""
+        colors = [{"name": "Green", "hex": "#22c55e"}]
+        html = self.mod.render_rectangles(colors, show_hex="false")
+        assert "gd-swatch-rect-hex" not in html
+
 
 # ---------------------------------------------------------------------------
-# CLI integration tests
+# main() entry-point tests (in-process, no subprocess)
 # ---------------------------------------------------------------------------
+
+
+class TestColorSwatchMain:
+    """Call main() directly with patched sys.argv / stdin to cover the CLI code."""
+
+    @pytest.fixture(autouse=True)
+    def _import_helper(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("_color_swatch_shortcode", _helper())
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+
+    def _run(self, args, stdin_text=None):
+        """Invoke main() with patched env; return (stdout, stderr, exit_code)."""
+        import io
+        from unittest.mock import patch
+
+        fake_stdin = io.StringIO(stdin_text if stdin_text is not None else "")
+        fake_stdin.isatty = lambda: stdin_text is None
+        fake_stdout = io.StringIO()
+        fake_stderr = io.StringIO()
+        argv = [str(_helper())] + args
+        code = 0
+        with (
+            patch("sys.argv", argv),
+            patch("sys.stdin", fake_stdin),
+            patch("sys.stdout", fake_stdout),
+            patch("sys.stderr", fake_stderr),
+        ):
+            try:
+                self.mod.main()
+            except SystemExit as exc:
+                code = exc.code
+        return fake_stdout.getvalue(), fake_stderr.getvalue(), code
+
+    def test_main_circles_palette(self):
+        out, _, code = self._run(["--palette", "sky"])
+        assert code == 0
+        assert "gd-color-swatch--circles" in out
+
+    def test_main_rectangles_mode(self):
+        out, _, code = self._run(["--palette", "sky", "--mode", "rectangles"])
+        assert code == 0
+        assert "gd-color-swatch--rectangles" in out
+
+    def test_main_stdin_yaml(self):
+        body = '- name: StdinColor\n  hex: "#aabbcc"\n'
+        out, _, code = self._run([], stdin_text=body)
+        assert code == 0
+        assert "StdinColor" in out
+
+    def test_main_file_input_absolute(self, tmp_path):
+        f = tmp_path / "colors.yaml"
+        f.write_text('- name: FileColor\n  hex: "#ff0000"\n')
+        out, _, code = self._run(["--file", str(f)])
+        assert code == 0
+        assert "FileColor" in out
+
+    def test_main_file_input_relative(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        f = tmp_path / "colors.yaml"
+        f.write_text('- name: RelColor\n  hex: "#00ff00"\n')
+        out, _, code = self._run(["--file", "colors.yaml"])
+        assert code == 0
+        assert "RelColor" in out
+
+    def test_main_no_colors_exits_nonzero(self):
+        """No colors → error message to stderr and exit 1."""
+        _, err, code = self._run([])
+        assert code == 1
+        assert "no colors" in err
+
+    def test_main_unsupported_mode_exits_nonzero(self):
+        """Unknown mode → error message and exit 1."""
+        _, err, code = self._run(["--palette", "sky", "--mode", "gradient"])
+        assert code == 1
+        assert "unsupported mode" in err
+
+    def test_main_exception_exits_nonzero(self):
+        """Exception (e.g. unknown palette) → error message and exit 1."""
+        _, err, code = self._run(["--palette", "nonexistent"])
+        assert code == 1
+        assert "color-swatch error" in err
 
 
 class TestColorSwatchCLI:
