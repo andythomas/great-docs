@@ -1,7 +1,13 @@
 import griffe as gf
 import pytest
 
-from great_docs._builtin.normalization._sphinx import normalize_sphinx_markup
+from great_docs._builtin.normalization._sphinx import (
+    _convert_rst_citations,
+    _convert_rst_grid_tables,
+    _convert_rst_simple_tables,
+    _smart_dedent,
+    normalize_sphinx_markup,
+)
 
 
 def _function(text: str, parser: str) -> gf.Function:
@@ -78,3 +84,92 @@ def test_sphinx_normalization_registers_on_import():
     from great_docs.hooks import _object_resolved
 
     assert normalize_sphinx_markup in _object_resolved.REGISTRY
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _smart_dedent with blank lines
+# ---------------------------------------------------------------------------
+
+
+def test_smart_dedent_preserves_blank_lines():
+    """Blank lines in indented text are passed through unchanged."""
+    text = "    First line.\n\n    Third line.\n"
+    result = _smart_dedent(text)
+    assert result == "First line.\n\nThird line.\n"
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _convert_rst_citations edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_citations_with_non_citation_lines():
+    """Non-citation lines are preserved verbatim."""
+    text = "Some preamble.\n\n.. [1] Author. https://example.com\n\nSome epilogue."
+    result = _convert_rst_citations(text)
+    assert "Some preamble." in result
+    assert "Some epilogue." in result
+    assert "1. Author." in result
+
+
+def test_citations_with_continuation_lines():
+    """Multi-line citations are joined."""
+    text = ".. [1] First part\n   continuation line\n   another continuation"
+    result = _convert_rst_citations(text)
+    assert "1. First part continuation line another continuation" in result
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _convert_rst_simple_tables edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_simple_table_two_separators_with_content():
+    """Table with 2 separators and one row between them."""
+    text = "=====  =====\nA      B\n=====  ====="
+    result = _convert_rst_simple_tables(text)
+    assert "| A | B |" in result
+    assert "| --- | --- |" in result
+
+
+def test_simple_table_single_separator_returns_unchanged():
+    """Only 1 separator found → conversion fails, line preserved."""
+    text = "=====  =====\nA      B\nC      D"
+    result = _convert_rst_simple_tables(text)
+    assert "=====  =====" in result
+    assert "A      B" in result
+
+
+def test_simple_table_adjacent_separators_no_content():
+    """Two separators with nothing between → no header → returns None."""
+    text = "=====  =====\n=====  ====="
+    result = _convert_rst_simple_tables(text)
+    assert "=====  =====" in result
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _convert_rst_grid_tables edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_grid_table_no_header_border():
+    """No header border → first body row becomes header."""
+    text = "+------+------+\n| A    | B    |\n| 1    | 2    |\n+------+------+"
+    result = _convert_rst_grid_tables(text)
+    assert "| A | B |" in result
+    assert "| 1 | 2 |" in result
+
+
+def test_grid_table_interrupted_by_non_table_line():
+    """Non-matching line mid-collection triggers else-break."""
+    text = "+------+------+\n| A    | B    |\nsomething else\n+------+------+"
+    result = _convert_rst_grid_tables(text)
+    assert "| A | B |" in result
+    assert "something else" in result
+
+
+def test_grid_table_header_border_but_no_header_rows():
+    """Header border present but no rows before it → returns None."""
+    text = "+------+------+\n+======+======+\n| 1    | 2    |\n+------+------+"
+    result = _convert_rst_grid_tables(text)
+    assert "+------+------+" in result

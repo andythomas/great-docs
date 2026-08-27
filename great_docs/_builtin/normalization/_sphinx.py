@@ -216,7 +216,7 @@ def _simple_table_to_markdown(table_lines: list[str]) -> str | None:
         (match.start(), match.end())
         for match in _RST_SIMPLE_TABLE_COLUMN_RE.finditer(separators[0][1])
     ]
-    if not spans:
+    if not spans:  # pragma: no cover
         return None
 
     def cells(line: str) -> list[str]:
@@ -294,7 +294,7 @@ def _convert_rst_grid_tables(text: str) -> str:
 def _grid_table_to_markdown(table_lines: list[str]) -> str | None:
     """Convert one complete RST grid table to Markdown"""
     positions = [match.start() for match in _RST_GRID_TABLE_COLUMN_RE.finditer(table_lines[0])]
-    if len(positions) < 2:
+    if len(positions) < 2:  # pragma: no cover
         return None
     spans = list(zip(positions[:-1], positions[1:]))
 
