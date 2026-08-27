@@ -12,11 +12,13 @@ import pytest
 from great_docs._build_log import (
     BuildLog,
     Colors,
+    MultiProgressBar,
     ProgressBar,
     _BAR_WIDTH,
     _BOX_MAX_WIDTH,
     _StepState,
     _display_width,
+    _safe_stream_write,
     _should_use_color,
     _strip_emoji,
     estimate_build_time,
@@ -807,7 +809,7 @@ class TestBuildLogDetail:
 
 
 class TestBuildLogWarn:
-    """Tests for ``BuildLog.warn()``."""
+    """Tests for `BuildLog.warn()`."""
 
     def test_warn_always_shown(self):
         log, stream = _make_log(force_color=False)
@@ -816,18 +818,23 @@ class TestBuildLogWarn:
         stream.seek(0)
         log.warn("something bad")
         output = stream.getvalue()
+
         assert "something bad" in output
         assert "[!!]" in output
+
         # Also collected
         assert len(log._step.warnings) == 1
         assert log._step.warnings[0] == "something bad"
 
     def test_warn_increments_total(self):
         log, _ = _make_log()
+
         assert log._warning_total == 0
+
         log.step_start(1, "Test")
         log.warn("w1")
         log.warn("w2")
+
         assert log._warning_total == 2
 
     def test_warn_with_color(self):
@@ -837,6 +844,7 @@ class TestBuildLogWarn:
         stream.seek(0)
         log.warn("color warning")
         output = stream.getvalue()
+
         assert "\033[33m" in output  # yellow
         assert "⚠" in output
 
@@ -847,7 +855,7 @@ class TestBuildLogWarn:
 
 
 class TestBuildLogTreeLines:
-    """Tests for ``BuildLog.tree_lines()``."""
+    """Tests for `BuildLog.tree_lines()`."""
 
     def test_tree_lines_always_shown(self):
         log, stream = _make_log(force_color=False)
@@ -856,6 +864,7 @@ class TestBuildLogTreeLines:
         stream.seek(0)
         log.tree_lines(["first", "second", "third"])
         output = stream.getvalue()
+
         assert "├─" in output
         assert "└─" in output
         assert "first" in output
@@ -868,6 +877,7 @@ class TestBuildLogTreeLines:
         stream.seek(0)
         log.tree_lines(["alpha", "beta"])
         output = stream.getvalue()
+
         assert "\033[2m" in output  # DIM for connectors
         assert "├─" in output
         assert "└─" in output
@@ -878,6 +888,7 @@ class TestBuildLogTreeLines:
         log, stream = _make_log(force_color=False)
         log.tree_lines(["a", "b"])
         lines = [l for l in stream.getvalue().split("\n") if l.strip()]
+
         assert "├─" in lines[0]
         assert "└─" in lines[1]
 
@@ -885,6 +896,7 @@ class TestBuildLogTreeLines:
         log, stream = _make_log(force_color=False)
         log.tree_lines(["only one"])
         output = stream.getvalue()
+
         assert "└─" in output
         assert "├─" not in output
 
@@ -893,6 +905,7 @@ class TestBuildLogTreeLines:
         stream.truncate(0)
         stream.seek(0)
         log.tree_lines([])
+
         assert stream.getvalue() == ""
 
 
@@ -902,7 +915,7 @@ class TestBuildLogTreeLines:
 
 
 class TestBuildLogSubstep:
-    """Tests for ``BuildLog.substep()``."""
+    """Tests for `BuildLog.substep()`."""
 
     def test_substep_non_tty_middle(self):
         """Non-TTY substep uses plain ├─ connector and [OK] icon."""
@@ -912,6 +925,7 @@ class TestBuildLogSubstep:
         stream.seek(0)
         log.substep("Interlinks resolved")
         out = stream.getvalue()
+
         assert "├─" in out
         assert "[OK]" in out
         assert "Interlinks resolved" in out
@@ -925,6 +939,7 @@ class TestBuildLogSubstep:
         stream.seek(0)
         log.substep("Scale-to-fit injected", last=True)
         out = stream.getvalue()
+
         assert "└─" in out
         assert "├─" not in out
         assert "[OK]" in out
@@ -938,6 +953,7 @@ class TestBuildLogSubstep:
         stream.seek(0)
         log.substep("SEO enhancements applied")
         out = stream.getvalue()
+
         assert "├─" in out
         assert "✔" in out
         assert "SEO enhancements applied" in out
@@ -950,6 +966,7 @@ class TestBuildLogSubstep:
         stream.seek(0)
         log.substep("Done", last=True)
         out = stream.getvalue()
+
         assert "└─" in out
         assert "├─" not in out
         assert "✔" in out
@@ -964,10 +981,12 @@ class TestBuildLogSubstep:
         log.substep("Interlinks resolved")
         log.substep("Scale-to-fit injected", last=True)
         lines = [l for l in stream.getvalue().splitlines() if l.strip()]
+
         assert len(lines) == 3
         assert "Reference pages" in lines[0]
         assert "Interlinks" in lines[1]
         assert "Scale-to-fit" in lines[2]
+
         # First two use ├─, last uses └─
         assert "├─" in lines[0]
         assert "├─" in lines[1]
@@ -980,7 +999,7 @@ class TestBuildLogSubstep:
 
 
 class TestBuildLogStepDone:
-    """Tests for ``BuildLog.step_done()``."""
+    """Tests for `BuildLog.step_done()`."""
 
     def test_step_done_shows_summary(self):
         log, stream = _make_log(force_color=False)
@@ -989,26 +1008,32 @@ class TestBuildLogStepDone:
         stream.seek(0)
         log.step_done("Everything worked")
         output = stream.getvalue()
+
         assert "[OK]" in output
         assert "Everything worked" in output
 
     def test_step_done_shows_elapsed_time(self):
         log, stream = _make_log(force_color=False)
         log.step_start(1, "Test")
+
         # Artificially set start time to 1 second ago
         log._step.start_time = time.monotonic() - 1.5
         stream.truncate(0)
         stream.seek(0)
         log.step_done("Done")
         output = stream.getvalue()
+
         # Should contain a time like "1.5s" (approximately)
         assert "s" in output
 
     def test_step_done_increments_completed(self):
         log, _ = _make_log()
+
         assert log._completed == 0
+
         log.step_start(1, "Test")
         log.step_done("Done")
+
         assert log._completed == 1
 
     def test_step_done_with_warnings_default_mode(self):
@@ -1020,6 +1045,7 @@ class TestBuildLogStepDone:
         stream.seek(0)
         log.step_done("Generated stuff")
         output = stream.getvalue()
+
         assert "[!!]" in output  # warning icon
         assert "(2 warnings)" in output
 
@@ -1031,6 +1057,7 @@ class TestBuildLogStepDone:
         stream.seek(0)
         log.step_done("Generated stuff")
         output = stream.getvalue()
+
         assert "(1 warning)" in output
         assert "warnings" not in output
 
@@ -1042,6 +1069,7 @@ class TestBuildLogStepDone:
         stream.seek(0)
         log.step_done("Generated stuff")
         output = stream.getvalue()
+
         # Warnings are shown inline AND the suffix is always present
         assert "[!!]" in output
         assert "(1 warning)" in output
@@ -1053,6 +1081,7 @@ class TestBuildLogStepDone:
         stream.seek(0)
         log.step_done("All good")
         output = stream.getvalue()
+
         assert "✔" in output
         assert "\033[32m" in output  # green
 
@@ -1063,7 +1092,7 @@ class TestBuildLogStepDone:
 
 
 class TestBuildLogStepSkip:
-    """Tests for ``BuildLog.step_skip()``."""
+    """Tests for `BuildLog.step_skip()`."""
 
     def test_step_skip_ci_format(self):
         log, stream = _make_log(force_color=False)
@@ -1072,6 +1101,7 @@ class TestBuildLogStepSkip:
         stream.seek(0)
         log.step_skip(4, "disabled in config")
         output = stream.getvalue()
+
         assert "[--]" in output
         assert "Skipped (disabled in config)" in output
 
@@ -1082,15 +1112,19 @@ class TestBuildLogStepSkip:
         stream.seek(0)
         log.step_skip(4, "disabled in config")
         output = stream.getvalue()
+
         assert "⊘" in output
         assert "Skipped" in output
         assert "\033[2m" in output  # dim
 
     def test_step_skip_increments_skipped(self):
         log, _ = _make_log()
+
         assert log._skipped == 0
+
         log.step_start(1, "Test")
         log.step_skip(1, "reason")
+
         assert log._skipped == 1
 
 
@@ -1100,7 +1134,7 @@ class TestBuildLogStepSkip:
 
 
 class TestBuildLogStepFail:
-    """Tests for ``BuildLog.step_fail()``."""
+    """Tests for `BuildLog.step_fail()`."""
 
     def test_step_fail_ci_format(self):
         log, stream = _make_log(force_color=False)
@@ -1109,6 +1143,7 @@ class TestBuildLogStepFail:
         stream.seek(0)
         log.step_fail("Quarto render failed (exit code 1)")
         output = stream.getvalue()
+
         assert "[FAIL]" in output
         assert "Quarto render failed" in output
 
@@ -1119,6 +1154,7 @@ class TestBuildLogStepFail:
         stream.seek(0)
         log.step_fail("Quarto render failed")
         output = stream.getvalue()
+
         assert "✖" in output
         assert "\033[1;31m" in output  # bold red
 
@@ -1126,6 +1162,7 @@ class TestBuildLogStepFail:
         log, _ = _make_log()
         log.step_start(15, "Build site")
         log.step_fail("boom")
+
         assert log._failed_step is not None
         assert log._failed_step.number == 15
         assert log._failed_step.title == "Build site"
@@ -1138,6 +1175,7 @@ class TestBuildLogStepFail:
         stream.seek(0)
         log.step_fail("Failed")
         output = stream.getvalue()
+
         assert "s" in output
 
 
@@ -1147,12 +1185,13 @@ class TestBuildLogStepFail:
 
 
 class TestBuildLogErrorDetail:
-    """Tests for ``BuildLog.error_detail()``."""
+    """Tests for `BuildLog.error_detail()`."""
 
     def test_error_detail_always_shown(self):
         log, stream = _make_log()
         log.error_detail("ERROR: bad yaml\n  at line 42")
         output = stream.getvalue()
+
         assert "ERROR: bad yaml" in output
         assert "at line 42" in output
 
@@ -1160,6 +1199,7 @@ class TestBuildLogErrorDetail:
         log, stream = _make_log()
         log.error_detail("line 1\nline 2\nline 3")
         lines = [l for l in stream.getvalue().split("\n") if l.strip()]
+
         assert len(lines) == 3
 
 
@@ -1169,11 +1209,12 @@ class TestBuildLogErrorDetail:
 
 
 class TestBuildLogProgress:
-    """Tests for ``BuildLog.progress()``."""
+    """Tests for `BuildLog.progress()`."""
 
     def test_progress_returns_progress_bar(self):
         log, _ = _make_log()
         bar = log.progress("Rendering", 100)
+
         assert isinstance(bar, ProgressBar)
         assert bar.total == 100
         assert bar.label == "Rendering"
@@ -1181,11 +1222,13 @@ class TestBuildLogProgress:
     def test_progress_inherits_tty_setting(self):
         log, _ = _make_log(force_color=True)
         bar = log.progress("Test", 10)
+
         assert bar.is_tty is True
 
     def test_progress_inherits_nontty_setting(self):
         log, _ = _make_log(force_color=False)
         bar = log.progress("Test", 10)
+
         assert bar.is_tty is False
 
 
@@ -1195,7 +1238,7 @@ class TestBuildLogProgress:
 
 
 class TestBuildLogFooterSuccess:
-    """Tests for ``BuildLog.footer()`` — successful builds."""
+    """Tests for `BuildLog.footer()` — successful builds."""
 
     def test_footer_contains_complete(self):
         log, stream = _make_log(force_color=False)
@@ -1203,6 +1246,7 @@ class TestBuildLogFooterSuccess:
         log.step_done("Done")
         log.footer(site_path="great-docs/_site/index.html")
         output = stream.getvalue()
+
         assert "Build complete" in output
         assert "1/5 steps" in output
 
@@ -1210,18 +1254,21 @@ class TestBuildLogFooterSuccess:
         log, stream = _make_log(force_color=False)
         log.footer()
         output = stream.getvalue()
+
         assert "Total time:" in output
 
     def test_footer_contains_site_path(self):
         log, stream = _make_log(force_color=False)
         log.footer(site_path="great-docs/_site/index.html")
         output = stream.getvalue()
+
         assert "great-docs/_site/index.html" in output
 
     def test_footer_celebration_basic(self):
         log, stream = _make_log(force_color=False)
         log.footer(site_path="great-docs/_site/index.html")
         output = stream.getvalue()
+
         assert "🎉" in output
         assert "Site ready" in output
 
@@ -1229,12 +1276,14 @@ class TestBuildLogFooterSuccess:
         log, stream = _make_log(force_color=False)
         log.footer(site_path="great-docs/_site/index.html", total_pages=203)
         output = stream.getvalue()
+
         assert "203 pages built!" in output
 
     def test_footer_celebration_small_site(self):
         log, stream = _make_log(force_color=False)
         log.footer(site_path="great-docs/_site/index.html", total_pages=50)
         output = stream.getvalue()
+
         assert "pages built!" not in output
         assert "Site ready" in output
 
@@ -1248,6 +1297,7 @@ class TestBuildLogFooterSuccess:
         log.step_skip(3, "disabled")
         log.footer(site_path="path")
         output = stream.getvalue()
+
         assert "2 skipped" in output
 
     def test_footer_with_warnings(self):
@@ -1258,6 +1308,7 @@ class TestBuildLogFooterSuccess:
         log.step_done("Done")
         log.footer(site_path="path")
         output = stream.getvalue()
+
         assert "2 warnings" in output
 
     def test_footer_with_one_warning_singular(self):
@@ -1267,6 +1318,7 @@ class TestBuildLogFooterSuccess:
         log.step_done("Done")
         log.footer(site_path="path")
         output = stream.getvalue()
+
         assert "1 warning)" in output
         assert "warnings)" not in output
 
@@ -1276,6 +1328,7 @@ class TestBuildLogFooterSuccess:
         log.step_done("Done")
         log.footer(site_path="path")
         output = stream.getvalue()
+
         assert "┌" in output
         assert "└" in output
 
@@ -1283,12 +1336,14 @@ class TestBuildLogFooterSuccess:
         log, stream = _make_log(force_color=False)
         log.footer(site_path="path")
         output = stream.getvalue()
+
         assert "===" in output
 
     def test_footer_watch_mode(self):
         log, stream = _make_log(force_color=False)
         log.footer(watch_mode=True)
         output = stream.getvalue()
+
         assert "Watching for changes" in output
         assert "Ctrl+C" in output
 
@@ -1296,6 +1351,7 @@ class TestBuildLogFooterSuccess:
         log, stream = _make_log(force_color=False)
         log.footer(site_path="path", warnings=3)
         output = stream.getvalue()
+
         assert "3 warnings" in output
 
     def test_footer_long_path_wraps_to_two_lines(self):
@@ -1306,6 +1362,7 @@ class TestBuildLogFooterSuccess:
         long_path = "very/deeply/nested/project/path/great-docs/_site/index.html"
         log.footer(site_path=long_path)
         output = stream.getvalue()
+
         # Path should appear on its own line (indented with 3 spaces)
         assert f"   {long_path}" in output
         assert "Site ready" in output
@@ -1317,7 +1374,7 @@ class TestBuildLogFooterSuccess:
 
 
 class TestBuildLogFooterFailure:
-    """Tests for ``BuildLog.footer()`` — failed builds."""
+    """Tests for `BuildLog.footer()` — failed builds."""
 
     def test_footer_failure_message(self):
         log, stream = _make_log(force_color=False)
@@ -1327,6 +1384,7 @@ class TestBuildLogFooterFailure:
         stream.seek(0)
         log.footer()
         output = stream.getvalue()
+
         assert "Build failed" in output
         assert "Step 15" in output
         assert "Build site with Quarto" in output
@@ -1339,6 +1397,7 @@ class TestBuildLogFooterFailure:
         stream.seek(0)
         log.footer()
         output = stream.getvalue()
+
         assert "✖ Build failed" in output
 
     def test_footer_failure_ci(self):
@@ -1349,6 +1408,7 @@ class TestBuildLogFooterFailure:
         stream.seek(0)
         log.footer()
         output = stream.getvalue()
+
         assert "[FAIL] Build failed" in output
 
     def test_footer_failure_shows_error_hint(self):
@@ -1359,6 +1419,7 @@ class TestBuildLogFooterFailure:
         stream.seek(0)
         log.footer()
         output = stream.getvalue()
+
         assert "See error details above" in output
 
     def test_footer_failure_no_celebration(self):
@@ -1369,6 +1430,7 @@ class TestBuildLogFooterFailure:
         stream.seek(0)
         log.footer(site_path="some/path")
         output = stream.getvalue()
+
         assert "🎉" not in output
         assert "Site ready" not in output
 
@@ -1383,6 +1445,7 @@ class TestBuildLogIcons:
 
     def test_icons_tty(self):
         log, _ = _make_log(force_color=True)
+
         assert "✔" in log._icon_ok
         assert "⊘" in log._icon_skip
         assert "⚠" in log._icon_warn
@@ -1391,6 +1454,7 @@ class TestBuildLogIcons:
 
     def test_icons_ci(self):
         log, _ = _make_log(force_color=False)
+
         assert log._icon_ok == "[OK]"
         assert log._icon_skip == "[--]"
         assert log._icon_warn == "[!!]"
@@ -1413,18 +1477,22 @@ class TestBuildLogPipelineIntegration:
             force_color=False,
         )
         log.header()
+
         # Step 1: success
         log.step_start(1, "Prepare")
         log.step_done("Ready")
+
         # Step 2: skipped
         log.step_start(2, "Optional")
         log.step_skip(2, "disabled")
+
         # Step 3: success
         log.step_start(3, "Build")
         log.step_done("Done")
         log.footer(site_path="out/index.html")
 
         output = stream.getvalue()
+
         assert "3 steps" in output
         assert "Prepare" in output
         assert "Skipped" in output
@@ -1447,6 +1515,7 @@ class TestBuildLogPipelineIntegration:
         log.footer(site_path="out/index.html")
 
         output = stream.getvalue()
+
         assert "Processing item A" in output
         assert "Processing item B" in output
         assert "[!!]" in output  # warning inline
@@ -1465,6 +1534,7 @@ class TestBuildLogPipelineIntegration:
         log.footer()
 
         output = stream.getvalue()
+
         assert "[FAIL]" in output
         assert "ERROR: invalid yaml" in output
         assert "Build failed at Step 2" in output
@@ -1479,6 +1549,7 @@ class TestBuildLogPipelineIntegration:
         log.step_done("Rendered 10 pages")
 
         output = stream.getvalue()
+
         # CI mode: should have percentage lines
         assert "Rendering" in output
         assert "Rendered 10 pages" in output
@@ -1514,15 +1585,18 @@ class TestBuildLogBoxHelpers:
 
     def test_box_width_capped(self):
         log, _ = _make_log(width=200)
+
         assert log._box_width() == _BOX_MAX_WIDTH
 
     def test_box_width_narrow_terminal(self):
         log, _ = _make_log(width=40)
+
         assert log._box_width() == 40
 
     def test_box_line_ci(self):
         log, _ = _make_log(force_color=False, width=200)
         line = log._box_line("hello")
+
         assert line.startswith("|")
         assert line.endswith("|")
         assert "hello" in line
@@ -1530,34 +1604,40 @@ class TestBuildLogBoxHelpers:
     def test_box_line_tty(self):
         log, _ = _make_log(force_color=True, width=200)
         line = log._box_line("hello")
+
         assert "│" in line
         assert "hello" in line
 
     def test_box_top_ci(self):
         log, _ = _make_log(force_color=False, width=200)
         top = log._box_top()
+
         assert top == "=" * _BOX_MAX_WIDTH
 
     def test_box_top_tty(self):
         log, _ = _make_log(force_color=True, width=200)
         top = log._box_top()
+
         assert "┌" in top
         assert "┐" in top
 
     def test_box_bottom_ci(self):
         log, _ = _make_log(force_color=False, width=200)
         bot = log._box_bottom()
+
         assert bot == "=" * _BOX_MAX_WIDTH
 
     def test_box_bottom_tty(self):
         log, _ = _make_log(force_color=True, width=200)
         bot = log._box_bottom()
+
         assert "└" in bot
         assert "┘" in bot
 
     def test_box_blank(self):
         log, _ = _make_log(force_color=False, width=200)
         blank = log._box_blank()
+
         assert blank.startswith("|")
         assert blank.strip("|").strip() == ""
 
@@ -1568,10 +1648,11 @@ class TestBuildLogBoxHelpers:
 
 
 class TestStepState:
-    """Tests for the ``_StepState`` dataclass."""
+    """Tests for the `_StepState` dataclass."""
 
     def test_defaults(self):
         s = _StepState()
+
         assert s.number == 0
         assert s.title == ""
         assert s.start_time == 0.0
@@ -1581,6 +1662,7 @@ class TestStepState:
         s1 = _StepState()
         s2 = _StepState()
         s1.warnings.append("a")
+
         assert s2.warnings == []
 
 
@@ -1595,10 +1677,12 @@ class TestEdgeCases:
     def test_format_elapsed_negative(self):
         # Shouldn't happen, but don't crash
         result = format_elapsed(-1.0)
+
         assert result == "<0.1s"
 
     def test_format_elapsed_very_large(self):
         result = format_elapsed(100000)
+
         assert "h" in result
 
     def test_format_estimate_negative(self):
@@ -1616,18 +1700,21 @@ class TestEdgeCases:
         # Should not crash
         bar.update(15)
         output = stream.getvalue()
+
         assert "100%" in output
 
     def test_build_log_footer_no_site_path(self):
         log, stream = _make_log(force_color=False)
         log.footer()  # no site_path
         output = stream.getvalue()
+
         assert "Build complete" in output
 
     def test_build_log_step_skip_does_not_increment_completed(self):
         log, _ = _make_log()
         log.step_start(1, "Test")
         log.step_skip(1, "off")
+
         assert log._completed == 0
         assert log._skipped == 1
 
@@ -1640,14 +1727,17 @@ class TestEdgeCases:
         log.warn("w2")
         log.warn("w3")
         log.step_done("ok")
+
         # Total warnings tracked globally
         assert log._warning_total == 3
+
         # Current step should only have step 2's warnings
         assert len(log._step.warnings) == 2
 
     def test_pad_rail_handles_short_terminal(self):
         log, _ = _make_log(width=20, force_color=False)
         result = log._pad_rail("abcdefghijklmnopqrstuvwxyz", 26)
+
         # Rail padding should not go negative
         assert "━" not in result or result.count("━") >= 0
 
@@ -1666,6 +1756,7 @@ class TestEdgeCases:
         log.step_done("Stuff done")
         log.footer(site_path="out/index.html", total_pages=5)
         output = stream.getvalue()
+
         # Sanity: we got a complete output
         assert "mypkg" in output
         assert "Do stuff" in output
@@ -1676,8 +1767,10 @@ class TestEdgeCases:
         """Verify that _write calls flush on the stream."""
         stream = io.StringIO()
         log = BuildLog(stream=stream, force_color=False, width=80)
+
         # StringIO.flush is a no-op but we can verify it doesn't crash
         log._write("test line")
+
         assert "test line" in stream.getvalue()
 
     def test_step_done_right_aligns_time(self):
@@ -1689,6 +1782,7 @@ class TestEdgeCases:
         stream.seek(0)
         log.step_done("Short summary")
         line = stream.getvalue().strip()
+
         # The line should have spaces between summary and time
         assert "  " in line  # at least 2 consecutive spaces for padding
 
@@ -1710,6 +1804,7 @@ class TestDefensiveWrite:
                 raise BrokenPipeError("pipe closed")
 
         log = BuildLog(stream=BrokenStream(), force_color=False, width=80)
+
         # Should not raise
         log._write("test line")
         log.header()
@@ -1737,6 +1832,7 @@ class TestDefensiveWrite:
         log = BuildLog(stream=stream, force_color=False, width=80)
         log.substep("SEO enhancements applied")
         output = buffer.getvalue().decode("utf-8", errors="replace")
+
         assert "SEO enhancements applied" in output
 
     def test_footer_survives_cp1252_stdout(self):
@@ -1746,6 +1842,7 @@ class TestDefensiveWrite:
         log = BuildLog(stream=stream, force_color=False, width=80)
         log.footer(site_path="out/index.html")
         output = buffer.getvalue().decode("utf-8", errors="replace")
+
         assert "Site ready" in output
         assert "Build complete" in output
 
@@ -1757,6 +1854,7 @@ class TestDefensiveWrite:
         print("\n🔍 Applying SEO enhancements to HTML files...", file=wrapper)
         wrapper.flush()
         output = buffer.getvalue().decode("utf-8", errors="replace")
+
         assert "SEO enhancements" in output
 
     def test_progress_bar_survives_broken_pipe(self):
@@ -1793,9 +1891,11 @@ class TestDefensiveStepTiming:
     def test_step_done_without_step_start(self):
         """step_done without step_start should show <0.1s, not hours."""
         log, stream = _make_log(force_color=False)
+
         # Deliberately skip step_start
         log.step_done("Surprise result")
         output = stream.getvalue()
+
         assert "<0.1s" in output  # not an absurd elapsed time
         assert "Surprise result" in output
 
@@ -1804,6 +1904,7 @@ class TestDefensiveStepTiming:
         log, stream = _make_log(force_color=False)
         log.step_fail("Unexpected failure")
         output = stream.getvalue()
+
         assert "<0.1s" in output
         assert "Unexpected failure" in output
 
@@ -1825,6 +1926,7 @@ class TestMultiProgressBar:
             colors=Colors(force_color=False),
             stream=stream,
         )
+
         assert mpb._n == 3
         assert mpb._labels == ["v0.1", "v0.2", "v0.3"]
         assert mpb._totals == [1, 1, 1]
@@ -1841,6 +1943,7 @@ class TestMultiProgressBar:
         )
         mpb.set_total(0, 10)
         mpb.set_total(1, 20)
+
         assert mpb._totals == [10, 20]
 
     def test_set_total_minimum_one(self):
@@ -1853,6 +1956,7 @@ class TestMultiProgressBar:
             stream=stream,
         )
         mpb.set_total(0, 0)
+
         assert mpb._totals[0] == 1
 
     def test_update_ci_mode(self):
@@ -1870,11 +1974,13 @@ class TestMultiProgressBar:
         # Update to 10% — should emit
         mpb.update(0, 1)
         output = stream.getvalue()
+
         assert "10%" in output
 
         # Update to 50% — should emit
         mpb.update(0, 5)
         output = stream.getvalue()
+
         assert "50%" in output
 
     def test_update_marks_slot_finished(self):
@@ -1888,6 +1994,7 @@ class TestMultiProgressBar:
         )
         mpb.set_total(0, 5)
         mpb.update(0, 5)
+
         assert 0 in mpb._finished_slots
 
     def test_render_slot_in_progress(self):
@@ -1903,6 +2010,7 @@ class TestMultiProgressBar:
         mpb._currents[0] = 5
 
         slot_str = mpb._render_slot(0)
+
         assert "v0.3" in slot_str
         assert "5/10" in slot_str
         assert "50%" in slot_str
@@ -1921,6 +2029,7 @@ class TestMultiProgressBar:
         mpb._finished_slots.add(0)
 
         slot_str = mpb._render_slot(0)
+
         assert "v0.2" in slot_str
         assert "100%" in slot_str
 
@@ -1935,6 +2044,7 @@ class TestMultiProgressBar:
         )
         mpb.finish()
         mpb.finish()  # Should not raise
+
         assert mpb._all_finished is True
 
     def test_tty_mode_redraws(self):
@@ -1956,6 +2066,7 @@ class TestMultiProgressBar:
 
         mpb.update(0, 3)
         output = stream.getvalue()
+
         # Should contain slot labels
         assert "v1" in output
         assert "v2" in output
@@ -1979,6 +2090,7 @@ class TestMultiProgressBar:
         mpb.finish()
 
         output = stream.getvalue()
+
         # Should have escape codes for cursor movement
         assert "\033[" in output
 
@@ -1987,5 +2099,132 @@ class TestMultiProgressBar:
         stream = io.StringIO()
         log = BuildLog(stream=stream, force_color=False)
         mpb = log.multi_progress(["slot_a", "slot_b"])
+
         assert mpb._n == 2
         assert mpb._labels == ["slot_a", "slot_b"]
+
+    def test_tty_redraw_moves_cursor_up_on_second_draw(self):
+        """Second _redraw emits cursor-up escape when _drawn is True."""
+
+        class FakeTTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        stream = FakeTTY()
+        mpb = MultiProgressBar(
+            labels=["a", "b"],
+            colors=Colors(force_color=False),
+            stream=stream,
+        )
+        mpb.set_total(0, 10)
+        mpb.set_total(1, 10)
+
+        mpb.update(0, 3)
+        mpb.update(0, 5)
+
+        output = stream.getvalue()
+        assert "\033[2A" in output
+
+
+# =========================================================================
+# Coverage: _safe_stream_write edge cases
+# =========================================================================
+
+
+class TestSafeStreamWrite:
+    """Tests for uncovered branches in `_safe_stream_write`."""
+
+    def test_unicode_encode_error_no_buffer(self):
+        """Line 137: UnicodeEncodeError with no .buffer returns silently."""
+
+        class NoBufStream:
+            def write(self, _s):
+                raise UnicodeEncodeError("cp1252", "", 0, 1, "bad char")
+
+            def flush(self):
+                pass
+
+        _safe_stream_write(NoBufStream(), "\U0001f389 party")
+
+    def test_unicode_encode_error_buffer_raises(self):
+        """Fallback buffer write raises BrokenPipeError."""
+
+        class BrokenBuf:
+            def write(self, _b):
+                raise BrokenPipeError("pipe gone")
+
+            def flush(self):
+                raise BrokenPipeError("pipe gone")
+
+        class EncodeFailStream:
+            buffer = BrokenBuf()
+
+            def write(self, _s):
+                raise UnicodeEncodeError("cp1252", "", 0, 1, "bad char")
+
+            def flush(self):
+                pass
+
+        _safe_stream_write(EncodeFailStream(), "\U0001f389 party")
+
+
+# =========================================================================
+# Coverage: ProgressBar.finish() OSError handling
+# =========================================================================
+
+
+class TestProgressBarFinishOSError:
+    """Tests for the except block in ProgressBar.finish()."""
+
+    def test_finish_tty_get_terminal_size_raises(self):
+        """OSError from get_terminal_size is swallowed."""
+        stream = io.StringIO()
+        bar = ProgressBar("Test", 10, is_tty=True, colors=Colors(force_color=True), stream=stream)
+        with patch("great_docs._build_log.shutil.get_terminal_size", side_effect=OSError("nope")):
+            bar.finish()
+
+
+# =========================================================================
+# Coverage: MultiProgressBar.finish() and _redraw() OSError handling
+# =========================================================================
+
+
+class TestMultiProgressBarOSError:
+    """Tests for except blocks in MultiProgressBar.finish() and _redraw()."""
+
+    def test_finish_tty_get_terminal_size_raises(self):
+        """OSError in finish() is swallowed."""
+
+        class FakeTTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        stream = FakeTTY()
+        mpb = MultiProgressBar(
+            labels=["a"],
+            colors=Colors(force_color=False),
+            stream=stream,
+        )
+        mpb.set_total(0, 5)
+        mpb.update(0, 3)
+
+        with patch("great_docs._build_log.shutil.get_terminal_size", side_effect=OSError("nope")):
+            mpb.finish()
+
+    def test_redraw_get_terminal_size_raises(self):
+        """OSError in _redraw() is swallowed."""
+
+        class FakeTTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        stream = FakeTTY()
+        mpb = MultiProgressBar(
+            labels=["a"],
+            colors=Colors(force_color=False),
+            stream=stream,
+        )
+        mpb.set_total(0, 10)
+
+        with patch("great_docs._build_log.shutil.get_terminal_size", side_effect=OSError("nope")):
+            mpb.update(0, 5)

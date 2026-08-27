@@ -309,7 +309,7 @@ class ProgressBar:
                 if bucket > self._last_pct_bucket:
                     self._last_pct_bucket = bucket
                     _safe_stream_write(self.stream, self._render_bar_plain(current) + "\n")
-        except (BrokenPipeError, OSError):
+        except (BrokenPipeError, OSError):  # pragma: no cover
             pass
 
     def finish(self, summary: str | None = None) -> None:  # noqa: ARG002
