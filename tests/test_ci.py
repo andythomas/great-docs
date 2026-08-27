@@ -121,6 +121,7 @@ def test_upsert_updates_when_present(monkeypatch):
     monkeypatch.setattr(requests, "post", fake_post)
 
     action = _ci.upsert_pr_comment("o", "r", 302, "hello", "tok")
+
     assert action == "updated"
     assert "post" not in calls
     assert "/issues/comments/99" in calls["patch"]
@@ -150,6 +151,7 @@ def test_upsert_follows_pagination(monkeypatch):
     monkeypatch.setattr(requests, "patch", fake_patch)
 
     action = _ci.upsert_pr_comment("o", "r", 302, "hello", "tok")
+
     assert action == "updated"
     assert "/issues/comments/42" in patched["url"]
 
@@ -161,6 +163,7 @@ def test_upsert_follows_pagination(monkeypatch):
 
 def test_cli_ci_notice_outputs_commands():
     result = CliRunner().invoke(cli, ["ci", "notice", "--run", "123", "--pr", "302"])
+
     assert result.exit_code == 0
     assert "::notice" in result.output
     assert "great-docs preview --run 123" in result.output
@@ -178,6 +181,7 @@ def test_cli_ci_pr_comment_dispatch(monkeypatch):
     result = CliRunner().invoke(
         cli, ["ci", "pr-comment", "--run", "123", "--pr", "302", "--repo", "posit-dev/great-docs"]
     )
+
     assert result.exit_code == 0, result.output
     assert captured == {"run_id": 123, "pr": 302, "repo": "posit-dev/great-docs"}
     assert "Created preview comment on posit-dev/great-docs#302" in result.output
@@ -189,5 +193,126 @@ def test_cli_ci_pr_comment_error_exits(monkeypatch):
 
     monkeypatch.setattr(_ci, "post_preview_comment", boom)
     result = CliRunner().invoke(cli, ["ci", "pr-comment", "--run", "1", "--pr", "2"])
+
     assert result.exit_code == 1
     assert "no token" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Coverage: resolve_ci_repo edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_ci_repo_unparseable_override():
+    """Raises when override is present but not parseable."""
+    with pytest.raises(PreviewError, match="Could not parse --repo"):
+        _ci.resolve_ci_repo("not-a-valid-repo-spec!!!")
+
+
+def test_resolve_ci_repo_falls_through_to_resolve_repo(monkeypatch):
+    """No override and no GITHUB_REPOSITORY → delegates to resolve_repo."""
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+
+    import great_docs._pr_preview as _pr_preview
+
+    monkeypatch.setattr(
+        _pr_preview, "resolve_repo", lambda _a, _b: ("fallback-owner", "fallback-repo")
+    )
+
+    assert _ci.resolve_ci_repo(None) == ("fallback-owner", "fallback-repo")
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _github_token success
+# ---------------------------------------------------------------------------
+
+
+def test_github_token_success(monkeypatch):
+    """Returns stripped token when present."""
+    monkeypatch.setenv("GITHUB_TOKEN", "  ghp_abc123  ")
+
+    assert _ci._github_token() == "ghp_abc123"
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _find_existing_comment error
+# ---------------------------------------------------------------------------
+
+
+def test_find_existing_comment_non_200_raises(monkeypatch):
+    """Raises PreviewError on non-200 from comments API."""
+    import requests
+
+    def fake_get(url, headers=None, timeout=None):
+        return _FakeResp(403)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    headers = {"Authorization": "Bearer tok"}
+    with pytest.raises(PreviewError, match="Could not list PR comments"):
+        _ci._find_existing_comment("o", "r", 1, headers)
+
+
+# ---------------------------------------------------------------------------
+# Coverage: upsert_pr_comment error paths
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_request_exception_raises(monkeypatch):
+    """RequestException during post/patch is wrapped."""
+    import requests
+
+    def fake_get(url, headers=None, timeout=None):
+        return _FakeResp(200, payload=[])
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        raise requests.RequestException("connection reset")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    with pytest.raises(PreviewError, match="Failed to post PR comment"):
+        _ci.upsert_pr_comment("o", "r", 1, "body", "tok")
+
+
+def test_upsert_bad_status_raises(monkeypatch):
+    """Non-200/201 response raises PreviewError."""
+    import requests
+
+    def fake_get(url, headers=None, timeout=None):
+        return _FakeResp(200, payload=[])
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResp(422)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    with pytest.raises(PreviewError, match="Failed to creat.* PR comment"):
+        _ci.upsert_pr_comment("o", "r", 1, "body", "tok")
+
+
+# ---------------------------------------------------------------------------
+# Coverage: post_preview_comment integration
+# ---------------------------------------------------------------------------
+
+
+def test_post_preview_comment_full_flow(monkeypatch):
+    """Exercises the full post_preview_comment orchestration."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "acme/docs")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_fake")
+
+    import requests
+
+    def fake_get(url, headers=None, timeout=None):
+        return _FakeResp(200, payload=[])
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResp(201)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    action, slug = _ci.post_preview_comment(run_id=999, pr=42)
+
+    assert action == "created"
+    assert slug == "acme/docs"
