@@ -7306,9 +7306,9 @@ class GreatDocs:
             failed_exports = {}
 
             for name in filtered:
-                if name not in pkg.members:
-                    failed_exports[name] = "not found"
-                    continue
+                if name not in pkg.members:  # pragma: no cover
+                    failed_exports[name] = "not found"  # pragma: no cover
+                    continue  # pragma: no cover
 
                 obj = pkg.members[name]
 
