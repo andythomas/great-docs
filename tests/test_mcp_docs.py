@@ -62,6 +62,13 @@ class TestDump:
 
         assert _dump(Plain()) == {}
 
+    def test_returns_empty_when_dict_also_raises(self):
+        """When both model_dump and dict raise, returns {} (lines 203-204)."""
+        obj = MagicMock(spec=["model_dump", "dict"])
+        obj.model_dump.side_effect = RuntimeError("v2 fail")
+        obj.dict.side_effect = TypeError("v1 fail")
+        assert _dump(obj) == {}
+
 
 # ---------------------------------------------------------------------------
 # _locate_server
@@ -487,6 +494,30 @@ class TestGenerateResourceTemplatePage:
         }
         content = _generate_resource_template_page(template, "my-server")
         assert "template-variables" not in content.lower()
+
+    def test_description_rendered(self):
+        """When description is truthy, renders doc-subject block."""
+        template = {
+            "name": "docs",
+            "uri_template": "gd://docs/{path}",
+            "description": "Fetch documentation for a given path.",
+            "mime_type": None,
+        }
+        content = _generate_resource_template_page(template, "my-server")
+        assert "doc-subject" in content
+        assert "Fetch documentation for a given path." in content
+
+    def test_mime_type_rendered(self):
+        """When mime_type is truthy, renders MIME Type line."""
+        template = {
+            "name": "docs",
+            "uri_template": "gd://docs/{path}",
+            "description": "",
+            "mime_type": "application/json",
+        }
+        content = _generate_resource_template_page(template, "my-server")
+        assert "application/json" in content
+        assert "MIME Type" in content
 
 
 # ---------------------------------------------------------------------------
