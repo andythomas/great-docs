@@ -651,3 +651,18 @@ def test_check_harper_available_unknown_version(mock_find, mock_version):
     available, msg = check_harper_available()
     assert available is True
     assert "unknown" in msg
+
+
+@patch("subprocess.run")
+def test_run_harper_only_rules_extends_cmd(mock_run):
+    """When only_rules is provided, --only flag is added."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="[]", stderr="")
+    run_harper(
+        [Path("test.md")],
+        only_rules=["spelling", "grammar"],
+        harper_path="/usr/bin/harper-cli",
+    )
+    cmd = mock_run.call_args[0][0]
+    assert "--only" in cmd
+    idx = cmd.index("--only")
+    assert cmd[idx + 1] == "spelling,grammar"

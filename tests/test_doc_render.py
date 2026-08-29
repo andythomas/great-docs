@@ -1,4 +1,4 @@
-"""Tests targeting great_docs/_apiref/_render/doc.py."""
+"""Tests for great_docs._apiref._render.doc."""
 
 from __future__ import annotations
 
@@ -16,35 +16,15 @@ def _get_private_cls():
     return vars(docmod)["__RenderDoc"]
 
 
-# ---------------------------------------------------------------------------
-# render_annotation — canonical_path starts with "~"
-# ---------------------------------------------------------------------------
-
-
 class TestRenderAnnotationTildePrefix:
     def test_tilde_prefix_returns_canonical_name(self):
         """When canonical_path starts with '~', returns canonical_name."""
         cls = _get_private_cls()
 
-        # Build an ExprSubscript with a tilde path
-        ann = MagicMock(spec=gf.ExprSubscript)
-        ann.canonical_name = "InitVar"
-        # Not an InitVar subscript — use a plain Expr that has ~ path
-        ann2 = MagicMock(spec=gf.Expr)
-        ann2.canonical_path = "~some.long.path.MyType"
-        ann2.canonical_name = "MyType"
-        # isinstance checks: not str, not ExprName, is Expr, not ExprSubscript
-        # We need a real-ish annotation that passes isinstance checks
-
-        # Simpler: use a plain ExprName for the non-tilde case
         mock_expr = MagicMock(spec=gf.Expr)
         mock_expr.canonical_path = "~mod.sub.Widget"
         mock_expr.canonical_name = "Widget"
-        # Make isinstance(mock_expr, gf.ExprSubscript) return False
-        # Make isinstance(mock_expr, gf.ExprName) return False
-        # Make isinstance(mock_expr, gf.Expr) return True
 
-        # Create a fake attribute obj with annotation
         fake_attr = MagicMock(spec=gf.Attribute)
         fake_attr.annotation = mock_expr
         fake_attr.kind = gf.Kind("attribute")
@@ -53,11 +33,6 @@ class TestRenderAnnotationTildePrefix:
 
         result = cls.__dict__["render_annotation"](fake_self, annotation=mock_expr)
         assert "Widget" in result
-
-
-# ---------------------------------------------------------------------------
-# render_modules_section — returns _suppress_section
-# ---------------------------------------------------------------------------
 
 
 class TestRenderModulesSection:
@@ -71,27 +46,16 @@ class TestRenderModulesSection:
         assert result is None
 
 
-# ---------------------------------------------------------------------------
-# render_example_fragment — unrecognized fragment returns ""
-# ---------------------------------------------------------------------------
-
-
 class TestRenderExampleFragment:
     def test_unrecognized_fragment_returns_empty(self):
         """When fragment is not ExampleCode or ExampleText, returns ''."""
         cls = _get_private_cls()
         fake_self = types.SimpleNamespace()
 
-        # Transform returns something that's neither ExampleCode nor ExampleText
         with patch("great_docs._apiref._render.doc.transform", return_value="unexpected"):
             result = cls._render_example_fragment(fake_self, MagicMock())
 
         assert result == ""
-
-
-# ---------------------------------------------------------------------------
-# render_admonition_section — returns description
-# ---------------------------------------------------------------------------
 
 
 class TestRenderAdmonitionSection:
@@ -106,11 +70,6 @@ class TestRenderAdmonitionSection:
 
         result = cls.render_admonition_section(fake_self, el)
         assert result == "Be careful with this function."
-
-
-# ---------------------------------------------------------------------------
-# render_warnings_section — returns value
-# ---------------------------------------------------------------------------
 
 
 class TestRenderWarningsSection:
@@ -128,11 +87,6 @@ class TestRenderWarningsSection:
         assert result == "This may cause data loss."
 
 
-# ---------------------------------------------------------------------------
-# render_notes_section — returns value
-# ---------------------------------------------------------------------------
-
-
 class TestRenderNotesSection:
     def test_returns_value(self):
         """render_notes_section returns el.value."""
@@ -148,11 +102,6 @@ class TestRenderNotesSection:
         assert result == "Implementation uses Cython internally."
 
 
-# ---------------------------------------------------------------------------
-# render_see_also_section — empty line skipped
-# ---------------------------------------------------------------------------
-
-
 class TestRenderSeeAlsoSectionSkipEmpty:
     def test_empty_lines_skipped(self):
         """Empty lines in see_also content are skipped."""
@@ -161,7 +110,6 @@ class TestRenderSeeAlsoSectionSkipEmpty:
 
         el = MagicMock()
         el.value = [("func_a", "Description A")]
-        # format_see_also returns content with blank lines between items
         with patch(
             "great_docs._apiref._render.doc.format_see_also",
             return_value="foo:description\n\nbar:other description",
@@ -172,11 +120,6 @@ class TestRenderSeeAlsoSectionSkipEmpty:
 
         assert "foo" in result_str
         assert "bar" in result_str
-
-
-# ---------------------------------------------------------------------------
-# source_link — compiled extension returns None
-# ---------------------------------------------------------------------------
 
 
 class TestSourceLinkCompiledExtension:
@@ -219,11 +162,6 @@ class TestSourceLinkCompiledExtension:
         _globals.package_info.cache_clear()
 
 
-# ---------------------------------------------------------------------------
-# _source_relative_path — ValueError from relative_to
-# ---------------------------------------------------------------------------
-
-
 class TestSourceRelativePathValueError:
     def test_relative_to_raises_value_error(self, monkeypatch):
         """When filepath is not relative to PACKAGE_ROOT, falls through."""
@@ -243,7 +181,6 @@ class TestSourceRelativePathValueError:
 
         result = cls.__dict__["_source_relative_path"](fake_self)
 
-        # Falls through to legacy fallback (relative_package_filepath)
         assert result == "mod.py"
 
         _globals.package_info.cache_clear()

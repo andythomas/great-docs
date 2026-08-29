@@ -1,5 +1,5 @@
 # pyright: reportPrivateUsage=false
-"""Tests targeting specific uncovered lines in great_docs/core.py."""
+"""Tests for great_docs.core (GreatDocs class)."""
 
 from __future__ import annotations
 
@@ -18,11 +18,6 @@ def _make_gd(tmp_path: Path) -> GreatDocs:
     """Create a GreatDocs instance in a temp directory with minimal config."""
     (tmp_path / "great-docs.yml").write_text("module: mypkg\n", encoding="utf-8")
     return GreatDocs(project_path=str(tmp_path))
-
-
-# ===========================================================================
-# _fetch_github_repo_stats
-# ===========================================================================
 
 
 class TestFetchGithubRepoStats:
@@ -71,31 +66,24 @@ class TestFetchGithubRepoStats:
         assert result == {}
 
 
-# ===========================================================================
-# _find_click_cli_obj
-# ===========================================================================
-
-
 class TestFindClickCliObj:
     """Cover all branches of _find_click_cli_obj."""
 
     def test_cli_not_enabled_returns_none(self, tmp_path, monkeypatch):
-        """cli_enabled=False → None."""
+        """cli_enabled=False returns None."""
         gd = _make_gd(tmp_path)
         monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"cli_enabled": False})
         assert gd._find_click_cli_obj("mypkg") is None
 
     def test_click_not_installed_returns_none(self, tmp_path, monkeypatch):
-        """ImportError on click → None."""
+        """ImportError on click returns None."""
         gd = _make_gd(tmp_path)
         monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"cli_enabled": True})
 
         import sys
 
-        # Temporarily hide click from sys.modules so the function-level import fails
         click_mod = sys.modules.pop("click", None)
         click_testing = sys.modules.pop("click.testing", None)
-        # Also hide submodules
         click_keys = [k for k in sys.modules if k.startswith("click")]
         hidden = {k: sys.modules.pop(k) for k in click_keys}
         try:
@@ -114,7 +102,6 @@ class TestFindClickCliObj:
         gd = _make_gd(tmp_path)
         monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"cli_enabled": True})
 
-        # Make importlib.import_module fail for all candidates
         real_import = importlib.import_module
 
         def fail_import(name, *args, **kwargs):
@@ -131,7 +118,6 @@ class TestFindClickCliObj:
         gd = _make_gd(tmp_path)
         monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"cli_enabled": True})
 
-        # Create a fake module with a click.Command
         fake_mod = types.ModuleType("mypkg.cli")
         fake_cmd = click.Command("test")
         fake_mod.cli = fake_cmd
@@ -148,7 +134,7 @@ class TestFindClickCliObj:
         assert result is fake_cmd
 
     def test_explicit_cli_module_import_fails(self, tmp_path, monkeypatch):
-        """explicit cli_module can't be imported → None."""
+        """explicit cli_module can't be imported returns None."""
         gd = _make_gd(tmp_path)
         monkeypatch.setattr(
             gd,
@@ -220,7 +206,6 @@ class TestFindClickCliObj:
         gd = _make_gd(tmp_path)
         fake_mod = types.ModuleType("mypkg.cli_mod")
         fake_cmd = click.Command("hidden_cmd")
-        # Not named cli/main/app/command/mypkg — will fall through to scan
         fake_mod.my_special_command = fake_cmd
 
         monkeypatch.setattr(
@@ -241,7 +226,7 @@ class TestFindClickCliObj:
         assert result is fake_cmd
 
     def test_no_click_obj_found_returns_none(self, tmp_path, monkeypatch):
-        """no Click object found at all → None."""
+        """no Click object found at all returns None."""
         gd = _make_gd(tmp_path)
         fake_mod = types.ModuleType("mypkg.cli_mod")
         fake_mod.something = "not a click command"
@@ -264,18 +249,12 @@ class TestFindClickCliObj:
         assert result is None
 
 
-# ===========================================================================
-# _discover_mcp_server
-# ===========================================================================
-
-
 class TestDiscoverMcpServer:
     """Cover the auto-discovery path in _discover_mcp_server."""
 
     def test_no_mcp_module_all_imports_fail(self, tmp_path, monkeypatch):
-        """no module configured, all candidates fail → None."""
+        """no module configured, all candidates fail returns None."""
         gd = _make_gd(tmp_path)
-        # Ensure mcp_module returns None
         monkeypatch.setattr(type(gd._config), "mcp_module", property(lambda self: None))
 
         real_import = importlib.import_module
@@ -317,30 +296,23 @@ class TestDiscoverMcpServer:
         mock_discover.assert_called_once()
 
 
-# ===========================================================================
-# _update_sidebar_with_mcp
-# ===========================================================================
-
-
 class TestUpdateSidebarWithMcp:
     """Cover _update_sidebar_with_mcp branching."""
 
     def test_empty_mcp_files_returns_early(self, tmp_path):
-        """empty list → return immediately."""
+        """empty list returns immediately."""
         gd = _make_gd(tmp_path)
         gd.project_path.mkdir(parents=True, exist_ok=True)
         quarto_yml = gd.project_path / "_quarto.yml"
         quarto_yml.write_text("website:\n  sidebar: []\n", encoding="utf-8")
         gd._update_sidebar_with_mcp([])
-        # File unchanged
         content = quarto_yml.read_text()
         assert "mcp-reference" not in content
 
     def test_no_quarto_yml_returns_early(self, tmp_path):
-        """no _quarto.yml → return."""
+        """no _quarto.yml returns."""
         gd = _make_gd(tmp_path)
         gd.project_path.mkdir(parents=True, exist_ok=True)
-        # Don't create _quarto.yml
         gd._update_sidebar_with_mcp(["reference/mcp/tools.qmd"])
 
     def test_adds_mcp_section_to_sidebar(self, tmp_path, monkeypatch):
@@ -353,7 +325,6 @@ class TestUpdateSidebarWithMcp:
             encoding="utf-8",
         )
 
-        # Mock _write_quarto_yml to avoid complex YAML formatting
         written = {}
 
         def fake_write(path, config):
@@ -413,11 +384,6 @@ class TestUpdateSidebarWithMcp:
         assert "sidebar" in written["config"]["website"]
 
 
-# ===========================================================================
-# _generate_mcp_manifest
-# ===========================================================================
-
-
 class TestGenerateMcpManifest:
     """Cover _generate_mcp_manifest orchestration."""
 
@@ -430,7 +396,6 @@ class TestGenerateMcpManifest:
             "_get_github_repo_info",
             lambda: ("posit-dev", "mypkg", "https://github.com/posit-dev/mypkg"),
         )
-        # Set site_url in config
         gd._config._config["site_url"] = "https://mypkg.readthedocs.io"
 
         called_with = {}
@@ -448,45 +413,33 @@ class TestGenerateMcpManifest:
         assert called_with["server_info"] == {"name": "test", "tools": []}
 
 
-# ===========================================================================
-# _reorder_navbar early return
-# ===========================================================================
-
-
 class TestReorderNavbar:
     """Cover _reorder_navbar edge case."""
 
     def test_empty_navbar_left_returns_early(self, tmp_path, monkeypatch):
-        """Navbar left is empty → return early."""
+        """Navbar left is empty returns early."""
         gd = _make_gd(tmp_path)
-        # Set navbar_order to something non-empty so we pass the first check
         monkeypatch.setattr(
             type(gd._config), "navbar_order", property(lambda self: ["Reference", "API"])
         )
         config = {"website": {"navbar": {"left": []}}}
         gd._reorder_navbar(config)
 
-        # Should not crash and config unchanged
         assert config["website"]["navbar"]["left"] == []
-
-
-# ===========================================================================
-# _remove_mcp_from_ref_sections
-# ===========================================================================
 
 
 class TestRemoveMcpFromRefSections:
     """Cover _remove_mcp_from_ref_sections branching."""
 
     def test_no_quarto_yml_returns_early(self, tmp_path):
-        """No _quarto.yml file → immediate return."""
+        """No _quarto.yml file returns immediately."""
         gd = _make_gd(tmp_path)
         gd.project_path = tmp_path / "subdir"
         gd.project_path.mkdir()
         gd._remove_mcp_from_ref_sections()
 
     def test_no_ref_sections_script_no_update(self, tmp_path, monkeypatch):
-        """include-in-header has no data-gd-ref-sections → no write."""
+        """include-in-header has no data-gd-ref-sections so no write happens."""
         gd = _make_gd(tmp_path)
         gd.project_path = tmp_path
         quarto_yml = tmp_path / "_quarto.yml"
@@ -500,7 +453,7 @@ class TestRemoveMcpFromRefSections:
         assert written == []
 
     def test_removes_mcp_from_multi_section_list(self, tmp_path, monkeypatch):
-        """Sections 'api,cli,mcp' → 'api,cli', script kept."""
+        """Sections 'api,cli,mcp' becomes 'api,cli', script kept."""
         gd = _make_gd(tmp_path)
         gd.project_path = tmp_path
         quarto_yml = tmp_path / "_quarto.yml"
@@ -521,7 +474,7 @@ class TestRemoveMcpFromRefSections:
         assert "mcp" not in header_items[0]["text"]
 
     def test_removes_script_entirely_when_only_api_remains(self, tmp_path, monkeypatch):
-        """Sections 'api,mcp' → only 'api' remains → script removed entirely."""
+        """Sections 'api,mcp' with only 'api' remaining removes script entirely."""
         gd = _make_gd(tmp_path)
         gd.project_path = tmp_path
         quarto_yml = tmp_path / "_quarto.yml"
@@ -542,11 +495,6 @@ class TestRemoveMcpFromRefSections:
         assert all("reference-switcher" not in e.get("text", "") for e in after_body)
 
 
-# ===========================================================================
-# _discover_package_exports – griffe export validation
-# ===========================================================================
-
-
 class TestDiscoverPackageExportsValidation:
     """Cover the griffe export validation block inside _discover_package_exports."""
 
@@ -564,7 +512,7 @@ class TestDiscoverPackageExportsValidation:
         return pkg
 
     def test_not_found_in_pkg_members(self, tmp_path, monkeypatch):
-        """Name not in pkg.members → 'not found' and excluded from safe_exports."""
+        """Name not in pkg.members is excluded from safe_exports."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -582,7 +530,7 @@ class TestDiscoverPackageExportsValidation:
         assert "MissingClass" not in result
 
     def test_cyclic_alias_on_kind(self, tmp_path, monkeypatch):
-        """CyclicAliasError on obj.kind → excluded."""
+        """CyclicAliasError on obj.kind excludes the export."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -596,7 +544,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_alias_resolution_error_on_kind(self, tmp_path, monkeypatch):
-        """AliasResolutionError on obj.kind → excluded."""
+        """AliasResolutionError on obj.kind excludes the export."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -610,7 +558,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_key_error_on_kind(self, tmp_path, monkeypatch):
-        """KeyError on obj.kind → 'not found (likely Rust/PyO3)'."""
+        """KeyError on obj.kind excludes the export (likely Rust/PyO3)."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         type(obj).kind = property(lambda s: (_ for _ in ()).throw(KeyError("missing")))
@@ -620,7 +568,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_generic_exception_on_kind(self, tmp_path, monkeypatch):
-        """Generic Exception on obj.kind → excluded with type name."""
+        """Generic Exception on obj.kind excludes the export."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         type(obj).kind = property(lambda s: (_ for _ in ()).throw(RuntimeError("oops")))
@@ -630,7 +578,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_module_kind_passes_without_members_check(self, tmp_path, monkeypatch):
-        """Module kind passes directly to safe_exports (no .members access)."""
+        """Module kind passes directly to safe_exports."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "module"
@@ -641,7 +589,7 @@ class TestDiscoverPackageExportsValidation:
         assert "submod" in result
 
     def test_cyclic_alias_on_members_access(self, tmp_path, monkeypatch):
-        """CyclicAliasError accessing .members → excluded."""
+        """CyclicAliasError accessing .members excludes the export."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -656,7 +604,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_alias_resolution_error_on_members_access(self, tmp_path, monkeypatch):
-        """AliasResolutionError accessing .members → excluded."""
+        """AliasResolutionError accessing .members excludes the export."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -671,7 +619,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_generic_exception_on_members_access(self, tmp_path, monkeypatch):
-        """Generic Exception accessing .members → excluded."""
+        """Generic Exception accessing .members excludes the export."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "class"
@@ -682,7 +630,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_external_re_export_excluded(self, tmp_path, monkeypatch):
-        """Alias pointing to external package → excluded as 're-export'."""
+        """Alias pointing to external package is excluded as re-export."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "class"
@@ -695,7 +643,7 @@ class TestDiscoverPackageExportsValidation:
         assert result == []
 
     def test_internal_alias_passes(self, tmp_path, monkeypatch):
-        """Alias pointing inside the package → passes."""
+        """Alias pointing inside the package passes."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "class"
@@ -708,7 +656,7 @@ class TestDiscoverPackageExportsValidation:
         assert "MyClass" in result
 
     def test_canonical_path_raises_still_passes(self, tmp_path, monkeypatch):
-        """Exception on canonical_path → alias passes (doesn't exclude)."""
+        """Exception on canonical_path means the alias still passes."""
         gd = self._setup(tmp_path, monkeypatch)
 
         class _FakeAlias:
@@ -729,11 +677,6 @@ class TestDiscoverPackageExportsValidation:
         assert "myfn" in result
 
 
-# ===========================================================================
-# _categorize_referenced_objects
-# ===========================================================================
-
-
 class TestCategorizeReferencedObjects:
     """Cover _categorize_referenced_objects classification logic."""
 
@@ -742,7 +685,7 @@ class TestCategorizeReferencedObjects:
         return gd
 
     def test_griffe_load_fails_returns_empty(self, tmp_path, monkeypatch):
-        """Exception from _get_griffe_package → empty categories."""
+        """Exception from _get_griffe_package returns empty categories."""
         gd = self._setup(tmp_path, monkeypatch)
         monkeypatch.setattr(
             gd, "_get_griffe_package", lambda name: (_ for _ in ()).throw(RuntimeError("fail"))
@@ -752,7 +695,7 @@ class TestCategorizeReferencedObjects:
         assert result["functions"] == []
 
     def test_non_dict_section_skipped(self, tmp_path, monkeypatch):
-        """Non-dict entries in reference_config are skipped (line 8920)."""
+        """Non-dict entries in reference_config are skipped."""
         gd = self._setup(tmp_path, monkeypatch)
         pkg = MagicMock()
         pkg.members = {}
@@ -761,7 +704,7 @@ class TestCategorizeReferencedObjects:
         assert result["other"] == []
 
     def test_classifies_function(self, tmp_path, monkeypatch):
-        """Function kind → categorized into 'functions'."""
+        """Function kind is categorized into 'functions'."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "function"
@@ -774,7 +717,7 @@ class TestCategorizeReferencedObjects:
         assert "my_func" in result["functions"]
 
     def test_classifies_async_function(self, tmp_path, monkeypatch):
-        """Async function → categorized into 'async_functions'."""
+        """Async function is categorized into 'async_functions'."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "function"
@@ -787,7 +730,7 @@ class TestCategorizeReferencedObjects:
         assert "afunc" in result["async_functions"]
 
     def test_classifies_class_as_dataclass(self, tmp_path, monkeypatch):
-        """Class sub-classified as dataclass → 'dataclasses'."""
+        """Class sub-classified as dataclass goes to 'dataclasses'."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "class"
@@ -801,7 +744,7 @@ class TestCategorizeReferencedObjects:
         assert "MyDC" in result["dataclasses"]
 
     def test_classifies_attribute_as_constant(self, tmp_path, monkeypatch):
-        """Attribute kind → 'constants'."""
+        """Attribute kind goes to 'constants'."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "attribute"
@@ -816,7 +759,7 @@ class TestCategorizeReferencedObjects:
         assert "MY_CONST" in result["constants"]
 
     def test_classifies_type_alias(self, tmp_path, monkeypatch):
-        """Type alias attribute → 'type_aliases'."""
+        """Type alias attribute goes to 'type_aliases'."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         obj.kind.value = "type alias"
@@ -829,7 +772,7 @@ class TestCategorizeReferencedObjects:
         assert "MyAlias" in result["type_aliases"]
 
     def test_cyclic_alias_on_kind_goes_to_other(self, tmp_path, monkeypatch):
-        """CyclicAliasError on obj.kind → goes to 'other'."""
+        """CyclicAliasError on obj.kind goes to 'other'."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -844,7 +787,7 @@ class TestCategorizeReferencedObjects:
         assert "CyclicThing" in result["other"]
 
     def test_generic_exception_on_kind_goes_to_other(self, tmp_path, monkeypatch):
-        """Generic Exception on obj.kind → goes to 'other'."""
+        """Generic Exception on obj.kind goes to 'other'."""
         gd = self._setup(tmp_path, monkeypatch)
         obj = MagicMock()
         type(obj).kind = property(lambda s: (_ for _ in ()).throw(ValueError("bad")))
@@ -855,7 +798,7 @@ class TestCategorizeReferencedObjects:
         assert "BrokenObj" in result["other"]
 
     def test_missing_name_with_installed_package_raises(self, tmp_path, monkeypatch):
-        """Missing name + installed package → SystemExit."""
+        """Missing name + installed package raises SystemExit."""
         import pytest
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -867,7 +810,7 @@ class TestCategorizeReferencedObjects:
             gd._categorize_referenced_objects("mypkg", [{"contents": ["Missing"]}])
 
     def test_missing_name_uninstalled_package_goes_to_other(self, tmp_path, monkeypatch):
-        """Missing name + uninstalled package → falls to 'other'."""
+        """Missing name + uninstalled package falls to 'other'."""
         gd = self._setup(tmp_path, monkeypatch)
         pkg = MagicMock()
         pkg.members = {}
@@ -880,7 +823,7 @@ class TestCategorizeReferencedObjects:
         assert "Missing" in result["other"]
 
     def test_class_method_counting(self, tmp_path, monkeypatch):
-        """Class with public methods → class_methods count populated."""
+        """Class with public methods populates class_methods count."""
         gd = self._setup(tmp_path, monkeypatch)
 
         method_obj = MagicMock()
@@ -912,7 +855,7 @@ class TestCategorizeReferencedObjects:
         assert "_private" not in result["class_method_names"]["MyClass"]
 
     def test_class_member_cyclic_alias_skipped(self, tmp_path, monkeypatch):
-        """CyclicAliasError on member.kind → member skipped."""
+        """CyclicAliasError on member.kind skips the member."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -934,7 +877,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_methods"]["MyClass"] == 0
 
     def test_class_member_generic_exception_skipped(self, tmp_path, monkeypatch):
-        """Generic Exception on member.kind → member skipped."""
+        """Generic Exception on member.kind skips the member."""
         gd = self._setup(tmp_path, monkeypatch)
 
         bad_member = MagicMock()
@@ -952,7 +895,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_methods"]["MyClass"] == 0
 
     def test_module_kind_expands_members(self, tmp_path, monkeypatch):
-        """Module kind → expands members into qualified names."""
+        """Module kind expands members into qualified names."""
         gd = self._setup(tmp_path, monkeypatch)
 
         sub_class = MagicMock()
@@ -971,7 +914,6 @@ class TestCategorizeReferencedObjects:
             "_private": MagicMock(),
         }
 
-        # A class must be processed before the module so _CLASS_SUB_MAP is defined
         anchor_cls = MagicMock()
         anchor_cls.kind.value = "class"
         anchor_cls.members = {}
@@ -988,7 +930,7 @@ class TestCategorizeReferencedObjects:
         assert "mymod.CONST" in result["constants"]
 
     def test_module_member_cyclic_alias_skipped(self, tmp_path, monkeypatch):
-        """CyclicAliasError on module member's kind → skipped."""
+        """CyclicAliasError on module member's kind skips it."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -1009,7 +951,7 @@ class TestCategorizeReferencedObjects:
         assert "mymod.broken" not in result.get("other", [])
 
     def test_module_members_iteration_raises(self, tmp_path, monkeypatch):
-        """Exception iterating module.members → outer except passes."""
+        """Exception iterating module.members is caught by outer except."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -1027,7 +969,7 @@ class TestCategorizeReferencedObjects:
         assert "mymod" not in result.get("classes", [])
 
     def test_qualified_method_ref_classifies_method(self, tmp_path, monkeypatch):
-        """'ClassName.method_name' → classified as method."""
+        """'ClassName.method_name' is classified as method."""
         gd = self._setup(tmp_path, monkeypatch)
 
         method_member = MagicMock()
@@ -1047,7 +989,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.do_thing"] == "method"
 
     def test_qualified_method_ref_classmethod(self, tmp_path, monkeypatch):
-        """'ClassName.cls_method' → classified as classmethod."""
+        """'ClassName.cls_method' is classified as classmethod."""
         gd = self._setup(tmp_path, monkeypatch)
 
         method_member = MagicMock()
@@ -1067,7 +1009,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.from_config"] == "classmethod"
 
     def test_qualified_method_ref_attribute_property(self, tmp_path, monkeypatch):
-        """'ClassName.prop' with attribute kind + property label → 'property'."""
+        """'ClassName.prop' with attribute kind + property label is classified as 'property'."""
         gd = self._setup(tmp_path, monkeypatch)
 
         attr_member = MagicMock()
@@ -1086,7 +1028,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.name"] == "property"
 
     def test_qualified_method_ref_attribute_non_property(self, tmp_path, monkeypatch):
-        """'ClassName.field' with attribute kind + no property label → 'attribute'."""
+        """'ClassName.field' with attribute kind + no property label is classified as 'attribute'."""
         gd = self._setup(tmp_path, monkeypatch)
 
         attr_member = MagicMock()
@@ -1105,7 +1047,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.field"] == "attribute"
 
     def test_qualified_method_ref_unknown_kind_defaults_method(self, tmp_path, monkeypatch):
-        """'ClassName.thing' with unexpected kind → 'method'."""
+        """'ClassName.thing' with unexpected kind defaults to 'method'."""
         gd = self._setup(tmp_path, monkeypatch)
 
         weird_member = MagicMock()
@@ -1123,7 +1065,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.thing"] == "method"
 
     def test_qualified_method_ref_cyclic_alias_defaults_method(self, tmp_path, monkeypatch):
-        """CyclicAliasError resolving method → defaults to 'method'."""
+        """CyclicAliasError resolving method defaults to 'method'."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -1145,7 +1087,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.broken"] == "method"
 
     def test_qualified_method_ref_generic_exception_defaults_method(self, tmp_path, monkeypatch):
-        """Generic Exception resolving method → defaults to 'method'."""
+        """Generic Exception resolving method defaults to 'method'."""
         gd = self._setup(tmp_path, monkeypatch)
 
         bad_member = MagicMock()
@@ -1163,7 +1105,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.broken"] == "method"
 
     def test_qualified_method_not_in_class_members(self, tmp_path, monkeypatch):
-        """Method name not in class.members → defaults to 'method'."""
+        """Method name not in class.members defaults to 'method'."""
         gd = self._setup(tmp_path, monkeypatch)
 
         cls_obj = MagicMock()
@@ -1180,7 +1122,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_member_types"]["MyClass.missing_method"] == "method"
 
     def test_qualified_method_class_not_in_pkg(self, tmp_path, monkeypatch):
-        """Class not in pkg.members → method ref skipped."""
+        """Class not in pkg.members means method ref is skipped."""
         gd = self._setup(tmp_path, monkeypatch)
 
         pkg = MagicMock()
@@ -1190,7 +1132,7 @@ class TestCategorizeReferencedObjects:
         assert "Ghost.method" not in result.get("class_member_types", {})
 
     def test_qualified_method_class_not_actually_class(self, tmp_path, monkeypatch):
-        """Class name resolves to non-class → skipped."""
+        """Class name resolves to non-class so ref is skipped."""
         gd = self._setup(tmp_path, monkeypatch)
 
         not_a_class = MagicMock()
@@ -1203,7 +1145,7 @@ class TestCategorizeReferencedObjects:
         assert "NotClass.method" not in result.get("class_member_types", {})
 
     def test_qualified_method_class_kind_raises(self, tmp_path, monkeypatch):
-        """Exception checking class kind → skipped."""
+        """Exception checking class kind means ref is skipped."""
         gd = self._setup(tmp_path, monkeypatch)
 
         bad_obj = MagicMock()
@@ -1216,7 +1158,7 @@ class TestCategorizeReferencedObjects:
         assert "Bad.method" not in result.get("class_member_types", {})
 
     def test_attribute_labels_raises_defaults_to_set(self, tmp_path, monkeypatch):
-        """Exception accessing member.labels → defaults to empty set."""
+        """Exception accessing member.labels defaults to empty set."""
         gd = self._setup(tmp_path, monkeypatch)
 
         class _FakeMemberBadLabels:
@@ -1301,7 +1243,7 @@ class TestCategorizeReferencedObjects:
         assert "__init__" not in result["class_method_names"]["MyClass"]
 
     def test_class_property_labels_raises(self, tmp_path, monkeypatch):
-        """Exception accessing member.labels for property check → passes."""
+        """Exception accessing member.labels for property check passes."""
         gd = self._setup(tmp_path, monkeypatch)
 
         attr_member = MagicMock()
@@ -1322,7 +1264,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_methods"]["MyClass"] == 0
 
     def test_class_members_outer_cyclic_alias(self, tmp_path, monkeypatch):
-        """CyclicAliasError iterating class members → outer except."""
+        """CyclicAliasError iterating class members is caught by outer except."""
         import griffe
 
         gd = self._setup(tmp_path, monkeypatch)
@@ -1343,7 +1285,7 @@ class TestCategorizeReferencedObjects:
         assert result["class_methods"]["MyClass"] == 0
 
     def test_typevar_attribute(self, tmp_path, monkeypatch):
-        """TypeVar attribute → type_aliases."""
+        """TypeVar attribute goes to type_aliases."""
         gd = self._setup(tmp_path, monkeypatch)
 
         obj = MagicMock()
@@ -1358,13 +1300,12 @@ class TestCategorizeReferencedObjects:
         assert "T" in result["type_aliases"]
 
     def test_module_member_generic_exception_skipped(self, tmp_path, monkeypatch):
-        """Generic Exception on module member's kind → skipped."""
+        """Generic Exception on module member's kind skips it."""
         gd = self._setup(tmp_path, monkeypatch)
 
         bad_member = MagicMock()
         type(bad_member).kind = property(lambda s: (_ for _ in ()).throw(ValueError("bad")))
 
-        # Need a class processed first to define _CLASS_SUB_MAP
         anchor = MagicMock()
         anchor.kind.value = "class"
         anchor.members = {}
@@ -1381,14 +1322,13 @@ class TestCategorizeReferencedObjects:
         assert "mymod.broken" not in result.get("functions", [])
 
     def test_module_members_outer_exception(self, tmp_path, monkeypatch):
-        """Generic Exception iterating module members → outer except."""
+        """Generic Exception iterating module members is caught by outer except."""
         gd = self._setup(tmp_path, monkeypatch)
 
         class _BadItems(dict):
             def items(self):
                 raise TypeError("bad iteration")
 
-        # Need a class processed first to define _CLASS_SUB_MAP
         anchor = MagicMock()
         anchor.kind.value = "class"
         anchor.members = {}
@@ -1405,10 +1345,9 @@ class TestCategorizeReferencedObjects:
         assert "mymod" not in result.get("classes", [])
 
     def test_other_kind_goes_to_other(self, tmp_path, monkeypatch):
-        """Unknown kind value → goes to 'other'."""
+        """Unknown kind value goes to 'other'."""
         gd = self._setup(tmp_path, monkeypatch)
 
-        # Need a class processed first for _CLASS_SUB_MAP
         anchor = MagicMock()
         anchor.kind.value = "class"
         anchor.members = {}

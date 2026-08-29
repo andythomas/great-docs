@@ -1,4 +1,4 @@
-"""Tests targeting missed coverage lines in great_docs/_apiref/introspect.py."""
+"""Tests for great_docs._apiref.introspect."""
 
 from __future__ import annotations
 
@@ -12,11 +12,6 @@ from great_docs._apiref.introspect import (
     _promote_callable_attribute,
     resolve_alias,
 )
-
-
-# ---------------------------------------------------------------------------
-# _static_object — parent is Alias wrapping Function/Attribute
-# ---------------------------------------------------------------------------
 
 
 class TestStaticObjectParentAlias:
@@ -38,11 +33,6 @@ class TestStaticObjectParentAlias:
 
         assert isinstance(result, gf.Alias)
         assert result.name == "do_thing"
-
-
-# ---------------------------------------------------------------------------
-# resolve_alias — infinite recursion
-# ---------------------------------------------------------------------------
 
 
 class TestResolveAlias:
@@ -78,11 +68,6 @@ class TestResolveAlias:
         assert result is resolved
 
 
-# ---------------------------------------------------------------------------
-# _locate_runtime_object — parent class chain has AttributeError
-# ---------------------------------------------------------------------------
-
-
 class TestLocateRuntimeObject:
     def test_parent_chain_attribute_error(self):
         """When parent class chain can't be traversed, returns None."""
@@ -111,7 +96,7 @@ class TestLocateRuntimeObject:
         assert result is None
 
     def test_final_getattr_attribute_error(self):
-        #        """When parent class found but method not on it, returns None."""
+        """When parent class found but method not on it, returns None."""
         from great_docs._apiref.introspect import _locate_runtime_object
 
         obj = MagicMock(spec=gf.Function)
@@ -123,7 +108,6 @@ class TestLocateRuntimeObject:
 
         obj.parent = parent_cls
 
-        # Module has MyClass but MyClass doesn't have missing_method
         mock_cls = MagicMock(spec=["__name__"])
         mock_cls.__name__ = "MyClass"
 
@@ -138,11 +122,6 @@ class TestLocateRuntimeObject:
             result = _locate_runtime_object(obj)
 
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# _promote_callable_attribute — inspect.signature fails
-# ---------------------------------------------------------------------------
 
 
 class TestPromoteCallableAttribute:
@@ -164,11 +143,6 @@ class TestPromoteCallableAttribute:
         assert len(parent.members["my_func"].parameters) == 0
 
 
-# ---------------------------------------------------------------------------
-# _dynamic_alias — _locate_runtime_attr returns _DeclarationOnly
-# ---------------------------------------------------------------------------
-
-
 class TestDynamicAliasDeclarationOnly:
     def test_declaration_only_path(self):
         """When _locate_runtime_attr returns _DeclarationOnly, its obj is returned."""
@@ -186,11 +160,6 @@ class TestDynamicAliasDeclarationOnly:
             result = dynamic_alias("mod:attr", loader=MagicMock())
 
         assert result is mock_obj
-
-
-# ---------------------------------------------------------------------------
-# _locate_declaration — _has_no_value returns True
-# ---------------------------------------------------------------------------
 
 
 class TestLocateDeclaration:
@@ -221,11 +190,6 @@ class TestLocateDeclaration:
         ):
             with pytest.raises(AttributeError, match="No attribute named"):
                 _locate_declaration("mod.name", "name", "mod:name", MagicMock())
-
-
-# ---------------------------------------------------------------------------
-# _canonical_home — None path and KeyError
-# ---------------------------------------------------------------------------
 
 
 class TestCanonicalHome:
@@ -263,11 +227,6 @@ class TestCanonicalHome:
         assert result is None
 
 
-# ---------------------------------------------------------------------------
-# _authored_docstring — KeyError/ImportError from get_object
-# ---------------------------------------------------------------------------
-
-
 class TestAuthoredDocstring:
     def test_get_object_raises_key_error(self):
         """Returns None when get_object raises KeyError."""
@@ -286,11 +245,6 @@ class TestAuthoredDocstring:
             result = _authored_docstring("some.path", MagicMock())
 
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# _alias_into_parent — parent is NOT Module/Class/Alias
-# ---------------------------------------------------------------------------
 
 
 class TestAliasIntoParent:
@@ -329,11 +283,6 @@ class TestAliasIntoParent:
         assert result.name == "my_attr"
 
 
-# ---------------------------------------------------------------------------
-# _access_parent — object_path is None
-# ---------------------------------------------------------------------------
-
-
 class TestAccessParent:
     def test_object_path_none(self):
         """When object_path is None, uses module parent path."""
@@ -359,7 +308,7 @@ class TestAccessParent:
         assert mock_get.call_args[1]["dynamic"] is True
 
     def test_object_path_with_dot(self):
-        """When object_path has a dot, uses module:parent_class path (line 911)."""
+        """When object_path has a dot, uses module:parent_class path."""
         from great_docs._apiref.introspect import _access_parent
 
         located = MagicMock()

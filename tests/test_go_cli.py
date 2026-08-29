@@ -195,6 +195,12 @@ class TestDetectGoCliProject:
     def test_returns_none_for_empty_dir(self, tmp_path: Path):
         assert detect_go_cli_project(tmp_path) is None
 
+    def test_returns_none_when_no_module_path(self, tmp_path: Path):
+        """go.mod has no module line → returns None."""
+        go_mod = tmp_path / "go.mod"
+        go_mod.write_text("go 1.21\n", encoding="utf-8")
+        assert detect_go_cli_project(tmp_path) is None
+
     def test_returns_none_when_no_main_package(self, tmp_path: Path):
         """go.mod present but no main.go anywhere → not a CLI."""
         (tmp_path / "go.mod").write_text("module example.com/lib\n\ngo 1.21\n")
@@ -313,6 +319,12 @@ class TestParseCobraFlag:
         assert opt is not None
         assert "--help" in opt["names"]
         assert opt["is_flag"] is True
+
+    def test_non_type_token_prepended_to_description(self):
+        """When token after name isn't a known type, it joins description."""
+        result = _parse_cobra_flag("  -f, --flag   word  some description")
+        assert result is not None
+        assert "word" in result["help"]
 
     def test_unparseable_returns_none(self):
         assert _parse_cobra_flag("not a flag line") is None

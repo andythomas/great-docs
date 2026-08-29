@@ -6,7 +6,7 @@ import math
 import sys
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1956,6 +1956,25 @@ class TestFromFeatherPandasFallback:
         with patch.dict(sys.modules, {"polars": None, "pandas": None}):
             with pytest.raises(ImportError, match="Feather"):
                 _from_feather(str(feather))
+
+    def test_feather_pandas_fallback_via_mock(self, tmp_path: Path):
+        """When polars unavailable, falls back to pandas read_feather."""
+        from great_docs._tbl_preview import _from_feather
+
+        mock_df = MagicMock()
+        mock_from_pandas = MagicMock(
+            return_value=(["col1"], ["int64"], [[1]], 1, "feather")
+        )
+        mock_pd = MagicMock()
+        mock_pd.read_feather = MagicMock(return_value=mock_df)
+
+        with (
+            patch.dict(sys.modules, {"polars": None, "pandas": mock_pd}),
+            patch("great_docs._tbl_preview._from_pandas", mock_from_pandas),
+        ):
+            result = _from_feather(tmp_path / "data.feather")
+
+        assert result[0] == ["col1"]
 
 
 # ---------------------------------------------------------------------------

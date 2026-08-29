@@ -1,4 +1,4 @@
-"""Tests targeting missed coverage lines in great_docs/_apiref/write.py."""
+"""Tests for great_docs._apiref.write."""
 
 from __future__ import annotations
 
@@ -12,22 +12,12 @@ from great_docs._apiref.write import (
 )
 
 
-# ---------------------------------------------------------------------------
-# merge_frontmatter — unclosed frontmatter raises ValueError
-# ---------------------------------------------------------------------------
-
-
 class TestMergeFrontmatter:
     def test_unclosed_frontmatter_raises(self):
         """Raises ValueError when frontmatter is never closed."""
         content = "---\ntitle: Hello\nNo closing delimiter here.\n"
         with pytest.raises(ValueError, match="never closed"):
             merge_frontmatter(content, {"key": "val"})
-
-
-# ---------------------------------------------------------------------------
-# _insert_contents — sentinel inside dict nested in a list
-# ---------------------------------------------------------------------------
 
 
 class TestInsertContents:
@@ -52,11 +42,6 @@ class TestInsertContents:
         assert structure[1] == ["nested", "replaced"]
 
 
-# ---------------------------------------------------------------------------
-# _page_sidebar_text — page.summary is not None
-# ---------------------------------------------------------------------------
-
-
 class TestPageSidebarText:
     def test_summary_not_none_returns_summary_name(self):
         """When page.summary is set, returns its name."""
@@ -68,11 +53,6 @@ class TestPageSidebarText:
 
         result = _page_sidebar_text(page)
         assert result == "MyWidget"
-
-
-# ---------------------------------------------------------------------------
-# _generate_sidebar — second titled section appends current_entry
-# ---------------------------------------------------------------------------
 
 
 class TestGenerateSidebar:
@@ -109,17 +89,11 @@ class TestGenerateSidebar:
             [sec1, sec2], dir="reference", out_page_suffix=".qmd", sidebar=None
         )
 
-        # Should have two section entries in the sidebar contents
         sidebar_contents = result["website"]["sidebar"][0]["contents"]
         sections = [c for c in sidebar_contents if isinstance(c, dict) and "section" in c]
         assert len(sections) == 2
         assert sections[0]["section"] == "Functions"
         assert sections[1]["section"] == "Classes"
-
-
-# ---------------------------------------------------------------------------
-# write_typing_information — iterates module paths
-# ---------------------------------------------------------------------------
 
 
 class TestWriteTypingInformation:
