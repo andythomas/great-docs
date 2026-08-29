@@ -325,6 +325,40 @@ class TestExpandMockCells:
         result = expand_mock_cells(src)
         assert result == src
 
+    def test_malformed_cell_no_closing_fence(self):
+        """Cell without a closing fence is emitted as-is."""
+        src = textwrap.dedent("""\
+            ```{python}
+            #| source-code: mock
+            display()
+            # ---
+            eval()
+        """)
+        result = expand_mock_cells(src)
+        # No transformation should happen; original lines preserved
+        assert "```{python}" in result
+        assert "#| source-code: mock" in result
+        assert "display()" in result
+
+    def test_output_frame_forwarded(self):
+        """output-frame option is forwarded to the eval cell."""
+        src = textwrap.dedent("""\
+            ```{python}
+            #| source-code: mock
+            #| output-frame: "bordered"
+            show()
+            # ---
+            run()
+            ```
+        """)
+        result = expand_mock_cells(src)
+
+        lines = result.split("\n")
+        # Find the eval cell
+        eval_start = next(i for i, l in enumerate(lines) if "#| echo: false" in l)
+        eval_section = "\n".join(lines[eval_start:])
+        assert '#| output-frame: "bordered"' in eval_section
+
 
 # ---------------------------------------------------------------------------
 # process_qmd_file — file-level tests
@@ -359,6 +393,22 @@ class TestProcessQmdFile:
         qmd = tmp_path / "test.qmd"
         original = textwrap.dedent("""\
             ```{python}
+            x = 1
+            ```
+        """)
+        qmd.write_text(original, encoding="utf-8")
+
+        result = process_qmd_file(qmd)
+        assert result is False
+        assert qmd.read_text(encoding="utf-8") == original
+
+    def test_returns_false_when_expand_unchanged(self, tmp_path: Path):
+        """Returns False when marker present but expand returns same content."""
+        qmd = tmp_path / "test.qmd"
+        # The marker is in a non-executable block, so expand_mock_cells won't modify it
+        original = textwrap.dedent("""\
+            ```python
+            #| source-code: mock
             x = 1
             ```
         """)
@@ -411,3 +461,33 @@ class TestProcessDirectory:
     def test_empty_directory(self, tmp_path: Path):
         modified = process_directory(tmp_path)
         assert modified == []
+
+    def test_relative_to_value_error_uses_absolute(self, tmp_path: Path, monkeypatch):
+        """When relative_to raises ValueError, uses absolute path."""
+        subdir = tmp_path / "pages"
+        subdir.mkdir()
+        qmd = subdir / "doc.qmd"
+        qmd.write_text(
+            textwrap.dedent("""\
+                ```{python}
+                #| source-code: mock
+                show()
+                # ---
+                run()
+                ```
+            """),
+            encoding="utf-8",
+        )
+
+        # Patch Path.relative_to to raise ValueError
+        original_relative_to = Path.relative_to
+
+        def _broken_relative_to(self, other):
+            raise ValueError("not relative")
+
+        monkeypatch.setattr(Path, "relative_to", _broken_relative_to)
+
+        modified = process_directory(subdir)
+        assert len(modified) == 1
+        # Should contain the absolute/full path as a string
+        assert "doc.qmd" in modified[0]
