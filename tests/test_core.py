@@ -1362,3 +1362,710 @@ class TestCategorizeReferencedObjects:
         result = gd._categorize_referenced_objects("mypkg", [{"contents": ["AClass", "weird"]}])
 
         assert "weird" in result["other"]
+
+
+# ---------------------------------------------------------------------------
+# Module-level utility functions
+# ---------------------------------------------------------------------------
+
+
+class TestMigrateLegacyGitignore:
+    def test_migrates_bare_entry(self):
+        from great_docs.core import _migrate_legacy_gitignore_entry
+
+        content = "node_modules/\ngreat-docs/\n.env\n"
+        result = _migrate_legacy_gitignore_entry(content)
+        assert "/great-docs/\n" in result
+        assert "\ngreat-docs/\n" not in result
+
+    def test_preserves_already_anchored(self):
+        from great_docs.core import _migrate_legacy_gitignore_entry
+
+        content = "/great-docs/\n"
+        result = _migrate_legacy_gitignore_entry(content)
+        assert result == content
+
+    def test_no_entry_returns_unchanged(self):
+        from great_docs.core import _migrate_legacy_gitignore_entry
+
+        content = "*.pyc\n__pycache__/\n"
+        result = _migrate_legacy_gitignore_entry(content)
+        assert result is content
+
+
+class TestGitignoreHasEntry:
+    def test_exact_match(self):
+        from great_docs.core import _gitignore_has_entry
+
+        assert _gitignore_has_entry("/great-docs/\n.env\n", "/great-docs/")
+
+    def test_no_match(self):
+        from great_docs.core import _gitignore_has_entry
+
+        assert not _gitignore_has_entry("*.pyc\n", "/great-docs/")
+
+    def test_negated_entry_not_matched(self):
+        from great_docs.core import _gitignore_has_entry
+
+        assert not _gitignore_has_entry("!/great-docs/skills/\n", "/great-docs/")
+
+
+# ---------------------------------------------------------------------------
+# Linkify GitHub references
+# ---------------------------------------------------------------------------
+
+
+class TestLinkifyGithubReferences:
+    def test_bare_issue_number(self):
+        result = GreatDocs._linkify_github_references("Fixed #42", "owner", "repo")
+        assert "[#42](https://github.com/owner/repo/issues/42)" in result
+
+    def test_gh_issue_keyword(self):
+        result = GreatDocs._linkify_github_references("gh issue #7", "owner", "repo")
+        assert "[#7](https://github.com/owner/repo/issues/7)" in result
+
+    def test_gh_pr_keyword(self):
+        result = GreatDocs._linkify_github_references("gh PR #99", "owner", "repo")
+        assert "[#99](https://github.com/owner/repo/issues/99)" in result
+
+    def test_at_username(self):
+        result = GreatDocs._linkify_github_references("Thanks @alice", "o", "r")
+        assert "[@alice](https://github.com/alice)" in result
+
+    def test_backslash_escapes_removed(self):
+        result = GreatDocs._linkify_github_references(r"\#123 by \@bob", "o", "r")
+        assert "[#123]" in result
+        assert "[@bob]" in result
+
+    def test_compare_url_linked(self):
+        url = "https://github.com/owner/repo/compare/v1.0...v2.0"
+        result = GreatDocs._linkify_github_references(f"Full Changelog: {url}", "owner", "repo")
+        assert f"[{url}]({url})" in result
+
+    def test_already_linked_not_doubled(self):
+        text = "[#10](https://github.com/owner/repo/issues/10)"
+        result = GreatDocs._linkify_github_references(text, "owner", "repo")
+        assert result.count("[#10]") == 1
+
+
+# ---------------------------------------------------------------------------
+# Parse Click help parts
+# ---------------------------------------------------------------------------
+
+
+class TestParseClickHelpParts:
+    def test_empty_help(self):
+        desc, examples = GreatDocs._parse_click_help_parts("")
+        assert desc == ""
+        assert examples == []
+
+    def test_none_help(self):
+        desc, examples = GreatDocs._parse_click_help_parts(None)
+        assert desc == ""
+
+    def test_description_only(self):
+        desc, examples = GreatDocs._parse_click_help_parts("Build the docs site.")
+        assert desc == "Build the docs site."
+        assert examples == []
+
+    def test_with_examples_block(self):
+        help_text = (
+            "Build the site.\n\nExamples:\n    great-docs build\n    great-docs build --watch\n"
+        )
+        desc, examples = GreatDocs._parse_click_help_parts(help_text)
+        assert desc == "Build the site."
+        assert "great-docs build" in examples[0]
+        assert len(examples) == 2
+
+    def test_backspace_marker_stripped(self):
+        help_text = "Some text\n\x08\nMore text"
+        desc, examples = GreatDocs._parse_click_help_parts(help_text)
+        assert "\x08" not in desc
+        assert "Some text" in desc
+
+    def test_collapses_blank_lines(self):
+        help_text = "Line one\n\n\n\nLine two"
+        desc, _ = GreatDocs._parse_click_help_parts(help_text)
+        assert "\n\n\n" not in desc
+
+    def test_examples_dedented_4_spaces(self):
+        help_text = "Desc\n\nExamples:\n    cmd --flag\n"
+        _, examples = GreatDocs._parse_click_help_parts(help_text)
+        assert examples[0] == "cmd --flag"
+
+    def test_examples_dedented_2_spaces(self):
+        help_text = "Desc\n\nExamples:\n  cmd --flag\n"
+        _, examples = GreatDocs._parse_click_help_parts(help_text)
+        assert examples[0] == "cmd --flag"
+
+    def test_examples_trailing_blanks_trimmed(self):
+        help_text = "Desc\n\nExamples:\n    cmd\n    \n"
+        _, examples = GreatDocs._parse_click_help_parts(help_text)
+        assert not examples[-1].strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Backtick CLI prose
+# ---------------------------------------------------------------------------
+
+
+class TestBacktickCliProse:
+    def test_empty_returns_empty(self):
+        assert GreatDocs._backtick_cli_prose("", set()) == ""
+
+    def test_wraps_single_quoted_text(self):
+        result = GreatDocs._backtick_cli_prose("Use 'great-docs/' for output", set())
+        assert "`great-docs/`" in result
+
+    def test_wraps_known_option(self):
+        result = GreatDocs._backtick_cli_prose("Use --watch for live reload", {"--watch"})
+        assert "`--watch`" in result
+
+    def test_avoids_possessives(self):
+        result = GreatDocs._backtick_cli_prose("The package's config", set())
+        assert "`" not in result
+
+    def test_already_backticked_not_doubled(self):
+        result = GreatDocs._backtick_cli_prose("Use `--watch` now", {"--watch"})
+        assert result.count("`--watch`") == 1
+
+
+# ---------------------------------------------------------------------------
+# Bump heading levels
+# ---------------------------------------------------------------------------
+
+
+class TestBumpHeadingLevels:
+    def test_h1_becomes_h2(self):
+        result = GreatDocs._bump_heading_levels("# Title\n\nParagraph")
+        assert result.startswith("## Title")
+
+    def test_h3_becomes_h4(self):
+        result = GreatDocs._bump_heading_levels("### Section")
+        assert result == "#### Section"
+
+    def test_headings_in_fenced_block_untouched(self):
+        content = "```python\n# this is a comment\n```"
+        result = GreatDocs._bump_heading_levels(content)
+        assert "## this is a comment" not in result
+        assert "# this is a comment" in result
+
+    def test_tilde_fence_respected(self):
+        content = "~~~\n# comment\n~~~"
+        result = GreatDocs._bump_heading_levels(content)
+        assert "# comment" in result
+        assert "## comment" not in result
+
+    def test_mixed_content(self):
+        content = "# Top\n\n```\n# inside\n```\n\n## Below"
+        result = GreatDocs._bump_heading_levels(content)
+        assert "## Top" in result
+        assert "# inside" in result
+        assert "### Below" in result
+
+
+# ---------------------------------------------------------------------------
+# Sub-classify class / function / attribute
+# ---------------------------------------------------------------------------
+
+
+class TestSubClassifyClass:
+    def test_dataclass(self):
+        obj = MagicMock()
+        obj.labels = {"dataclass"}
+        assert GreatDocs._sub_classify_class(obj) == "dataclass"
+
+    def test_enum_via_bases(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "enum.IntEnum"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "enum"
+
+    def test_exception_via_bases(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "ValueError"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "exception"
+
+    def test_namedtuple(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "NamedTuple"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "namedtuple"
+
+    def test_typeddict(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "TypedDict"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "typeddict"
+
+    def test_protocol(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "Protocol"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "protocol"
+
+    def test_abc_via_bases(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "ABC"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "abc"
+
+    def test_abc_via_decorator(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "object"
+        obj.bases = [base]
+        dec = MagicMock()
+        dec.value = "abstractmethod"
+        obj.decorators = [dec]
+        assert GreatDocs._sub_classify_class(obj) == "abc"
+
+    def test_plain_class_fallback(self):
+        obj = MagicMock()
+        obj.labels = set()
+        base = MagicMock()
+        base.__str__ = lambda s: "object"
+        obj.bases = [base]
+        obj.decorators = []
+        assert GreatDocs._sub_classify_class(obj) == "class"
+
+
+class TestSubClassifyFunction:
+    def test_async(self):
+        obj = MagicMock()
+        obj.labels = {"async"}
+        assert GreatDocs._sub_classify_function(obj) == "async"
+
+    def test_classmethod(self):
+        obj = MagicMock()
+        obj.labels = {"classmethod"}
+        assert GreatDocs._sub_classify_function(obj) == "classmethod"
+
+    def test_staticmethod(self):
+        obj = MagicMock()
+        obj.labels = {"staticmethod"}
+        assert GreatDocs._sub_classify_function(obj) == "staticmethod"
+
+    def test_property(self):
+        obj = MagicMock()
+        obj.labels = {"property"}
+        assert GreatDocs._sub_classify_function(obj) == "property"
+
+    def test_plain_function(self):
+        obj = MagicMock()
+        obj.labels = set()
+        assert GreatDocs._sub_classify_function(obj) == "function"
+
+    def test_labels_raises_falls_back(self):
+        obj = MagicMock()
+        type(obj).labels = property(lambda s: (_ for _ in ()).throw(Exception()))
+        assert GreatDocs._sub_classify_function(obj) == "function"
+
+
+class TestSubClassifyAttribute:
+    def test_type_alias_via_kind(self):
+        obj = MagicMock()
+        obj.labels = set()
+        obj.kind.value = "type alias"
+        assert GreatDocs._sub_classify_attribute(obj) == "type_alias"
+
+    def test_typevar_via_annotation(self):
+        obj = MagicMock()
+        obj.labels = set()
+        obj.kind.value = "attribute"
+        obj.annotation = "TypeVar('T')"
+        assert GreatDocs._sub_classify_attribute(obj) == "typevar"
+
+    def test_paramspec_via_annotation(self):
+        obj = MagicMock()
+        obj.labels = set()
+        obj.kind.value = "attribute"
+        obj.annotation = "ParamSpec('P')"
+        assert GreatDocs._sub_classify_attribute(obj) == "typevar"
+
+    def test_constant_fallback(self):
+        obj = MagicMock()
+        obj.labels = set()
+        obj.kind.value = "attribute"
+        obj.annotation = None
+        assert GreatDocs._sub_classify_attribute(obj) == "constant"
+
+    def test_kind_raises_falls_through(self):
+        obj = MagicMock()
+        obj.labels = set()
+        type(obj).kind = property(lambda s: (_ for _ in ()).throw(Exception()))
+        obj.annotation = None
+        assert GreatDocs._sub_classify_attribute(obj) == "constant"
+
+
+# ---------------------------------------------------------------------------
+# Extract constant metadata
+# ---------------------------------------------------------------------------
+
+
+class TestExtractConstantMetadata:
+    def test_stores_value_and_annotation(self):
+        obj = MagicMock()
+        obj.value = "42"
+        obj.annotation = "int"
+        categories = {"constant_metadata": {}}
+        GreatDocs._extract_constant_metadata(obj, "MY_CONST", categories)
+        assert categories["constant_metadata"]["MY_CONST"]["value"] == "42"
+        assert categories["constant_metadata"]["MY_CONST"]["annotation"] == "int"
+
+    def test_skips_long_value(self):
+        obj = MagicMock()
+        obj.value = "x" * 201
+        obj.annotation = None
+        categories = {"constant_metadata": {}}
+        GreatDocs._extract_constant_metadata(obj, "BIG", categories)
+        assert "BIG" not in categories["constant_metadata"]
+
+    def test_none_value_skipped(self):
+        obj = MagicMock()
+        obj.value = None
+        obj.annotation = "str"
+        categories = {"constant_metadata": {}}
+        GreatDocs._extract_constant_metadata(obj, "X", categories)
+        assert "value" not in categories["constant_metadata"]["X"]
+        assert categories["constant_metadata"]["X"]["annotation"] == "str"
+
+    def test_value_exception_graceful(self):
+        obj = MagicMock()
+        type(obj).value = property(lambda s: (_ for _ in ()).throw(Exception()))
+        obj.annotation = None
+        categories = {"constant_metadata": {}}
+        GreatDocs._extract_constant_metadata(obj, "BAD", categories)
+        assert "BAD" not in categories["constant_metadata"]
+
+
+# ---------------------------------------------------------------------------
+# Empty categories
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyCategories:
+    def test_all_keys_present(self):
+        cats = GreatDocs._empty_categories()
+        assert "classes" in cats
+        assert "functions" in cats
+        assert "constants" in cats
+        assert "type_aliases" in cats
+        assert "constant_metadata" in cats
+        assert cats["cyclic_alias_count"] == 0
+
+    def test_returns_fresh_instance(self):
+        a = GreatDocs._empty_categories()
+        b = GreatDocs._empty_categories()
+        a["classes"].append("X")
+        assert b["classes"] == []
+
+
+# ---------------------------------------------------------------------------
+# Extract Click option / argument
+# ---------------------------------------------------------------------------
+
+
+class TestExtractClickOption:
+    def test_basic_option(self):
+        param = MagicMock()
+        param.name = "verbose"
+        param.opts = ["--verbose"]
+        param.secondary_opts = ["-v"]
+        param.type.name = "bool"
+        param.default = None
+        param.help = "Enable verbose output"
+        param.required = False
+        param.is_flag = True
+        param.multiple = False
+        param.envvar = None
+        param.is_eager = False
+        param.hidden = False
+        param.show_default = False
+        result = GreatDocs._extract_click_option(param)
+        assert result["name_display"] == "-v, --verbose"
+        assert result["help"] == "Enable verbose output"
+        assert result["is_flag"] is True
+
+    def test_help_option_skipped(self):
+        param = MagicMock()
+        param.name = "help"
+        assert GreatDocs._extract_click_option(param) is None
+
+    def test_type_name_uppercased(self):
+        param = MagicMock()
+        param.name = "port"
+        param.opts = ["--port"]
+        param.secondary_opts = []
+        param.type.name = "int"
+        param.default = 3000
+        param.help = ""
+        param.required = False
+        param.is_flag = False
+        param.multiple = False
+        param.envvar = None
+        param.is_eager = False
+        param.hidden = False
+        param.show_default = True
+        result = GreatDocs._extract_click_option(param)
+        assert result["type"] == "INT"
+        assert result["default"] == 3000
+
+    def test_sentinel_default_normalized(self):
+        param = MagicMock()
+        param.name = "output"
+        param.opts = ["--output"]
+        param.secondary_opts = []
+        param.type.name = "text"
+        sentinel = MagicMock()
+        sentinel.__class__.__name__ = "Sentinel"
+        param.default = sentinel
+        param.help = ""
+        param.required = False
+        param.is_flag = False
+        param.multiple = False
+        param.envvar = None
+        param.is_eager = False
+        param.hidden = False
+        result = GreatDocs._extract_click_option(param)
+        assert result["default"] is None
+
+
+class TestExtractClickArgument:
+    def test_basic_argument(self):
+        param = MagicMock()
+        param.name = "path"
+        param.human_readable_name = "PATH"
+        param.type.name = "TEXT"
+        param.required = True
+        param.nargs = 1
+        result = GreatDocs._extract_click_argument(param)
+        assert result["name"] == "path"
+        assert result["type"] is None
+        assert result["required"] is True
+
+    def test_non_text_type_uppercased(self):
+        param = MagicMock()
+        param.name = "count"
+        param.human_readable_name = "COUNT"
+        param.type.name = "int"
+        param.required = False
+        param.nargs = -1
+        result = GreatDocs._extract_click_argument(param)
+        assert result["type"] == "INT"
+        assert result["nargs"] == -1
+
+
+# ---------------------------------------------------------------------------
+# Tag utilities
+# ---------------------------------------------------------------------------
+
+
+class TestSplitTagParts:
+    def test_simple_slash(self):
+        assert GreatDocs._split_tag_parts("A/B/C") == ["A", "B", "C"]
+
+    def test_escaped_slash_preserved(self):
+        assert GreatDocs._split_tag_parts(r"AI\/LLM") == ["AI/LLM"]
+
+    def test_mixed_escaped_and_real(self):
+        parts = GreatDocs._split_tag_parts(r"AI\/ML/Frameworks")
+        assert parts == ["AI/ML", "Frameworks"]
+
+    def test_empty_parts_stripped(self):
+        assert GreatDocs._split_tag_parts("A//B") == ["A", "B"]
+
+
+class TestTagSlug:
+    def test_basic(self):
+        assert GreatDocs._tag_slug("User Guide") == "user-guide"
+
+    def test_special_chars(self):
+        assert GreatDocs._tag_slug("AI/ML & Data!") == "ai-ml-data"
+
+    def test_escaped_slash(self):
+        assert GreatDocs._tag_slug(r"AI\/LLM") == "ai-llm"
+
+
+class TestTagTooltip:
+    def test_empty_pages(self):
+        assert GreatDocs._tag_tooltip([]) == ""
+
+    def test_single_page_with_section(self):
+        pages = [{"title": "Intro", "section": "Guide"}]
+        result = GreatDocs._tag_tooltip(pages)
+        assert "1" in result
+        assert "Guide" in result
+
+    def test_multiple_pages_no_section(self):
+        pages = [{"title": "A"}, {"title": "B"}]
+        result = GreatDocs._tag_tooltip(pages)
+        assert "2" in result
+
+
+class TestTagHeadingPill:
+    def test_simple_pill(self):
+        result = GreatDocs._tag_heading_pill("Basics", "<svg/>")
+        assert "gd-tag-pill" in result
+        assert "Basics" in result
+        assert "<svg/>" in result
+
+    def test_segmented_pill_with_parent(self):
+        result = GreatDocs._tag_heading_pill("Child", "", parent="Parent", parent_icon="<i/>")
+        assert "gd-tag-pill-segmented" in result
+        assert "Parent" in result
+        assert "Child" in result
+        assert "<i/>" in result
+
+    def test_tooltip_attribute(self):
+        result = GreatDocs._tag_heading_pill("Tag", "", tooltip="5 pages")
+        assert 'data-tippy-content="5 pages"' in result
+
+
+class TestGetTagIconHtml:
+    def test_no_icon_returns_empty(self):
+        result = GreatDocs._get_tag_icon_html("Unknown", {})
+        assert result == ""
+
+    def test_icon_found_returns_svg_span(self):
+        with patch("great_docs._icons.get_icon_svg", return_value="<svg>ok</svg>"):
+            result = GreatDocs._get_tag_icon_html("Guide", {"Guide": "book"})
+        assert "<svg>ok</svg>" in result
+        assert "margin-right" in result
+
+    def test_svg_returns_empty_when_icon_missing(self):
+        with patch("great_docs._icons.get_icon_svg", return_value=None):
+            result = GreatDocs._get_tag_icon_html("X", {"X": "missing-icon"})
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# HTML escape and derive page title
+# ---------------------------------------------------------------------------
+
+
+class TestHtmlEscape:
+    def test_escapes_angle_brackets(self):
+        assert "&lt;" in GreatDocs._html_escape("<script>")
+        assert "&amp;" in GreatDocs._html_escape("A & B")
+
+    def test_escapes_quotes(self):
+        assert "&quot;" in GreatDocs._html_escape('"hello"')
+
+
+class TestDerivePageTitle:
+    def test_converts_hyphens_and_underscores(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        assert gd._derive_page_title(Path("user-guide_intro.qmd")) == "User Guide Intro"
+
+
+# ---------------------------------------------------------------------------
+# Strip frontmatter
+# ---------------------------------------------------------------------------
+
+
+class TestStripFrontmatter:
+    def test_removes_frontmatter(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        content = "---\ntitle: Hello\n---\nBody text"
+        assert gd._strip_frontmatter(content) == "Body text"
+
+    def test_no_frontmatter_unchanged(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        content = "Just body text"
+        assert gd._strip_frontmatter(content) == content
+
+    def test_incomplete_frontmatter_unchanged(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        content = "---\ntitle: Hello\nNo closing"
+        assert gd._strip_frontmatter(content) == content
+
+
+# ---------------------------------------------------------------------------
+# Detect install extras
+# ---------------------------------------------------------------------------
+
+
+class TestDetectInstallExtras:
+    def test_finds_dev_and_docs(self, tmp_path):
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            '[project.optional-dependencies]\ndev = ["pytest"]\ndocs = ["sphinx"]\n',
+            encoding="utf-8",
+        )
+        result = GreatDocs._detect_install_extras(tmp_path)
+        assert "dev" in result
+        assert "docs" in result
+
+    def test_no_pyproject_returns_empty(self, tmp_path):
+        assert GreatDocs._detect_install_extras(tmp_path) == ""
+
+    def test_no_optional_deps_returns_empty(self, tmp_path):
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\nname = 'pkg'\n", encoding="utf-8")
+        assert GreatDocs._detect_install_extras(tmp_path) == ""
+
+    def test_invalid_toml_returns_empty(self, tmp_path):
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("{{{{invalid", encoding="utf-8")
+        assert GreatDocs._detect_install_extras(tmp_path) == ""
+
+
+# ---------------------------------------------------------------------------
+# Inspect repo git needs
+# ---------------------------------------------------------------------------
+
+
+class TestInspectRepoGitNeeds:
+    def test_no_config_returns_none(self, tmp_path):
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "none"
+
+    def test_versions_returns_full(self, tmp_path):
+        cfg = tmp_path / "great-docs.yml"
+        cfg.write_text("versions:\n  - v1.0\n  - v2.0\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_show_dates_returns_full(self, tmp_path):
+        cfg = tmp_path / "great-docs.yml"
+        cfg.write_text("show_dates: true\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_show_dates_in_site_returns_full(self, tmp_path):
+        cfg = tmp_path / "great-docs.yml"
+        cfg.write_text("site:\n  show_dates: true\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "full"
+
+    def test_source_without_branch_returns_tags(self, tmp_path):
+        cfg = tmp_path / "great-docs.yml"
+        cfg.write_text("source:\n  repository: https://github.com/org/repo\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "tags"
+
+    def test_source_with_branch_returns_none(self, tmp_path):
+        cfg = tmp_path / "great-docs.yml"
+        cfg.write_text("source:\n  branch: main\n", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "none"
+
+    def test_invalid_yaml_returns_none(self, tmp_path):
+        cfg = tmp_path / "great-docs.yml"
+        cfg.write_text("{{invalid yaml", encoding="utf-8")
+        assert GreatDocs._inspect_repo_git_needs(tmp_path) == "none"
