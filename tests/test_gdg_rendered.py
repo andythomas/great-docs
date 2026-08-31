@@ -50,13 +50,6 @@ except ImportError:
 
 requires_bs4 = pytest.mark.skipif(not HAS_BS4, reason="beautifulsoup4 not installed")
 
-# ── Skip the whole module if rendered output doesn't exist ───────────────────
-
-pytestmark = pytest.mark.skipif(
-    not _RENDERED_DIR.exists(),
-    reason="No rendered GDG output found (run `python test-packages/render_all.py --build` first)",
-)
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -178,6 +171,13 @@ def _get_description(soup: "BeautifulSoup") -> str | None:
 # This eliminates runtime `pytest.skip()` calls and keeps the test count lean.
 
 _RENDERED_PACKAGES: list[str] = [n for n in ALL_PACKAGES if _has_rendered_site(n)]
+
+# Collect tests from any available sites. Skip the module only when no rendered
+# package exists; parameters derived from this list support partial builds.
+pytestmark = pytest.mark.skipif(
+    not _RENDERED_PACKAGES,
+    reason="no rendered Gauntlet output; run `python test-packages/render_all.py --build`",
+)
 
 # Cache expectations so we only load each spec once
 _EXPECTED_CACHE: dict[str, dict] = {n: _get_expected(n) for n in _RENDERED_PACKAGES}
@@ -617,6 +617,10 @@ def test_reference_page_heading_levels(pkg_name: str):
         pytest.skip(f"{pkg_name}: no member sections to check")
 
 
+# These packages contain the class members required by the `h3` assertion.
+_MEMBER_CHECK_PKGS = ("gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs")
+
+
 @requires_bs4
 def test_reference_page_heading_levels_exercises_member_check():
     """
@@ -625,8 +629,11 @@ def test_reference_page_heading_levels_exercises_member_check():
     This fails if every parametrised package loses its class members and the
     `h3` member assertion stops running.
     """
+    if not any(_has_rendered_site(n) for n in _MEMBER_CHECK_PKGS):
+        pytest.skip("none of the member-check packages is rendered")
+
     found_members = False
-    for pkg_name in ("gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs"):
+    for pkg_name in _MEMBER_CHECK_PKGS:
         ref = _ref_dir(pkg_name)
         if not ref.exists():
             continue
