@@ -41,6 +41,26 @@ class TestInsertContents:
         assert result is True
         assert structure[1] == ["nested", "replaced"]
 
+    def test_dict_value_dict_no_sentinel(self):
+        """Dict value that is a dict without the sentinel returns False."""
+        structure = {"outer": {"inner": "value"}}
+        assert _insert_contents(structure, ["x"]) is False
+
+    def test_dict_value_list_no_sentinel(self):
+        """Dict value that is a list without the sentinel returns False."""
+        structure = {"outer": ["value"]}
+        assert _insert_contents(structure, ["x"]) is False
+
+    def test_list_item_dict_no_sentinel(self):
+        """List item that is a dict without the sentinel returns False."""
+        structure = [{"key": "value"}]
+        assert _insert_contents(structure, ["x"]) is False
+
+    def test_list_item_list_no_sentinel(self):
+        """List item that is a list without the sentinel returns False."""
+        structure = [["value"]]
+        assert _insert_contents(structure, ["x"]) is False
+
 
 class TestPageSidebarText:
     def test_summary_not_none_returns_summary_name(self):
@@ -94,6 +114,30 @@ class TestGenerateSidebar:
         assert len(sections) == 2
         assert sections[0]["section"] == "Functions"
         assert sections[1]["section"] == "Classes"
+
+    def test_non_page_entry_is_skipped(self):
+        """Section contents that are not Page instances are skipped."""
+        from great_docs._apiref.content import Page, Section
+        from great_docs._apiref.write import _generate_sidebar
+
+        page = MagicMock(spec=Page)
+        page.summary = None
+        page.contents = [MagicMock(name="func_a", kind="function")]
+        page.contents[0].name = "func_a"
+        page.contents[0].kind = "function"
+        page.path = "func_a"
+
+        sec = MagicMock(spec=Section)
+        sec.title = "Functions"
+        sec.subtitle = None
+        sec.contents = [MagicMock(), page]  # a non-Page entry followed by a Page
+
+        result = _generate_sidebar([sec], dir="reference", out_page_suffix=".qmd", sidebar=None)
+
+        sidebar_contents = result["website"]["sidebar"][0]["contents"]
+        section = next(c for c in sidebar_contents if isinstance(c, dict) and "section" in c)
+        assert len(section["contents"]) == 1
+        assert section["contents"][0]["href"] == "reference/func_a.qmd"
 
 
 class TestWriteTypingInformation:
