@@ -15005,6 +15005,33 @@ anchor-sections: true
         # Fallback to site-relative path (works for most crawlers)
         return source.name  # pragma: no cover
 
+    def _get_site_name(self) -> str:
+        """
+        Resolve the site name used in page titles
+
+        Read `website.title` from the generated `_quarto.yml` first because
+        Quarto uses this value. Otherwise, use the configured display name or
+        detected package name.
+
+        Returns
+        -------
+        :
+            The site name, or an empty string if none is available.
+        """
+        quarto_yml = self.project_path / "_quarto.yml"
+        if quarto_yml.exists():
+            try:
+                with open(quarto_yml, "r") as f:
+                    config = read_yaml(f) or {}
+            except (OSError, ValueError):
+                config = {}
+            website = config.get("website")
+            if isinstance(website, dict):
+                title = website.get("title")
+                if isinstance(title, str) and title:
+                    return title
+        return self._config.display_name or self._detect_package_name() or ""
+
     def _build_title_template_line(self, template: str) -> str | None:
         """
         Convert the configured page-title template to Pandoc syntax
@@ -15157,7 +15184,7 @@ anchor-sections: true
             "package_license": metadata.get("license", ""),
             "package_version": metadata.get("version", ""),
             "repo_url": metadata.get("urls", {}).get("Repository", ""),
-            "site_name": self._config.display_name or self._detect_package_name() or "",
+            "site_name": self._get_site_name(),
             # Social cards
             "social_cards_enabled": self._config.social_cards_enabled,
             "social_cards_image": social_image_url,
