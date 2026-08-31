@@ -13331,6 +13331,9 @@ anchor-sections: true
         if "gd-lightbox" not in config["filters"]:
             config["filters"].append("gd-lightbox")
 
+        # Compose each page's browser title during Quarto rendering.
+        self._write_title_partial(config)
+
         # Apply explicit navbar ordering from config (if set)
         self._reorder_navbar(config)
 
@@ -15002,6 +15005,128 @@ anchor-sections: true
         # Fallback to site-relative path (works for most crawlers)
         return source.name  # pragma: no cover
 
+    def _build_title_template_line(self, template: str) -> str | None:
+        """
+        Convert the configured page-title template to Pandoc syntax
+
+        Wrap the site-name portion in `$if(title-prefix)$`. Quarto leaves
+        `$title-prefix$` unset when a page has no title, so the page shows the
+        site name once. Keep `$pagetitle$` outside the conditional so Quarto
+        resolves each page's title.
+
+        Parameters
+        ----------
+        template
+            Value of `seo.title_template`, written with `{page_title}` and
+            `{site_name}`.
+
+        Returns
+        -------
+        :
+            The `<title>` element, or `None` if the template omits a required
+            placeholder or contains `$`.
+        """
+        page_key = "{page_title}"
+        site_key = "{site_name}"
+
+        # `$` opens a Pandoc template expression and would corrupt the partial.
+        if "$" in template:
+            return None
+
+        page_at = template.find(page_key)
+        site_at = template.find(site_key)
+        if page_at == -1 or site_at == -1:
+            return None
+
+        if page_at < site_at:
+            head = template[:page_at]
+            joiner = template[page_at + len(page_key) : site_at]
+            tail = template[site_at + len(site_key) :]
+            optional = f"{joiner}$title-prefix${tail}"
+            body = f"{head}$pagetitle$$if(title-prefix)${optional}$endif$"
+        else:
+            head = template[:site_at]
+            joiner = template[site_at + len(site_key) : page_at]
+            tail = template[page_at + len(page_key) :]
+            optional = f"{head}$title-prefix${joiner}"
+            body = f"$if(title-prefix)${optional}$endif$$pagetitle${tail}"
+
+        return f"<title>{body}</title>"
+
+    def _write_title_partial(self, config: dict) -> None:
+        """
+        Write a Quarto metadata partial that defines each page title
+
+        Copy Quarto's installed partial and replace only its `<title>` element.
+        This preserves every other tag from the installed version. Leave
+        Quarto's default title unchanged if the title template is unsupported,
+        HTML configuration is unavailable, or the partial cannot be found.
+
+        Parameters
+        ----------
+        config
+            Contents of `_quarto.yml`. The method registers the partial in this
+            mapping.
+
+        Returns
+        -------
+        :
+            Nothing.
+        """
+        import subprocess
+
+        title_line = self._build_title_template_line(self._config.seo_title_template)
+        if title_line is None:
+            print(
+                "Warning: seo.title_template must contain {page_title} and {site_name}, "
+                "and cannot contain '$'. Keeping Quarto's default page titles."
+            )
+            return
+
+        html_config = config.get("format", {}).get("html")
+        if not isinstance(html_config, dict):
+            return
+
+        source = None
+        if shutil.which("quarto") is not None:
+            try:
+                result = subprocess.run(
+                    ["quarto", "--paths"],
+                    capture_output=True,
+                    check=False,
+                    **TEXT_MODE_KWARGS,
+                )
+            except OSError:
+                result = None
+            if result is not None and result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    candidate = Path(line.strip()) / "formats" / "html" / "pandoc" / "metadata.html"
+                    if candidate.is_file():
+                        source = candidate
+                        break
+
+        if source is None:
+            print(
+                "Warning: could not find Quarto's metadata.html. "
+                "Keeping Quarto's default page titles."
+            )
+            return
+
+        # Use a callable replacement so backslashes and `$` remain literal.
+        partial = re.sub(
+            r"<title>.*</title>",
+            lambda _match: title_line,
+            source.read_text(encoding="utf-8"),
+        )
+        (self.project_path / "metadata.html").write_text(partial, encoding="utf-8")
+
+        partials = html_config.get("template-partials", [])
+        if isinstance(partials, str):
+            partials = [partials]
+        if "metadata.html" not in partials:
+            partials.append("metadata.html")
+        html_config["template-partials"] = partials
+
     def _get_seo_options(self) -> dict:
         """
         Get SEO options for the post-render script.
@@ -15022,7 +15147,6 @@ anchor-sections: true
             "seo_enabled": self._config.seo_enabled,
             "canonical_enabled": self._config.canonical_enabled,
             "canonical_base_url": self._get_canonical_base_url(),
-            "title_template": self._config.seo_title_template,
             "structured_data_enabled": self._config.structured_data_enabled,
             "structured_data_type": self._config.structured_data_type,
             "default_description": (
