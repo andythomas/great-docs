@@ -4104,3 +4104,148 @@ class TestEscapingRelativePaths:
             staged = _version_build_dir(source_dir, entry, "0.3") / self.PAGE
             assert (staged.parent / self.ESCAPE).resolve() == expected
             assert (staged.parent / self.ESCAPE).resolve().is_file()
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _prune_cli_pages – non-qmd files are skipped (not unlinked)
+# ---------------------------------------------------------------------------
+
+
+class TestPruneCliPagesNonQmd:
+
+    def test_non_qmd_file_not_deleted(self, tmp_path: Path):
+        from great_docs._versioned_build import _prune_cli_pages
+
+        cli_dir = tmp_path / "reference" / "cli"
+        cli_dir.mkdir(parents=True)
+        (cli_dir / "index.qmd").write_text("---\ntitle: CLI\n---\n")
+        txt = cli_dir / "notes.txt"
+        txt.write_text("some notes")
+
+        class MockCmd:
+            name = "build"
+
+        class MockSnap:
+            cli_commands = type("CLI", (), {"subcommands": [MockCmd()]})()
+
+        _prune_cli_pages(tmp_path, MockSnap())
+        assert txt.exists()
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _rewrite_cli_index – .md href extension stripped
+# ---------------------------------------------------------------------------
+
+
+class TestRewriteCliIndexMdHref:
+
+    def test_md_extension_stripped(self, tmp_path: Path):
+        from great_docs._versioned_build import _rewrite_cli_index
+
+        index = tmp_path / "index.qmd"
+        index.write_text(
+            "---\ntitle: CLI\n---\n\n"
+            "[build](build.md){.doc-function}\n"
+            ":   Build docs\n\n",
+        )
+        _rewrite_cli_index(index, {"index", "build"})
+        assert "[build](build.md)" in index.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _prune_quarto_cli_sidebar – edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestPruneQuartoCliSidebarEdges:
+
+    def test_empty_yaml_returns_early(self, tmp_path: Path):
+        from great_docs._versioned_build import _prune_quarto_cli_sidebar
+
+        quarto = tmp_path / "_quarto.yml"
+        quarto.write_text("", encoding="utf-8")
+        _prune_quarto_cli_sidebar(tmp_path, {"index"})
+
+    def test_non_cli_sidebar_skipped(self, tmp_path: Path):
+        import yaml
+
+        from great_docs._versioned_build import _prune_quarto_cli_sidebar
+
+        quarto = tmp_path / "_quarto.yml"
+        config = {
+            "website": {
+                "sidebar": [
+                    {"id": "main-nav", "contents": ["index.qmd", "about.qmd"]},
+                ]
+            }
+        }
+        quarto.write_text(yaml.dump(config), encoding="utf-8")
+        _prune_quarto_cli_sidebar(tmp_path, {"index"})
+        result = yaml.safe_load(quarto.read_text())
+        assert len(result["website"]["sidebar"][0]["contents"]) == 2
+
+    def test_dict_item_in_contents_kept(self, tmp_path: Path):
+        import yaml
+
+        from great_docs._versioned_build import _prune_quarto_cli_sidebar
+
+        quarto = tmp_path / "_quarto.yml"
+        config = {
+            "website": {
+                "sidebar": [
+                    {
+                        "id": "cli-reference",
+                        "contents": [
+                            "reference/cli/index.qmd",
+                            {"section": "Group", "contents": ["reference/cli/sub.qmd"]},
+                            "reference/cli/stale.qmd",
+                        ],
+                    }
+                ]
+            }
+        }
+        quarto.write_text(yaml.dump(config), encoding="utf-8")
+        _prune_quarto_cli_sidebar(tmp_path, {"index"})
+        result = yaml.safe_load(quarto.read_text())
+        contents = result["website"]["sidebar"][0]["contents"]
+        has_dict = any(isinstance(c, dict) for c in contents)
+        assert has_dict
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _prune_sidebar_contents – non-standard item types
+# ---------------------------------------------------------------------------
+
+
+class TestPruneSidebarContentsEdges:
+
+    def test_dict_without_href_or_section_kept(self, tmp_path: Path):
+        from great_docs._versioned_build import _prune_sidebar_contents
+
+        contents = [{"text": "About", "url": "https://example.com"}]
+        result = _prune_sidebar_contents(contents, tmp_path)
+        assert len(result) == 1
+        assert result[0]["text"] == "About"
+
+    def test_non_string_non_dict_item_kept(self, tmp_path: Path):
+        from great_docs._versioned_build import _prune_sidebar_contents
+
+        contents = [42, True]
+        result = _prune_sidebar_contents(contents, tmp_path)
+        assert result == [42, True]
+
+
+# ---------------------------------------------------------------------------
+# Coverage: expand_version_badges – unknown badge type and fence edge
+# ---------------------------------------------------------------------------
+
+
+class TestExpandVersionBadgesEdges:
+
+    def test_fence_closing_at_eof_without_newline(self):
+        entry = _make_entry("0.3")
+        versions = parse_versions_config(["0.3", "0.2"])
+        content = "[version-badge new 0.3]\n\n```python\ncode\n```"
+        result = expand_version_badges(content, entry, versions)
+        assert "gd-badge-new" in result
+        assert "```python" in result
