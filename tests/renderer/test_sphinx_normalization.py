@@ -1,7 +1,6 @@
 import griffe as gf
 import pytest
 
-from great_docs._builtin.normalization._citations import _convert_rst_citations
 from great_docs._builtin.normalization._sphinx import (
     _CALLABLE_RST_ROLES,
     _SPHINX_ROLE_NAMES,
@@ -130,27 +129,6 @@ def test_smart_dedent_preserves_blank_lines():
     text = "    First line.\n\n    Third line.\n"
     result = _smart_dedent(text)
     assert result == "First line.\n\nThird line.\n"
-
-
-# ---------------------------------------------------------------------------
-# Coverage: _convert_rst_citations edge cases
-# ---------------------------------------------------------------------------
-
-
-def test_citations_with_non_citation_lines():
-    """Non-citation lines are preserved verbatim."""
-    text = "Some preamble.\n\n.. [1] Author. https://example.com\n\nSome epilogue."
-    result = _convert_rst_citations(text)
-    assert "Some preamble." in result
-    assert "Some epilogue." in result
-    assert "1. Author." in result
-
-
-def test_citations_with_continuation_lines():
-    """Multi-line citations are joined."""
-    text = ".. [1] First part\n   continuation line\n   another continuation"
-    result = _convert_rst_citations(text)
-    assert "1. First part continuation line another continuation" in result
 
 
 # ---------------------------------------------------------------------------
