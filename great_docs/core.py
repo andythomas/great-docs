@@ -15041,17 +15041,20 @@ anchor-sections: true
         site name once. Keep `$pagetitle$` outside the conditional so Quarto
         resolves each page's title.
 
+        A template without `{site_name}` omits the site-name component from
+        titled pages.
+
         Parameters
         ----------
         template
-            Value of `seo.title_template`, written with `{page_title}` and
-            `{site_name}`.
+            Value of `seo.title_template`, written with `{page_title}` and an
+            optional `{site_name}`.
 
         Returns
         -------
         :
-            The `<title>` element, or `None` if the template omits a required
-            placeholder or contains `$`.
+            The `<title>` element, or `None` if the template contains `$` or
+            omits `{page_title}`.
         """
         page_key = "{page_title}"
         site_key = "{site_name}"
@@ -15061,9 +15064,14 @@ anchor-sections: true
             return None
 
         page_at = template.find(page_key)
-        site_at = template.find(site_key)
-        if page_at == -1 or site_at == -1:
+        if page_at == -1:
             return None
+
+        site_at = template.find(site_key)
+        if site_at == -1:
+            head = template[:page_at]
+            tail = template[page_at + len(page_key) :]
+            return f"<title>{head}$pagetitle${tail}</title>"
 
         if page_at < site_at:
             head = template[:page_at]
@@ -15103,8 +15111,8 @@ anchor-sections: true
         title_line = self._build_title_template_line(self._config.seo_title_template)
         if title_line is None:
             print(
-                "Warning: seo.title_template must contain {page_title} and {site_name}, "
-                "and cannot contain '$'. Keeping Quarto's default page titles."
+                "Warning: seo.title_template must contain {page_title} and must not "
+                "contain '$'. Using Quarto's default page titles."
             )
             return
 
