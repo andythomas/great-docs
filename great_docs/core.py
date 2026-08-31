@@ -15082,12 +15082,12 @@ anchor-sections: true
 
     def _write_title_partial(self, config: dict) -> None:
         """
-        Write a Quarto metadata partial that defines each page title
+        Write a Quarto metadata partial with the configured page title
 
-        Copy Quarto's installed partial and replace only its `<title>` element.
-        This preserves every other tag from the installed version. Leave
-        Quarto's default title unchanged if the title template is unsupported,
-        HTML configuration is unavailable, or the partial cannot be found.
+        Replace the bundled partial's `<title>` element and preserve its other
+        tags. The bundled copy keeps the metadata independent of the installed
+        Quarto version. Leave Quarto's default title unchanged if the template
+        is unsupported or the HTML configuration is unavailable.
 
         Parameters
         ----------
@@ -15100,8 +15100,6 @@ anchor-sections: true
         :
             Nothing.
         """
-        import subprocess
-
         title_line = self._build_title_template_line(self._config.seo_title_template)
         if title_line is None:
             print(
@@ -15114,36 +15112,11 @@ anchor-sections: true
         if not isinstance(html_config, dict):
             return
 
-        source = None
-        if shutil.which("quarto") is not None:
-            try:
-                result = subprocess.run(
-                    ["quarto", "--paths"],
-                    capture_output=True,
-                    check=False,
-                    **TEXT_MODE_KWARGS,
-                )
-            except OSError:
-                result = None
-            if result is not None and result.returncode == 0:
-                for line in result.stdout.splitlines():
-                    candidate = Path(line.strip()) / "formats" / "html" / "pandoc" / "metadata.html"
-                    if candidate.is_file():
-                        source = candidate
-                        break
-
-        if source is None:
-            print(
-                "Warning: could not find Quarto's metadata.html. "
-                "Keeping Quarto's default page titles."
-            )
-            return
-
         # Use a callable replacement so backslashes and `$` remain literal.
         partial = re.sub(
             r"<title>.*</title>",
             lambda _match: title_line,
-            source.read_text(encoding="utf-8"),
+            (self.assets_path / "metadata.html").read_text(encoding="utf-8"),
         )
         (self.project_path / "metadata.html").write_text(partial, encoding="utf-8")
 
