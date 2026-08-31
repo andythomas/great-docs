@@ -20,6 +20,11 @@ def _make_gd(tmp_path: Path) -> GreatDocs:
     return GreatDocs(project_path=str(tmp_path))
 
 
+def _patch_cfg(monkeypatch, gd, name, value):
+    """Patch a Config property on the class so the instance returns *value*."""
+    monkeypatch.setattr(type(gd._config), name, property(lambda self: value))
+
+
 class TestFetchGithubRepoStats:
     """Cover _fetch_github_repo_stats auth header and response paths."""
 
@@ -2069,3 +2074,1032 @@ class TestInspectRepoGitNeeds:
         cfg = tmp_path / "great-docs.yml"
         cfg.write_text("{{invalid yaml", encoding="utf-8")
         assert GreatDocs._inspect_repo_git_needs(tmp_path) == "none"
+
+
+# ---------------------------------------------------------------------------
+# _get_package_exports – cache hit path
+# ---------------------------------------------------------------------------
+
+
+class TestGetPackageExportsCacheHit:
+
+    def test_returns_cached_exports(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        gd._cached_package_name = "mypkg"
+        gd._cached_exports = ["Foo", "Bar"]
+        result = gd._get_package_exports("mypkg")
+        assert result == ["Foo", "Bar"]
+
+    def test_cache_miss_triggers_discovery(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd._cached_package_name = None
+        gd._cached_exports = None
+        monkeypatch.setattr(gd, "_discover_package_exports", lambda p: ["X"])
+        result = gd._get_package_exports("mypkg")
+        assert result == ["X"]
+        assert gd._cached_package_name == "mypkg"
+        assert gd._cached_exports == ["X"]
+
+    def test_fallback_to_parse_when_discover_returns_none(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd._cached_package_name = None
+        gd._cached_exports = None
+        monkeypatch.setattr(gd, "_discover_package_exports", lambda p: None)
+        monkeypatch.setattr(gd, "_parse_package_exports", lambda p: ["Y"])
+        result = gd._get_package_exports("mypkg")
+        assert result == ["Y"]
+
+
+# ---------------------------------------------------------------------------
+# _add_tags_to_navbar – all branches
+# ---------------------------------------------------------------------------
+
+
+class TestAddTagsToNavbar:
+
+    def test_no_quarto_yml_returns_early(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        gd._add_tags_to_navbar()
+
+    def test_no_navbar_returns_early(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        quarto = gd.project_path / "_quarto.yml"
+        quarto.write_text("website:\n  title: Test\n", encoding="utf-8")
+        gd._add_tags_to_navbar()
+
+    def test_no_left_key_returns_early(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        quarto = gd.project_path / "_quarto.yml"
+        quarto.write_text("website:\n  navbar:\n    right:\n      - icon: github\n", encoding="utf-8")
+        gd._add_tags_to_navbar()
+
+    def test_already_present_skips(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        quarto = gd.project_path / "_quarto.yml"
+        quarto.write_text(
+            "website:\n  navbar:\n    left:\n      - text: Site Tags\n        href: tags/index.qmd\n",
+            encoding="utf-8",
+        )
+        gd._add_tags_to_navbar()
+        content = quarto.read_text(encoding="utf-8")
+        assert content.count("Site Tags") == 1
+
+    def test_adds_tags_link(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        quarto = gd.project_path / "_quarto.yml"
+        quarto.write_text(
+            "website:\n  navbar:\n    left:\n      - text: Reference\n        href: reference/index.qmd\n",
+            encoding="utf-8",
+        )
+        gd._add_tags_to_navbar()
+        content = quarto.read_text(encoding="utf-8")
+        assert "Tags" in content
+
+
+# ---------------------------------------------------------------------------
+# _update_navbar_github_link – widget vs icon, replace vs append
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateNavbarGithubLink:
+
+    @staticmethod
+    def _wrap(navbar):
+        return {"website": {"navbar": navbar}}
+
+    def test_no_repo_url_returns_early(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        navbar = {"right": []}
+        gd._update_navbar_github_link(self._wrap(navbar), None, None, None, "icon")
+        assert navbar["right"] == []
+
+    def test_icon_style_appends(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        navbar = {"right": []}
+        gd._update_navbar_github_link(self._wrap(navbar), "owner", "repo", "https://github.com/o/r", "icon")
+        assert navbar["right"] == [{"icon": "github", "href": "https://github.com/o/r"}]
+
+    def test_widget_style_with_stats(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        monkeypatch.setattr(gd, "_fetch_github_repo_stats", lambda o, r: {"stars": 100, "forks": 20})
+        navbar = {"right": []}
+        gd._update_navbar_github_link(self._wrap(navbar), "owner", "repo", "https://github.com/o/r", "widget")
+        assert len(navbar["right"]) == 1
+        assert "github-widget" in str(navbar["right"][0])
+        assert 'data-stars="100"' in str(navbar["right"][0])
+
+    def test_widget_style_no_stats(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        monkeypatch.setattr(gd, "_fetch_github_repo_stats", lambda o, r: None)
+        navbar = {"right": []}
+        gd._update_navbar_github_link(self._wrap(navbar), "owner", "repo", "https://github.com/o/r", "widget")
+        assert "github-widget" in str(navbar["right"][0])
+        assert "data-stars" not in str(navbar["right"][0])
+
+    def test_replaces_existing_icon_entry(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        navbar = {"right": [{"icon": "github", "href": "old"}]}
+        gd._update_navbar_github_link(self._wrap(navbar), "o", "r", "https://new.com", "icon")
+        assert navbar["right"] == [{"icon": "github", "href": "https://new.com"}]
+
+    def test_replaces_existing_widget_entry(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        monkeypatch.setattr(gd, "_fetch_github_repo_stats", lambda o, r: None)
+        navbar = {"right": [{"text": '<div id="github-widget"></div>'}]}
+        gd._update_navbar_github_link(self._wrap(navbar), "o", "r", "https://x.com", "widget")
+        assert len(navbar["right"]) == 1
+
+    def test_creates_right_list_if_missing(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        navbar = {}
+        gd._update_navbar_github_link(self._wrap(navbar), "o", "r", "https://github.com/o/r", "icon")
+        assert "right" in navbar
+        assert navbar["right"] == [{"icon": "github", "href": "https://github.com/o/r"}]
+
+
+# ---------------------------------------------------------------------------
+# _generate_cli_command_page – edge cases (nargs, hidden, bullets, envvar, default)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateCliCommandPage:
+
+    def _make_cli_info(self, **overrides):
+        base = {
+            "name": "mycli",
+            "short_help": "A test CLI.",
+            "description": "A test CLI for testing.",
+            "options": [],
+            "arguments": [],
+            "commands": [],
+        }
+        base.update(overrides)
+        return base
+
+    def test_nargs_minus1_gets_ellipsis(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        cli_info = self._make_cli_info(
+            arguments=[{"name": "FILES", "name_display": "FILES", "required": True, "nargs": -1}]
+        )
+        result = gd._generate_cli_command_page(cli_info, is_main=True)
+        assert "FILES..." in result
+
+    def test_hidden_option_skipped(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        cli_info = self._make_cli_info(
+            options=[
+                {"name": "--verbose", "name_display": "--verbose", "hidden": True, "help": "debug"},
+                {"name": "--output", "name_display": "--output", "hidden": False, "help": "output file"},
+            ]
+        )
+        result = gd._generate_cli_command_page(cli_info, is_main=True)
+        assert "output" in result
+        assert "verbose" not in result
+
+    def test_option_with_type_and_default(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        cli_info = self._make_cli_info(
+            options=[{
+                "name": "--count",
+                "name_display": "--count",
+                "type": "INT",
+                "default": "5",
+                "is_flag": False,
+                "help": "Number of items",
+            }]
+        )
+        result = gd._generate_cli_command_page(cli_info, is_main=True)
+        assert "INT" in result
+        assert "5" in result
+
+    def test_required_option(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        cli_info = self._make_cli_info(
+            options=[{
+                "name": "--name",
+                "name_display": "--name",
+                "required": True,
+                "help": "Your name",
+            }]
+        )
+        result = gd._generate_cli_command_page(cli_info, is_main=True)
+        assert "**Required.**" in result
+
+    def test_envvar_option(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        cli_info = self._make_cli_info(
+            options=[{
+                "name": "--token",
+                "name_display": "--token",
+                "envvar": "MY_TOKEN",
+                "help": "API token",
+            }]
+        )
+        result = gd._generate_cli_command_page(cli_info, is_main=True)
+        assert "`MY_TOKEN`" in result
+
+    def test_envvar_list_joined(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        cli_info = self._make_cli_info(
+            options=[{
+                "name": "--token",
+                "name_display": "--token",
+                "envvar": ["TOKEN_A", "TOKEN_B"],
+                "help": "API token",
+            }]
+        )
+        result = gd._generate_cli_command_page(cli_info, is_main=True)
+        assert "TOKEN_A, TOKEN_B" in result
+
+
+# ---------------------------------------------------------------------------
+# _count_cli_sidebar_items – dict with href
+# ---------------------------------------------------------------------------
+
+
+class TestCountCliSidebarItems:
+
+    def test_string_items_counted(self):
+        assert GreatDocs._count_cli_sidebar_items(["a.qmd", "b.qmd"]) == 2
+
+    def test_dict_with_href_counted_as_one(self):
+        items = [{"text": "Index", "href": "index.qmd"}]
+        assert GreatDocs._count_cli_sidebar_items(items) == 1
+
+    def test_nested_contents(self):
+        items = [{"contents": ["a.qmd", "b.qmd"]}]
+        assert GreatDocs._count_cli_sidebar_items(items) == 2
+
+
+# ---------------------------------------------------------------------------
+# _write_object_types_json – basic, member_types fallback, constant_metadata
+# ---------------------------------------------------------------------------
+
+
+class TestWriteObjectTypesJson:
+
+    def test_writes_object_types(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        gd._suppress_artifact_writes = False
+        categories = {
+            "classes": ["MyClass"],
+            "functions": ["my_func"],
+            "class_method_names": {"MyClass": ["method_a"]},
+            "class_member_types": {},
+        }
+        gd._write_object_types_json(categories)
+        import json
+        types_path = gd.project_path / "_object_types.json"
+        assert types_path.exists()
+        data = json.loads(types_path.read_text())
+        assert data["MyClass"] == "class"
+        assert data["my_func"] == "function"
+        assert data["MyClass.method_a"] == "method"
+
+    def test_member_types_fallback(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        gd._suppress_artifact_writes = False
+        categories = {
+            "classes": ["Foo"],
+            "class_method_names": {"Foo": ["bar"]},
+            "class_member_types": {"Foo.bar": "property", "Foo.baz": "attribute"},
+        }
+        gd._write_object_types_json(categories)
+        import json
+        data = json.loads((gd.project_path / "_object_types.json").read_text())
+        assert data["Foo.bar"] == "property"
+        assert data["Foo.baz"] == "attribute"
+
+    def test_constant_metadata_sidecar(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        gd._suppress_artifact_writes = False
+        categories = {
+            "constants": ["MY_CONST"],
+            "class_method_names": {},
+            "class_member_types": {},
+            "constant_metadata": {"MY_CONST": {"value": "42", "annotation": "int"}},
+        }
+        gd._write_object_types_json(categories)
+        import json
+        values_path = gd.project_path / "_constant_values.json"
+        assert values_path.exists()
+        data = json.loads(values_path.read_text())
+        assert data["MY_CONST"]["value"] == "42"
+
+    def test_suppressed_writes_nothing(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        gd._suppress_artifact_writes = True
+        gd._write_object_types_json({"classes": ["X"], "class_method_names": {}, "class_member_types": {}})
+        assert not (gd.project_path / "_object_types.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# _generate_package_info_page – early returns and marker branch
+# ---------------------------------------------------------------------------
+
+
+class TestGeneratePackageInfoPage:
+
+    def test_disabled_returns_none(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "package_info_page", False)
+        assert gd._generate_package_info_page() is None
+
+    def test_not_python_project_returns_none(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "package_info_page", True)
+        _patch_cfg(monkeypatch, gd, "is_python_project", False)
+        assert gd._generate_package_info_page() is None
+
+    def test_no_deps_returns_none(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "package_info_page", True)
+        _patch_cfg(monkeypatch, gd, "is_python_project", True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        monkeypatch.setattr(
+            gd,
+            "_get_package_metadata",
+            lambda: {"dependencies": [], "optional_dependencies_full": {}, "requires_python": ""},
+        )
+        assert gd._generate_package_info_page() is None
+
+    def test_generates_page_with_optional_markers(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "package_info_page", True)
+        _patch_cfg(monkeypatch, gd, "is_python_project", True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        monkeypatch.setattr(
+            gd,
+            "_get_package_metadata",
+            lambda: {
+                "dependencies": [{"name": "click", "specifier": ">=8.0"}],
+                "optional_dependencies_full": {
+                    "dev": [
+                        {"name": "pytest", "specifier": ">=7.0", "marker": 'python_version>="3.9"'},
+                    ]
+                },
+                "requires_python": ">=3.9",
+            },
+        )
+        monkeypatch.setattr(gd, "_fetch_pypi_dates", lambda names: {})
+        result = gd._generate_package_info_page()
+        assert result == "package-info.qmd"
+        content = (gd.project_path / "package-info.qmd").read_text()
+        assert "click" in content
+        assert "pytest" in content
+
+    def test_empty_optional_group(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "package_info_page", True)
+        _patch_cfg(monkeypatch, gd, "is_python_project", True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        monkeypatch.setattr(
+            gd,
+            "_get_package_metadata",
+            lambda: {
+                "dependencies": [{"name": "click", "specifier": ">=8.0"}],
+                "optional_dependencies_full": {"empty": []},
+                "requires_python": "",
+            },
+        )
+        monkeypatch.setattr(gd, "_fetch_pypi_dates", lambda names: {})
+        result = gd._generate_package_info_page()
+        assert result == "package-info.qmd"
+        content = (gd.project_path / "package-info.qmd").read_text()
+        assert "No dependencies declared" in content
+
+
+# ---------------------------------------------------------------------------
+# _generate_robots_txt – llms.txt and sitemap branches
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateRobotsTxt:
+
+    def _setup_gd(self, tmp_path, monkeypatch, **config_overrides):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        site_dir = gd.project_path / "_site"
+        site_dir.mkdir()
+        _patch_cfg(monkeypatch, gd, "robots_enabled", True)
+        _patch_cfg(monkeypatch, gd, "robots_allow_all", True)
+        _patch_cfg(monkeypatch, gd, "robots_disallow", [])
+        _patch_cfg(monkeypatch, gd, "robots_crawl_delay", None)
+        _patch_cfg(monkeypatch, gd, "robots_extra_rules", [])
+        _patch_cfg(monkeypatch, gd, "sitemap_enabled", False)
+        for k, v in config_overrides.items():
+            _patch_cfg(monkeypatch, gd, k, v)
+        return gd, site_dir
+
+    def test_basic_robots_txt(self, tmp_path, monkeypatch):
+        gd, site_dir = self._setup_gd(tmp_path, monkeypatch)
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: None)
+        gd._generate_robots_txt()
+        content = (site_dir / "robots.txt").read_text()
+        assert "Allow: /" in content
+
+    def test_no_site_dir_skips(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "robots_enabled", True)
+        gd._generate_robots_txt()
+        assert not (gd.project_path / "_site" / "robots.txt").exists()
+
+    def test_disallow_rules(self, tmp_path, monkeypatch):
+        gd, site_dir = self._setup_gd(tmp_path, monkeypatch, robots_disallow=["/private/", "/admin/"])
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: None)
+        gd._generate_robots_txt()
+        content = (site_dir / "robots.txt").read_text()
+        assert "Disallow: /private/" in content
+        assert "Disallow: /admin/" in content
+
+    def test_extra_rules(self, tmp_path, monkeypatch):
+        gd, site_dir = self._setup_gd(
+            tmp_path, monkeypatch,
+            robots_extra_rules=["User-agent: GPTBot", "Disallow: /"],
+        )
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: None)
+        gd._generate_robots_txt()
+        content = (site_dir / "robots.txt").read_text()
+        assert "User-agent: GPTBot" in content
+
+    def test_sitemap_reference(self, tmp_path, monkeypatch):
+        gd, site_dir = self._setup_gd(tmp_path, monkeypatch, sitemap_enabled=True)
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: "https://example.com/")
+        gd._generate_robots_txt()
+        content = (site_dir / "robots.txt").read_text()
+        assert "Sitemap: https://example.com/sitemap.xml" in content
+
+    def test_llms_txt_references(self, tmp_path, monkeypatch):
+        gd, site_dir = self._setup_gd(tmp_path, monkeypatch)
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: "https://example.com/")
+        (site_dir / "llms.txt").write_text("llms content", encoding="utf-8")
+        (site_dir / "llms-full.txt").write_text("full content", encoding="utf-8")
+        gd._generate_robots_txt()
+        content = (site_dir / "robots.txt").read_text()
+        assert "Llms-txt: https://example.com/llms.txt" in content
+        assert "Llms-txt: https://example.com/llms-full.txt" in content
+
+    def test_llms_txt_only_one(self, tmp_path, monkeypatch):
+        gd, site_dir = self._setup_gd(tmp_path, monkeypatch)
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: "https://example.com/")
+        (site_dir / "llms.txt").write_text("llms content", encoding="utf-8")
+        gd._generate_robots_txt()
+        content = (site_dir / "robots.txt").read_text()
+        assert "Llms-txt: https://example.com/llms.txt" in content
+        assert "llms-full.txt" not in content
+
+
+# ---------------------------------------------------------------------------
+# _inject_version_selector – full function coverage
+# ---------------------------------------------------------------------------
+
+
+class TestInjectVersionSelector:
+
+    def test_basic_injection(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        quarto_yml = gd.project_path / "_quarto.yml"
+        quarto_yml.write_text(
+            "project:\n  resources: []\nformat:\n  html:\n    include-in-header: []\n    include-after-body: []\n",
+            encoding="utf-8",
+        )
+        mock_versions = [MagicMock(tag="v1.0"), MagicMock(tag="v2.0")]
+        monkeypatch.setattr(
+            "great_docs._versioning.parse_versions_config",
+            lambda v: mock_versions,
+        )
+        monkeypatch.setattr(
+            "great_docs._versioning.build_version_map",
+            lambda versions, pages: {"versions": [{"tag": "v1.0"}, {"tag": "v2.0"}]},
+        )
+        _patch_cfg(monkeypatch, gd, "versions", [{"tag": "v1.0"}, {"tag": "v2.0"}])
+        _patch_cfg(monkeypatch, gd, "version_warning_banner", True)
+        gd._inject_version_selector(quarto_yml)
+        content = quarto_yml.read_text()
+        assert "gd-version-map" in content
+        assert "version-selector.js" in content
+
+    def test_string_header_converted_to_list(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        quarto_yml = gd.project_path / "_quarto.yml"
+        quarto_yml.write_text(
+            "project:\n  resources: []\nformat:\n  html:\n    include-in-header: old-header.html\n    include-after-body: []\n",
+            encoding="utf-8",
+        )
+        mock_versions = [MagicMock(tag="v1.0")]
+        monkeypatch.setattr(
+            "great_docs._versioning.parse_versions_config",
+            lambda v: mock_versions,
+        )
+        monkeypatch.setattr(
+            "great_docs._versioning.build_version_map",
+            lambda versions, pages: {},
+        )
+        _patch_cfg(monkeypatch, gd, "versions", [])
+        _patch_cfg(monkeypatch, gd, "version_warning_banner", True)
+        gd._inject_version_selector(quarto_yml)
+        content = quarto_yml.read_text()
+        assert "gd-version-map" in content
+
+    def test_string_after_body_converted_to_list(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        quarto_yml = gd.project_path / "_quarto.yml"
+        quarto_yml.write_text(
+            "project:\n  resources: []\nformat:\n  html:\n    include-in-header: []\n    include-after-body: old-body.html\n",
+            encoding="utf-8",
+        )
+        mock_versions = [MagicMock(tag="v1.0")]
+        monkeypatch.setattr(
+            "great_docs._versioning.parse_versions_config",
+            lambda v: mock_versions,
+        )
+        monkeypatch.setattr(
+            "great_docs._versioning.build_version_map",
+            lambda versions, pages: {},
+        )
+        _patch_cfg(monkeypatch, gd, "versions", [])
+        _patch_cfg(monkeypatch, gd, "version_warning_banner", True)
+        gd._inject_version_selector(quarto_yml)
+        content = quarto_yml.read_text()
+        assert "version-selector" in content
+
+    def test_warning_banner_disabled(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        quarto_yml = gd.project_path / "_quarto.yml"
+        quarto_yml.write_text(
+            "project:\n  resources: []\nformat:\n  html:\n    include-in-header: []\n    include-after-body: []\n",
+            encoding="utf-8",
+        )
+        mock_versions = [MagicMock(tag="v1.0")]
+        monkeypatch.setattr(
+            "great_docs._versioning.parse_versions_config",
+            lambda v: mock_versions,
+        )
+        monkeypatch.setattr(
+            "great_docs._versioning.build_version_map",
+            lambda versions, pages: {},
+        )
+        _patch_cfg(monkeypatch, gd, "versions", [])
+        _patch_cfg(monkeypatch, gd, "version_warning_banner", False)
+        gd._inject_version_selector(quarto_yml)
+        content = quarto_yml.read_text()
+        assert "gd-version-warning-banner" in content
+
+    def test_inserts_before_navbar_widgets(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        quarto_yml = gd.project_path / "_quarto.yml"
+        quarto_yml.write_text(
+            'project:\n  resources: []\nformat:\n  html:\n    include-in-header: []\n    include-after-body:\n      - text: \'<script src="navbar-widgets.js"></script>\'\n',
+            encoding="utf-8",
+        )
+        mock_versions = [MagicMock(tag="v1.0")]
+        monkeypatch.setattr(
+            "great_docs._versioning.parse_versions_config",
+            lambda v: mock_versions,
+        )
+        monkeypatch.setattr(
+            "great_docs._versioning.build_version_map",
+            lambda versions, pages: {},
+        )
+        _patch_cfg(monkeypatch, gd, "versions", [])
+        _patch_cfg(monkeypatch, gd, "version_warning_banner", True)
+        gd._inject_version_selector(quarto_yml)
+        content = quarto_yml.read_text()
+        assert "version-selector" in content
+
+    def test_resources_list_not_duplicated(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        quarto_yml = gd.project_path / "_quarto.yml"
+        quarto_yml.write_text(
+            "project:\n  resources:\n    - version-selector.js\nformat:\n  html:\n    include-in-header: []\n    include-after-body: []\n",
+            encoding="utf-8",
+        )
+        mock_versions = [MagicMock(tag="v1.0")]
+        monkeypatch.setattr(
+            "great_docs._versioning.parse_versions_config",
+            lambda v: mock_versions,
+        )
+        monkeypatch.setattr(
+            "great_docs._versioning.build_version_map",
+            lambda versions, pages: {},
+        )
+        _patch_cfg(monkeypatch, gd, "versions", [])
+        _patch_cfg(monkeypatch, gd, "version_warning_banner", True)
+        gd._inject_version_selector(quarto_yml)
+
+
+# ---------------------------------------------------------------------------
+# _persist_freeze_cache – merge and JS newline
+# ---------------------------------------------------------------------------
+
+
+class TestPersistFreezeCache:
+
+    def test_no_freeze_sources_returns_none(self, tmp_path):
+        gd = _make_gd(tmp_path)
+        result = gd._persist_freeze_cache()
+        assert result is None
+
+    def test_merges_freeze_caches(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(
+            "great_docs.core.is_great_docs_build_dir",
+            lambda d: d.name.startswith("great-docs-"),
+        )
+
+        v1_freeze = tmp_path / "great-docs-v1" / "_freeze" / "page1.json"
+        v1_freeze.parent.mkdir(parents=True)
+        v1_freeze.write_text('{"v": 1}', encoding="utf-8")
+
+        v2_freeze = tmp_path / "great-docs-v2" / "_freeze" / "page1.json"
+        v2_freeze.parent.mkdir(parents=True)
+        v2_freeze.write_text('{"v": 2}', encoding="utf-8")
+
+        result = gd._persist_freeze_cache()
+        assert result is not None
+        merged = tmp_path / "_freeze" / "page1.json"
+        assert merged.exists()
+        assert '"v": 2' in merged.read_text()
+
+    def test_js_newline_appended(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(
+            "great_docs.core.is_great_docs_build_dir",
+            lambda d: d.name.startswith("great-docs-"),
+        )
+
+        freeze_dir = tmp_path / "great-docs-v1" / "_freeze"
+        js_file = freeze_dir / "chunk.js"
+        js_file.parent.mkdir(parents=True)
+        js_file.write_bytes(b"var x = 1;")
+
+        gd._persist_freeze_cache()
+        merged_js = tmp_path / "_freeze" / "chunk.js"
+        assert merged_js.read_bytes().endswith(b"\n")
+
+
+# ---------------------------------------------------------------------------
+# _generate_source_links_json – _make_github_url branches, class methods
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateSourceLinksJson:
+
+    def test_disabled_returns_early(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": False})
+        gd._generate_source_links_json("mypkg")
+        assert not (gd.project_path / "_source_links.json").exists()
+
+    def test_no_github_info_returns_early(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: (None, None, None))
+        gd._generate_source_links_json("mypkg")
+        assert not (gd.project_path / "_source_links.json").exists()
+
+    def test_no_exports_returns_early(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("owner", "repo", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: None)
+        gd._generate_source_links_json("mypkg")
+        assert not (gd.project_path / "_source_links.json").exists()
+
+    def test_writes_source_links(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("owner", "repo", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_detect_git_ref", lambda: "main")
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: ["MyFunc"])
+        monkeypatch.setattr(gd, "_find_package_root", lambda: tmp_path / "src" / "mypkg")
+        monkeypatch.setattr(
+            gd,
+            "_get_source_location",
+            lambda pkg, name: {"file": "module.py", "start_line": 10, "end_line": 20},
+        )
+        mock_pkg = MagicMock()
+        mock_pkg.members = {}
+        monkeypatch.setattr(gd, "_get_griffe_package", lambda p: mock_pkg)
+        gd._generate_source_links_json("mypkg")
+        import json
+        data = json.loads((gd.project_path / "_source_links.json").read_text())
+        assert "MyFunc" in data
+        assert "#L10-L20" in data["MyFunc"]["url"]
+
+    def test_single_line_anchor(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("o", "r", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_detect_git_ref", lambda: "main")
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: ["F"])
+        monkeypatch.setattr(gd, "_find_package_root", lambda: tmp_path)
+        monkeypatch.setattr(
+            gd,
+            "_get_source_location",
+            lambda pkg, name: {"file": "f.py", "start_line": 5, "end_line": 5},
+        )
+        mock_pkg = MagicMock()
+        mock_pkg.members = {}
+        monkeypatch.setattr(gd, "_get_griffe_package", lambda p: mock_pkg)
+        gd._generate_source_links_json("mypkg")
+        import json
+        data = json.loads((gd.project_path / "_source_links.json").read_text())
+        assert "#L5" in data["F"]["url"]
+        assert "#L5-L" not in data["F"]["url"]
+
+    def test_source_path_override(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            gd, "_get_package_metadata",
+            lambda: {"source_link_enabled": True, "source_link_path": "src/mypkg"},
+        )
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("o", "r", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_detect_git_ref", lambda: "main")
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: ["F"])
+        monkeypatch.setattr(gd, "_find_package_root", lambda: tmp_path)
+        monkeypatch.setattr(
+            gd,
+            "_get_source_location",
+            lambda pkg, name: {"file": "/abs/path/module.py", "start_line": 1, "end_line": 1},
+        )
+        mock_pkg = MagicMock()
+        mock_pkg.members = {}
+        monkeypatch.setattr(gd, "_get_griffe_package", lambda p: mock_pkg)
+        gd._generate_source_links_json("mypkg")
+        import json
+        data = json.loads((gd.project_path / "_source_links.json").read_text())
+        assert "src/mypkg/module.py" in data["F"]["url"]
+
+    def test_absolute_filepath_relative_to_root(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        pkg_root = tmp_path / "src" / "mypkg"
+        pkg_root.mkdir(parents=True)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("o", "r", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_detect_git_ref", lambda: "main")
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: ["F"])
+        monkeypatch.setattr(gd, "_find_package_root", lambda: pkg_root)
+        monkeypatch.setattr(
+            gd,
+            "_get_source_location",
+            lambda pkg, name: {"file": str(pkg_root / "core.py"), "start_line": 1, "end_line": 1},
+        )
+        mock_pkg = MagicMock()
+        mock_pkg.members = {}
+        monkeypatch.setattr(gd, "_get_griffe_package", lambda p: mock_pkg)
+        gd._generate_source_links_json("mypkg")
+        import json
+        data = json.loads((gd.project_path / "_source_links.json").read_text())
+        assert "core.py" in data["F"]["url"]
+
+    def test_griffe_exception_sets_pkg_none(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("o", "r", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_detect_git_ref", lambda: "main")
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: ["F"])
+        monkeypatch.setattr(gd, "_find_package_root", lambda: tmp_path)
+        monkeypatch.setattr(
+            gd,
+            "_get_source_location",
+            lambda pkg, name: {"file": "f.py", "start_line": 1, "end_line": 1},
+        )
+
+        def raise_err(p):
+            raise RuntimeError("griffe failed")
+
+        monkeypatch.setattr(gd, "_get_griffe_package", raise_err)
+        gd._generate_source_links_json("mypkg")
+        import json
+        data = json.loads((gd.project_path / "_source_links.json").read_text())
+        assert "F" in data
+
+    def test_class_methods_included(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {"source_link_enabled": True})
+        monkeypatch.setattr(gd, "_get_github_repo_info", lambda: ("o", "r", "https://github.com/o/r"))
+        monkeypatch.setattr(gd, "_detect_git_ref", lambda: "main")
+        monkeypatch.setattr(gd, "_get_package_exports", lambda p: ["MyClass"])
+        monkeypatch.setattr(gd, "_find_package_root", lambda: tmp_path)
+
+        cls_obj = MagicMock()
+        cls_obj.kind.value = "class"
+        method_member = MagicMock()
+        method_member.kind.value = "method"
+        cls_obj.members = {"__init__": MagicMock(), "do_stuff": method_member, "_private": MagicMock()}
+        cls_obj.members["__init__"].kind.value = "function"
+        cls_obj.members["_private"].kind.value = "function"
+
+        mock_pkg = MagicMock()
+        mock_pkg.members = {"MyClass": cls_obj}
+        monkeypatch.setattr(gd, "_get_griffe_package", lambda p: mock_pkg)
+
+        call_count = {"n": 0}
+
+        def fake_source_loc(pkg, name):
+            call_count["n"] += 1
+            return {"file": "mod.py", "start_line": call_count["n"], "end_line": call_count["n"] + 5}
+
+        monkeypatch.setattr(gd, "_get_source_location", fake_source_loc)
+        gd._generate_source_links_json("mypkg")
+        import json
+        data = json.loads((gd.project_path / "_source_links.json").read_text())
+        assert "MyClass" in data
+        assert "MyClass.do_stuff" in data
+        assert "MyClass._private" not in data
+
+
+# ---------------------------------------------------------------------------
+# _generate_tags_json – shadow tags, tag-location override, icon resolution
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateTagsJson:
+
+    def _setup_gd(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd.project_path.mkdir(parents=True, exist_ok=True)
+        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "tags_shadow", {"internal"})
+        _patch_cfg(monkeypatch, gd, "sections", [])
+        _patch_cfg(monkeypatch, gd, "tags_icons", {})
+        _patch_cfg(monkeypatch, gd, "tags_hierarchical", False)
+        _patch_cfg(monkeypatch, gd, "tags_location", "bottom")
+        return gd
+
+    def test_writes_tags_json(self, tmp_path, monkeypatch):
+        gd = self._setup_gd(tmp_path, monkeypatch)
+        tag_index = {"mytag": [{"title": "Page 1", "href": "page1.qmd", "section": "Guide"}]}
+        gd._generate_tags_json(tag_index)
+        import json
+        data = json.loads((gd.project_path / "_tags.json").read_text())
+        assert "page_tags" in data
+        assert "tag_meta" in data
+        assert data["tag_meta"]["mytag"]["count"] == 1
+
+    def test_shadow_tag_scanned(self, tmp_path, monkeypatch):
+        gd = self._setup_gd(tmp_path, monkeypatch)
+        ug_dir = gd.project_path / "user-guide"
+        ug_dir.mkdir()
+        qmd = ug_dir / "page.qmd"
+        qmd.write_text("---\ntags:\n  - internal\ntitle: Secret\n---\nbody\n", encoding="utf-8")
+        tag_index = {}
+        gd._generate_tags_json(tag_index)
+        import json
+        data = json.loads((gd.project_path / "_tags.json").read_text())
+        assert "internal" in data["shadow"]
+
+    def test_tag_location_override(self, tmp_path, monkeypatch):
+        gd = self._setup_gd(tmp_path, monkeypatch)
+        ug_dir = gd.project_path / "user-guide"
+        ug_dir.mkdir()
+        qmd = ug_dir / "page.qmd"
+        qmd.write_text("---\ntags:\n  - visible\ntag-location: top\ntitle: P\n---\nbody\n", encoding="utf-8")
+        tag_index = {"visible": [{"title": "P", "href": "user-guide/page.qmd", "section": "UG"}]}
+        gd._generate_tags_json(tag_index)
+        import json
+        data = json.loads((gd.project_path / "_tags.json").read_text())
+        assert data["page_tag_locations"].get("user-guide/page.qmd") == "top"
+
+    def test_icon_resolution(self, tmp_path, monkeypatch):
+        gd = self._setup_gd(tmp_path, monkeypatch)
+        _patch_cfg(monkeypatch, gd, "tags_icons", {"mytag": "star"})
+        monkeypatch.setattr("great_docs._icons.get_icon_svg", lambda name, **kw: "<svg>star</svg>")
+        tag_index = {"mytag": [{"title": "P", "href": "p.qmd", "section": "S"}]}
+        gd._generate_tags_json(tag_index)
+        import json
+        data = json.loads((gd.project_path / "_tags.json").read_text())
+        assert data["icons"]["mytag"] == "<svg>star</svg>"
+
+    def test_unknown_icon_warns(self, tmp_path, monkeypatch, capsys):
+        gd = self._setup_gd(tmp_path, monkeypatch)
+        _patch_cfg(monkeypatch, gd, "tags_icons", {"bad": "nonexistent"})
+        monkeypatch.setattr("great_docs._icons.get_icon_svg", lambda name, **kw: None)
+        tag_index = {}
+        gd._generate_tags_json(tag_index)
+        captured = capsys.readouterr()
+        assert "Unknown tag icon" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _create_api_sections_from_config – include_inherited
+# ---------------------------------------------------------------------------
+
+
+class TestCreateApiSectionsFromConfig:
+
+    def test_no_reference_returns_none(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "reference", None)
+        assert gd._create_api_sections_from_config("mypkg") is None
+
+    def test_include_inherited_on_explicit_members(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "reference", [
+            {
+                "title": "Classes",
+                "contents": [
+                    {"name": "MyClass", "members": ["method_a"], "include_inherited": True},
+                ],
+            }
+        ])
+        monkeypatch.setattr(
+            gd, "_categorize_referenced_objects",
+            lambda pkg, ref: {"classes": [], "functions": []},
+        )
+        result = gd._create_api_sections_from_config("mypkg")
+        assert result is not None
+        found = False
+        for section in result:
+            for item in section.get("contents", []):
+                if isinstance(item, dict) and item.get("name") == "MyClass":
+                    assert item.get("include_inherited") is True
+                    found = True
+        assert found
+
+    def test_include_inherited_on_default_entry(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "reference", [
+            {
+                "title": "Classes",
+                "contents": [
+                    {"name": "MyClass", "include_inherited": True},
+                ],
+            }
+        ])
+        monkeypatch.setattr(
+            gd, "_categorize_referenced_objects",
+            lambda pkg, ref: {"classes": [], "functions": []},
+        )
+        result = gd._create_api_sections_from_config("mypkg")
+        found = False
+        for section in result:
+            for item in section.get("contents", []):
+                if isinstance(item, dict) and item.get("include_inherited") is True:
+                    found = True
+        assert found
+
+    def test_plain_string_when_no_include_inherited(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        _patch_cfg(monkeypatch, gd, "reference", [
+            {
+                "title": "Funcs",
+                "contents": [
+                    {"name": "my_func"},
+                ],
+            }
+        ])
+        monkeypatch.setattr(
+            gd, "_categorize_referenced_objects",
+            lambda pkg, ref: {"classes": [], "functions": []},
+        )
+        result = gd._create_api_sections_from_config("mypkg")
+        for section in result:
+            for item in section.get("contents", []):
+                if item == "my_func":
+                    return
+        raise AssertionError("Expected plain string 'my_func' in contents")

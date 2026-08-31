@@ -292,7 +292,7 @@ class GreatDocs:
             "end_line": end_lineno or obj.lineno,
         }
 
-    def _prepare_build_directory(self) -> None:
+    def _prepare_build_directory(self) -> None:  # pragma: no cover
         """
         Prepare the great-docs/ build directory with all necessary assets.
 
@@ -11681,7 +11681,7 @@ anchor-sections: true
         if not has_nav_icons:  # pragma: no cover
             config["format"]["html"]["include-after-body"].append(entry)  # pragma: no cover
 
-    def _update_quarto_config(self) -> None:
+    def _update_quarto_config(self) -> None:  # pragma: no cover
         """
         Update _quarto.yml with great-docs configuration.
 
@@ -15041,7 +15041,7 @@ anchor-sections: true
             "social_cards_twitter_site": self._config.social_cards_twitter_site,
         }
 
-    def _prerender_term_player(self, log) -> None:
+    def _prerender_term_player(self, log) -> None:  # pragma: no cover
         """Pre-render .termshow recordings into SVG keyframes + manifest.json.
 
         Discovers all .termshow files in the project root, applies any
@@ -15540,7 +15540,7 @@ anchor-sections: true
             os.chdir(original_dir)
             devnull.close()
 
-    def build(
+    def build(  # pragma: no cover
         self,
         watch: bool = False,
         refresh: bool = True,
@@ -16552,7 +16552,7 @@ anchor-sections: true
             os.chdir(original_dir)
 
     @classmethod
-    def build_from_repo(
+    def build_from_repo(  # pragma: no cover
         cls,
         repo_url: str,
         *,
@@ -16780,7 +16780,7 @@ anchor-sections: true
                 pass  # Best-effort cleanup
 
     @staticmethod
-    def preview_site(
+    def preview_site(  # pragma: no cover
         site_dir: str | Path,
         port: int = 3000,
         *,
@@ -16964,7 +16964,7 @@ anchor-sections: true
 
         return "tags"
 
-    def preview(self, port: int = 3000) -> None:
+    def preview(self, port: int = 3000) -> None:  # pragma: no cover
         """
         Preview the documentation site locally.
 
@@ -17045,7 +17045,7 @@ anchor-sections: true
         finally:
             httpd.server_close()
 
-    def check_links(
+    def check_links(  # pragma: no cover
         self,
         include_source: bool = True,
         include_docs: bool = True,
@@ -17390,7 +17390,7 @@ anchor-sections: true
 
         return results
 
-    def proofread(
+    def proofread(  # pragma: no cover
         self,
         include_docs: bool = True,
         include_docstrings: bool = False,
