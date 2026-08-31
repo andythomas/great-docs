@@ -15094,8 +15094,9 @@ anchor-sections: true
 
         Replace the bundled partial's `<title>` element and preserve its other
         tags. The bundled copy keeps the metadata independent of the installed
-        Quarto version. Leave Quarto's default title unchanged if the template
-        is unsupported or the HTML configuration is unavailable.
+        Quarto version. Leave Quarto's default title unchanged when SEO is
+        disabled, when the template is unsupported, or when the HTML
+        configuration is unavailable.
 
         Parameters
         ----------
@@ -15108,6 +15109,9 @@ anchor-sections: true
         :
             Nothing.
         """
+        if not self._config.seo_enabled:
+            return
+
         title_line = self._build_title_template_line(self._config.seo_title_template)
         if title_line is None:
             print(
