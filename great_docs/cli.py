@@ -2342,7 +2342,12 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
         images_missing_alt = 0
 
         canonical_base = docs._get_canonical_base_url()
+
+        # The audit requires the site name only when `{site_name}` appears in the
+        # configured template. A template without the placeholder excludes the name.
         site_name = docs._get_site_name()
+        if "{site_name}" not in docs._config.seo_title_template:
+            site_name = ""
 
         for html_file in html_files:
             rel_path = html_file.relative_to(site_dir).as_posix()
@@ -2401,9 +2406,7 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
             info.append("✅ All pages have meta descriptions")
 
         if pages_missing_site_name > 0:
-            warnings.append(
-                f"⚠️  {pages_missing_site_name} pages have titles without the site name"
-            )
+            warnings.append(f"⚠️  {pages_missing_site_name} pages have titles without the site name")
 
         if pages_with_json_ld > 0:
             info.append(f"✅ {pages_with_json_ld} pages have JSON-LD structured data")
