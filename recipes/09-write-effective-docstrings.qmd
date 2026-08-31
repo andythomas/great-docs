@@ -165,4 +165,6 @@ def encode(data: bytes) -> str:
 
 ## Docstrings That Do Not Render Well
 
-A few patterns cause problems in the rendered output. Avoid very long summary lines that wrap awkwardly in the sidebar. Avoid using reStructuredText constructs (like `:param:` or `.. note::`) unless your parser is set to `sphinx`. And avoid leaving parameters undocumented when other parameters in the same function are documented, as this creates an inconsistent appearance.
+Some patterns render poorly. Keep summary lines short enough for the sidebar. Use
+`parser: sphinx` for reStructuredText field lists and roles such as `:param:` and
+`` :py:exc:`ValueError` ``. If you document one parameter, document them all.

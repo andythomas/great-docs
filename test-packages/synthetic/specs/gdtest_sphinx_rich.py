@@ -3,8 +3,8 @@ gdtest_sphinx_rich — Rich Sphinx-format docstrings with field lists.
 
 Dimensions: L17
 Focus: Two functions with comprehensive Sphinx-format docstrings using
-       :param:, :type:, :returns:, :rtype:, :raises:, plus prose Notes
-       and Examples blocks.
+       :param:, :type:, :returns:, :rtype:, and :raises:, plus Notes and
+       Examples sections and cross-reference roles.
 """
 
 SPEC = {
@@ -49,6 +49,9 @@ SPEC = {
 
                     Never pass untrusted input directly as the command string.
                     This function does not sanitize inputs.
+
+                Raises :py:exc:`TimeoutError` once the deadline passes; call
+                :func:`schedule` instead to queue the command for later.
 
                 **Examples**::
 

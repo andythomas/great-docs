@@ -50,13 +50,6 @@ except ImportError:
 
 requires_bs4 = pytest.mark.skipif(not HAS_BS4, reason="beautifulsoup4 not installed")
 
-# ── Skip the whole module if rendered output doesn't exist ───────────────────
-
-pytestmark = pytest.mark.skipif(
-    not _RENDERED_DIR.exists(),
-    reason="No rendered GDG output found (run `python test-packages/render_all.py --build` first)",
-)
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -95,6 +88,17 @@ def _load_html(html_path: Path) -> "BeautifulSoup":
 def _has_rendered_site(pkg_name: str) -> bool:
     """Check whether a package has a rendered _site/ directory."""
     return _site_dir(pkg_name).is_dir()
+
+
+_CITATION_AUTHOR_RE = re.compile(r"^\s*\.\.\s+\[1\]\s+([A-Za-z]+)", re.MULTILINE)
+
+
+def _first_citation_author(pkg_name: str) -> str:
+    """Return the author surname from a fixture's first `.. [1]` citation"""
+    spec_path = _TEST_PACKAGES_DIR / "synthetic" / "specs" / f"{pkg_name}.py"
+    match = _CITATION_AUTHOR_RE.search(spec_path.read_text(encoding="utf-8"))
+    assert match, f"{pkg_name}: fixture source contains no `.. [1]` citation"
+    return match.group(1)
 
 
 def _spec_file_exists(name: str) -> bool:
@@ -167,6 +171,13 @@ def _get_description(soup: "BeautifulSoup") -> str | None:
 # This eliminates runtime `pytest.skip()` calls and keeps the test count lean.
 
 _RENDERED_PACKAGES: list[str] = [n for n in ALL_PACKAGES if _has_rendered_site(n)]
+
+# Collect tests from any available sites. Skip the module only when no rendered
+# package exists; parameters derived from this list support partial builds.
+pytestmark = pytest.mark.skipif(
+    not _RENDERED_PACKAGES,
+    reason="no rendered Gauntlet output; run `python test-packages/render_all.py --build`",
+)
 
 # Cache expectations so we only load each spec once
 _EXPECTED_CACHE: dict[str, dict] = {n: _get_expected(n) for n in _RENDERED_PACKAGES}
@@ -606,6 +617,10 @@ def test_reference_page_heading_levels(pkg_name: str):
         pytest.skip(f"{pkg_name}: no member sections to check")
 
 
+# These packages contain the class members required by the `h3` assertion.
+_MEMBER_CHECK_PKGS = ("gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs")
+
+
 @requires_bs4
 def test_reference_page_heading_levels_exercises_member_check():
     """
@@ -614,8 +629,11 @@ def test_reference_page_heading_levels_exercises_member_check():
     This fails if every parametrised package loses its class members and the
     `h3` member assertion stops running.
     """
+    if not any(_has_rendered_site(n) for n in _MEMBER_CHECK_PKGS):
+        pytest.skip("none of the member-check packages is rendered")
+
     found_members = False
-    for pkg_name in ("gdtest_minimal", "gdtest_google", "gdtest_sphinx", "gdtest_mixed_docs"):
+    for pkg_name in _MEMBER_CHECK_PKGS:
         ref = _ref_dir(pkg_name)
         if not ref.exists():
             continue
@@ -788,77 +806,199 @@ def test_subtitle_only_section_heading_in_llms_outputs():
 
 
 @requires_bs4
-def test_fallback_docstring_section_nested_in_member_renders_as_h4():
+@pytest.mark.parametrize(
+    "pkg_name",
+    ["gdtest_mixed_docs", "gdtest_sphinx", "gdtest_google"],
+)
+def test_no_fabricated_docstring_sections(pkg_name: str):
     """
-    Verify that fallback sections follow member nesting
+    Verify docstring sections use only renderer markup
 
-    `Converter.is_valid` renders at `h3`, so its fallback Parameters and
-    Returns sections must render at `h4`. The top-level `validate` function's
-    fallback sections remain at `h2`.
+    Renderer sections use `doc-{slug}` classes. The retired post-render
+    conversion used `doc-section`, so that class identifies fabricated
+    sections.
+
+    `gdtest_mixed_docs` previously contained fabricated markup and pins the
+    regression. The Sphinx and Google fixtures ensure the other parsers do not
+    acquire it.
     """
-    converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
-    if not converter.exists():
-        pytest.skip("No Converter page for gdtest_mixed_docs")
+    if not _has_rendered_site(pkg_name):
+        pytest.skip(f"{pkg_name} not rendered")
 
-    soup = _load_html(converter)
+    pages = list(_ref_dir(pkg_name).glob("*.html"))
+    assert pages, f"{pkg_name}: no reference pages were rendered"
 
-    is_valid_section = soup.select_one("section#is_valid")
-    assert is_valid_section is not None, "is_valid member section is missing"
-    assert is_valid_section.get("class") and "level3" in is_valid_section["class"], (
-        "is_valid member section is not level3"
-    )
-
-    fallback_headings = is_valid_section.select(
-        "section.doc-section h1, "
-        "section.doc-section h2, section.doc-section h3, section.doc-section h4"
-    )
-    assert fallback_headings, "is_valid has no fallback sections to check"
-    for heading in fallback_headings:
-        assert heading.name == "h4", (
-            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
-            f"inside is_valid, found {heading.name}"
+    for html_file in pages:
+        soup = _load_html(html_file)
+        fabricated = soup.select("[class*=doc-section]")
+        assert not fabricated, (
+            f"{html_file.name}: found {len(fabricated)} fabricated "
+            f"doc-section element(s)"
         )
-
-    validate_page = _ref_dir("gdtest_mixed_docs") / "validate.html"
-    if validate_page.exists():
-        validate_soup = _load_html(validate_page)
-        top_level_headings = validate_soup.select("section.doc-section h2")
-        assert top_level_headings, "validate has no top-level h2 fallback sections"
 
 
 @requires_bs4
-def test_chained_fallback_translators_stay_at_h4_in_member():
+def test_unread_dialect_renders_as_prose():
     """
-    Verify that chained fallback sections remain nested
+    Verify unsupported docstring syntax remains prose
 
-    `Converter.merge` triggers field and bold-section fallbacks in sequence.
-    The first emits an `h4`; the second must treat that heading as member
-    context and emit another `h4`.
+    `Converter.merge` contains Sphinx fields and a bold pseudo-heading, but the
+    fixture uses the numpy parser. Neither form is valid for that parser, so
+    both must remain plain prose.
     """
     converter = _ref_dir("gdtest_mixed_docs") / "Converter.html"
     if not converter.exists():
         pytest.skip("No Converter page for gdtest_mixed_docs")
 
     soup = _load_html(converter)
-
     merge_section = soup.select_one("section#merge")
     assert merge_section is not None, "merge member section is missing"
-    assert merge_section.get("class") and "level3" in merge_section["class"], (
-        "merge member section is not level3"
+
+    assert not merge_section.select("[class*=doc-section]"), (
+        "merge contains fabricated doc-section markup"
+    )
+    assert "Converter whose settings to copy." in merge_section.get_text(), (
+        "merge's unsupported Sphinx field disappeared instead of remaining prose"
     )
 
-    fallback_headings = merge_section.select(
-        "section.doc-section h1, section.doc-section h2, "
-        "section.doc-section h3, section.doc-section h4"
-    )
-    assert fallback_headings, "merge has no fallback sections to check"
-    for heading in fallback_headings:
-        assert heading.name == "h4", (
-            f"expected h4 fallback section {heading.get_text(strip=True)!r} "
-            f"inside merge, found {heading.name}"
+
+@requires_bs4
+def test_docstring_citations_resolve():
+    """
+    Verify project-bibliography citations resolve in docstrings
+
+    `gdtest_bibliography` cites `[@knuth1984]` from a project bibliography.
+    The marker must render as a reference, with no RST marker or unresolved
+    citation key left in the page.
+    """
+    if not _has_rendered_site("gdtest_bibliography"):
+        pytest.skip("gdtest_bibliography not rendered")
+
+    pages = [
+        p for p in _ref_dir("gdtest_bibliography").glob("*.html")
+        if p.name != "index.html"
+    ]
+    assert pages, "no reference pages were rendered"
+
+    citations = 0
+    for html_file in pages:
+        soup = _load_html(html_file)
+        main = soup.select_one("main.content")
+        if main is None:
+            continue
+
+        text = main.get_text()
+        assert ".. [" not in text, f"{html_file.name}: contains a raw RST citation"
+        assert "[@" not in text, f"{html_file.name}: contains an unresolved citekey"
+        citations += len(main.select("div#refs, span.citation, a.citation"))
+
+    assert citations, "no reference page contains a resolved citation"
+
+
+@requires_bs4
+@pytest.mark.parametrize(
+    "pkg_name",
+    [
+        "gdtest_docstring_references",
+        "gdtest_numpy_rich",
+        "gdtest_long_docs",
+        "gdtest_docstring_combo",
+    ],
+)
+def test_local_citations_render_as_a_list(pkg_name: str):
+    """
+    Verify local numbered citations render as ordered lists
+
+    Each numpy fixture defines numbered citations. Read its expected author
+    surname from the fixture source so unrelated ordered lists cannot satisfy
+    the test.
+    """
+    if not _has_rendered_site(pkg_name):
+        pytest.skip(f"{pkg_name} not rendered")
+
+    pages = [p for p in _ref_dir(pkg_name).glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg_name}: no reference pages were rendered"
+
+    expected_author = _first_citation_author(pkg_name)
+    pages_with_lists = []
+    pages_with_author = []
+    for html_file in pages:
+        soup = _load_html(html_file)
+        main = soup.select_one("main.content")
+        if main is None:
+            continue
+
+        assert ".. [" not in main.get_text(), (
+            f"{html_file.name}: contains a raw RST citation"
         )
-    section_names = {h.get_text(strip=True) for h in fallback_headings}
-    assert "Notes" in section_names, "merge's chained Notes section is missing"
+        list_items = main.select("ol li")
+        if list_items:
+            pages_with_lists.append(html_file.name)
+        if any(expected_author in li.get_text() for li in list_items):
+            pages_with_author.append(html_file.name)
+
+    assert pages_with_lists, (
+        f"{pkg_name}: no reference page contains a citation list"
+    )
+    assert pages_with_author, (
+        f"{pkg_name}: no citation list contains expected author {expected_author}"
+    )
+
+
+@requires_bs4
+def test_citation_references_resolve_both_ways():
+    """
+    Verify rendered citation links resolve in both directions
+
+    `gdtest_long_docs` defines `.. [1]` and references it twice. Every link must
+    target an anchor on the same page, source markers must disappear, and the
+    repeated references must produce lettered backlinks.
+    """
+    pkg = "gdtest_long_docs"
+    if not _has_rendered_site(pkg):
+        pytest.skip(f"{pkg} not rendered")
+
+    pages = [p for p in _ref_dir(pkg).glob("*.html") if p.name != "index.html"]
+    assert pages, f"{pkg}: no reference pages were rendered"
+
+    forward = 0
+    backward = 0
+    lettered_pages = []
+    for html_file in pages:
+        soup = _load_html(html_file)
+        main = soup.select_one("main.content")
+        if main is None:
+            continue
+
+        assert not re.search(r"\[\d+\]_", main.get_text()), (
+            f"{html_file.name}: contains an unconverted citation reference"
+        )
+
+        for anchor in main.select('a[href^="#cite-"], a[href^="#ref-"]'):
+            target = anchor["href"].lstrip("#")
+            assert main.select_one(f'[id="{target}"]') is not None, (
+                f"{html_file.name}: citation target {target!r} is missing"
+            )
+            if target.startswith("cite-"):
+                forward += 1
+            else:
+                backward += 1
+
+        carets = main.select("span.gd-linkback-caret")
+        letters = main.select("a.gd-linkback-letter")
+        if carets and len(letters) >= 2:
+            lettered_pages.append(html_file.name)
+            for letter in letters:
+                target = letter["href"].lstrip("#")
+                assert main.select_one(f'[id="{target}"]') is not None, (
+                    f"{html_file.name}: lettered backlink target {target!r} is missing"
+                )
+
+    assert forward, f"{pkg}: no reference links to a citation"
+    assert backward, f"{pkg}: no citation links back to a reference"
+    assert lettered_pages, (
+        f"{pkg}: no page contains lettered backlinks for repeated references"
+    )
 
 
 @requires_bs4
@@ -1759,13 +1899,19 @@ def test_landing_page_has_title(pkg_name: str):
         "gdtest_sphinx_mixed_roles",
     ],
 )
-def test_sphinx_roles_stripped(pkg_name: str):
-    """Sphinx cross-reference roles (:func:, :class:, etc.) should be stripped."""
+def test_sphinx_roles_survive_under_numpy_parser(pkg_name: str):
+    """
+    Verify numpy docstrings preserve Sphinx role syntax
+
+    These fixtures contain Sphinx roles but use the numpy parser. At least one
+    rendered page from each fixture must therefore retain literal role text.
+    """
     if not _has_rendered_site(pkg_name):
         pytest.skip(f"{pkg_name} not rendered")
 
-    ref = _ref_dir(pkg_name)
-    for html_file in ref.glob("*.html"):
+    roles = (":func:", ":class:", ":meth:", ":exc:")
+    pages_with_roles = []
+    for html_file in _ref_dir(pkg_name).glob("*.html"):
         if html_file.name == "index.html":
             continue
 
@@ -1774,20 +1920,52 @@ def test_sphinx_roles_stripped(pkg_name: str):
         if main is None:
             continue
 
-        text = main.get_text()
-        for role in (
-            ":func:",
-            ":class:",
-            ":meth:",
-            ":exc:",
-            ":py:func:",
-            ":py:class:",
-            ":py:meth:",
-            ":py:exc:",
-        ):
-            assert role not in text, (
-                f"{html_file.name}: raw Sphinx role {role!r} found in rendered text"
-            )
+        if any(role in main.get_text() for role in roles):
+            pages_with_roles.append(html_file.name)
+
+    assert pages_with_roles, (
+        f"{pkg_name}: no rendered page preserved a Sphinx role; the fixture "
+        f"may contain no roles, or role conversion may have run"
+    )
+
+
+@requires_bs4
+def test_sphinx_roles_converted_under_sphinx_parser():
+    """
+    Verify Sphinx docstrings convert cross-reference roles
+
+    Each role must become inline code. Callable roles must also gain
+    parentheses, which distinguishes conversion from simply removing markup.
+    """
+    if not _has_rendered_site("gdtest_sphinx_rich"):
+        pytest.skip("gdtest_sphinx_rich not rendered")
+
+    execute_page = _ref_dir("gdtest_sphinx_rich") / "execute.html"
+    if not execute_page.exists():
+        pytest.skip("No execute page for gdtest_sphinx_rich")
+
+    main = _load_html(execute_page).select_one("main.content")
+    assert main is not None, "execute page has no main content"
+
+    text = main.get_text()
+    for role in (":py:exc:", ":func:", ":class:"):
+        assert role not in text, f"raw Sphinx role {role!r} survived conversion"
+
+    # The Raises section contains an independent `TimeoutError` annotation.
+    # Limit this check to prose so that annotation cannot hide failed role
+    # conversion.
+    prose = main.select_one("div.doc-text")
+    assert prose is not None, "execute page has no doc-text prose block"
+
+    # `schedule` is documented in this fixture, so autolinking can replace its
+    # code span with a cross-reference. Accept either rendered form.
+    code_spans = {c.get_text(strip=True) for c in prose.select("code, a.gdls-code")}
+    assert "TimeoutError" in code_spans, (
+        "the :py:exc: role did not render as inline code"
+    )
+    assert "schedule()" in code_spans, (
+        "the :func: role did not render as callable inline code"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4607,7 +4785,9 @@ def test_md_big_class_method_pages():
         assert '<span class="parameter-' not in content, (
             f"{md_file.name}: leftover classic renderer <span> HTML"
         )
-        assert '<div class="doc-section' not in content, f"{md_file.name}: leftover <div> HTML"
+        assert "doc-section doc-section-" not in content, (
+            f"{md_file.name}: leftover fabricated doc-section <section>/heading HTML"
+        )
 
 
 @pytest.mark.dedicated

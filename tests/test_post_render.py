@@ -43,7 +43,6 @@ def _get_functions():
 
     # Extract function definitions by finding their source blocks
     funcs_to_extract = [
-        "translate_sphinx_roles",
         "_postprocess_markdown_content",
     ]
 
@@ -70,16 +69,10 @@ def _get_functions():
         func_source = "\n".join(func_lines)
         exec(func_source, ns)
 
-    return (
-        ns["translate_sphinx_roles"],
-        ns["_postprocess_markdown_content"],
-    )
+    return (ns["_postprocess_markdown_content"],)
 
 
-(
-    translate_sphinx_roles,
-    postprocess_markdown_content,
-) = _get_functions()
+(postprocess_markdown_content,) = _get_functions()
 
 
 class TestPostprocessMarkdownContent:
@@ -162,102 +155,6 @@ class TestPostprocessMarkdownContent:
         assert "Let's get started!" in out
         assert "’" not in out
         assert "–" not in out
-
-
-class TestTranslateSphinxRoles:
-    """Tests for Sphinx cross-reference role translation."""
-
-    def test_py_exc_with_code_tag(self):
-        html = "<p>Raises :py:exc:<code>ValueError</code> on failure.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>Raises <code>ValueError</code> on failure.</p>"
-
-    def test_py_class_with_code_tag(self):
-        html = "<p>Returns a :py:class:<code>datetime.datetime</code> object.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>Returns a <code>datetime.datetime</code> object.</p>"
-
-    def test_py_func_adds_parens(self):
-        html = "<p>See :py:func:<code>datetime.tzinfo.fromutc</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>See <code>datetime.tzinfo.fromutc()</code>.</p>"
-
-    def test_py_meth_adds_parens(self):
-        html = "<p>Uses :py:meth:<code>parser.parse</code> internally.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>Uses <code>parser.parse()</code> internally.</p>"
-
-    def test_bare_class_role(self):
-        html = "<p>Returns a :class:<code>tzinfo</code> subclass.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>Returns a <code>tzinfo</code> subclass.</p>"
-
-    def test_bare_func_role_adds_parens(self):
-        html = "<p>See :func:<code>get_object</code> for details.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>See <code>get_object()</code> for details.</p>"
-
-    def test_const_role(self):
-        html = "<p>:py:const:<code>DEFAULTPARSER</code> is used.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p><code>DEFAULTPARSER</code> is used.</p>"
-
-    def test_attr_role(self):
-        html = "<p>The :attr:<code>name</code> attribute.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>The <code>name</code> attribute.</p>"
-
-    def test_mod_role(self):
-        html = "<p>Provided by :py:mod:<code>dateutil.tz</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>Provided by <code>dateutil.tz</code>.</p>"
-
-    def test_backtick_role_in_pre(self):
-        html = "<pre><code>Use :func:`get_zonefile_instance` to retrieve</code></pre>"
-        result = translate_sphinx_roles(html)
-        assert "<code>get_zonefile_instance()</code>" in result
-
-    def test_backtick_class_no_parens(self):
-        html = "<pre><code>:class:`MyClass`</code></pre>"
-        result = translate_sphinx_roles(html)
-        assert "<code>MyClass</code>" in result
-        assert "MyClass()" not in result
-
-    def test_multiple_roles_in_one_line(self):
-        html = (
-            "<p>Takes a :py:class:<code>datetime</code> and returns "
-            "a :py:class:<code>timedelta</code>.</p>"
-        )
-        result = translate_sphinx_roles(html)
-        assert ":py:class:" not in result
-        assert "<code>datetime</code>" in result
-        assert "<code>timedelta</code>" in result
-
-    def test_no_double_parens(self):
-        """If the name already has (), don't add more."""
-        html = "<p>See :func:<code>foo()</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>See <code>foo()</code>.</p>"
-
-    def test_no_change_for_non_role_text(self):
-        html = "<p>This is regular text with <code>code</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == html
-
-    def test_obj_role(self):
-        html = "<p>See :py:obj:<code>some_thing</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>See <code>some_thing</code>.</p>"
-
-    def test_data_role(self):
-        html = "<p>See :py:data:<code>MY_CONST</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>See <code>MY_CONST</code>.</p>"
-
-    def test_type_role(self):
-        html = "<p>Is :py:type:<code>int</code>.</p>"
-        result = translate_sphinx_roles(html)
-        assert result == "<p>Is <code>int</code>.</p>"
 
 
 def _make_autolink(inventory):

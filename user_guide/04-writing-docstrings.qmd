@@ -100,6 +100,9 @@ def connect(host: str, port: int = 5432) -> Connection:
     ...
 ```
 
+Leave a blank line before each Google-style section header, as shown above. Without the
+blank line, the header and its contents are treated as one.
+
 Both formats render identically in the final documentation. Great Docs parses them using
 [griffe](https://mkdocstrings.github.io/griffe/) and produces structured HTML with proper headings,
 parameter tables, and type annotations.
@@ -586,13 +589,25 @@ should add what the type alone can't express.
 
 ## Docstrings and Sphinx Compatibility
 
-Great Docs uses `%` directives for callouts and API-reference behavior. For example,
-`%versionadded 2.0` adds a version annotation, while `%warning` adds a warning callout.
+Great Docs supports `%` directives for callouts and API-reference behaviour under every
+docstring parser. For example, `%versionadded 2.0` adds a version annotation, and
+`%warning` adds a warning callout.
 
-Projects that publish Sphinx documentation can use compatible RST forms such as
-`.. versionadded:: 2.0`. Great Docs also converts Sphinx cross-reference roles such as
-`` :py:exc:`ValueError` ``. This compatibility lets both documentation systems use the same
-docstrings.
+Numbered citations also work with every parser. Define one in a References section with
+`.. [1]`; Great Docs renders it as an ordered-list item. Refer to it from prose in the
+same docstring with `[1]_`. The reference links to the citation, and the citation links
+back to every reference. Nonnumeric labels such as `.. [CIT2002]` render as literal text.
+
+Set `parser: sphinx` to use other RST forms: cross-reference roles such as
+`` :py:exc:`ValueError` ``, `math`, `seealso`, and `todo` directives, the inline
+`:math:` role, literal blocks, and simple or grid tables. Under `parser: numpy` or
+`parser: google`, these forms render as literal text.
+
+To cite from a project bibliography with any parser, use `[@citekey]` and set the
+project-level `bibliography:` key.
+
+A bold pseudo-heading such as `**Examples**::` renders as plain text under every parser,
+including Sphinx. Use a valid section heading instead.
 
 See [API Documentation: Docstring Directives](api-documentation.qmd#docstring-directives) for the
 supported directives and syntax.

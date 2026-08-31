@@ -2,12 +2,15 @@ import griffe as gf
 import pytest
 
 from great_docs._builtin.normalization._sphinx import (
-    _convert_rst_citations,
+    _CALLABLE_RST_ROLES,
+    _SPHINX_ROLE_NAMES,
     _convert_rst_grid_tables,
     _convert_rst_simple_tables,
     _smart_dedent,
     normalize_sphinx_markup,
 )
+
+_SPHINX_ROLE_NAMES = tuple(_SPHINX_ROLE_NAMES.split("|"))
 
 
 def _function(text: str, parser: str) -> gf.Function:
@@ -35,7 +38,6 @@ def _function(text: str, parser: str) -> gf.Function:
             "+------+------+\n| A    | B    |\n+======+======+\n| 1    | 2    |\n+------+------+",
             "| A | B |",
         ),
-        (".. [1] Author. https://example.com", "1. Author. <https://example.com>"),
     ],
 )
 def test_sphinx_markup_is_normalized(source: str, expected: str):
@@ -80,6 +82,37 @@ def test_sphinx_normalization_preserves_existing_code_fences(source: str):
     assert obj.docstring.value == source
 
 
+@pytest.mark.parametrize("role", _SPHINX_ROLE_NAMES)
+@pytest.mark.parametrize("prefix", ["", "py:"])
+def test_sphinx_role_converts_to_code_span(role: str, prefix: str):
+    obj = _function(f"See :{prefix}{role}:`thing`.", "sphinx")
+
+    normalize_sphinx_markup(obj)
+
+    if role in _CALLABLE_RST_ROLES:
+        assert obj.docstring.value == "See `thing()`."
+    else:
+        assert obj.docstring.value == "See `thing`."
+
+
+@pytest.mark.parametrize("role", sorted(_CALLABLE_RST_ROLES))
+def test_callable_role_does_not_double_parens(role: str):
+    obj = _function(f"See :{role}:`thing()`.", "sphinx")
+
+    normalize_sphinx_markup(obj)
+
+    assert obj.docstring.value == "See `thing()`."
+
+
+def test_non_role_text_is_unchanged():
+    source = "This is regular text with `code`."
+    obj = _function(source, "sphinx")
+
+    normalize_sphinx_markup(obj)
+
+    assert obj.docstring.value == source
+
+
 def test_sphinx_normalization_registers_on_import():
     from great_docs.hooks import _object_resolved
 
@@ -96,27 +129,6 @@ def test_smart_dedent_preserves_blank_lines():
     text = "    First line.\n\n    Third line.\n"
     result = _smart_dedent(text)
     assert result == "First line.\n\nThird line.\n"
-
-
-# ---------------------------------------------------------------------------
-# Coverage: _convert_rst_citations edge cases
-# ---------------------------------------------------------------------------
-
-
-def test_citations_with_non_citation_lines():
-    """Non-citation lines are preserved verbatim."""
-    text = "Some preamble.\n\n.. [1] Author. https://example.com\n\nSome epilogue."
-    result = _convert_rst_citations(text)
-    assert "Some preamble." in result
-    assert "Some epilogue." in result
-    assert "1. Author." in result
-
-
-def test_citations_with_continuation_lines():
-    """Multi-line citations are joined."""
-    text = ".. [1] First part\n   continuation line\n   another continuation"
-    result = _convert_rst_citations(text)
-    assert "1. First part continuation line another continuation" in result
 
 
 # ---------------------------------------------------------------------------
