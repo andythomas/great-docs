@@ -3103,3 +3103,17 @@ class TestCreateApiSectionsFromConfig:
                 if item == "my_func":
                     return
         raise AssertionError("Expected plain string 'my_func' in contents")
+
+
+# ---------------------------------------------------------------------------
+# _refresh_api_reference_config – early return when already configured
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshApiReferenceConfig:
+
+    def test_skips_when_already_done(self, tmp_path, monkeypatch):
+        gd = _make_gd(tmp_path)
+        gd._api_discovery_done = True
+        gd._refresh_api_reference_config()
+        assert not (gd.project_path / "_quarto.yml").exists()
