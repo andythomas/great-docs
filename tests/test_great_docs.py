@@ -40262,7 +40262,6 @@ seo:
         assert options["seo_enabled"] is True
         assert options["canonical_enabled"] is True
         assert options["canonical_base_url"] == "https://example.com/docs/"
-        assert options["title_template"] == "{page_title} | {site_name}"
         assert options["structured_data_enabled"] is True
         assert options["site_name"] == "Test Package"
         assert options["package_description"] == "A test package"

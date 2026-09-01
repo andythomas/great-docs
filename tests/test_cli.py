@@ -3615,8 +3615,7 @@ class TestSeoSkipInternalFiles:
 
         runner = CliRunner()
         result = runner.invoke(cli, ["seo", "--project-path", str(tmp_path)])
-        # Should analyze only the normal page (1 page checked)
-        assert "Analyzed 1 page" in result.output or "1 page" in result.output
+        assert "Analyzed 1 HTML pages" in result.output
 
 
 

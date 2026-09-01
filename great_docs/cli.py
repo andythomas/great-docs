@@ -2279,6 +2279,7 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
       great-docs seo --fix                  # Fix issues where possible
       great-docs seo --json                 # JSON output for CI
     """
+    import html
     import json
     import xml.etree.ElementTree as ET
 
@@ -2336,11 +2337,19 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
         pages_checked = 0
         pages_missing_canonical = 0
         pages_missing_description = 0
-        pages_missing_title_template = 0
+        pages_missing_site_name = 0
         pages_with_json_ld = 0
         images_missing_alt = 0
 
         canonical_base = docs._get_canonical_base_url()
+
+        # The audit requires the site name only when a string template contains
+        # `{site_name}`. A missing placeholder or non-string value skips this
+        # check.
+        title_template = docs._config.seo_title_template
+        site_name = docs._get_site_name()
+        if not isinstance(title_template, str) or "{site_name}" not in title_template:
+            site_name = ""
 
         for html_file in html_files:
             rel_path = html_file.relative_to(site_dir).as_posix()
@@ -2360,12 +2369,14 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
             if not re.search(r'<meta\s+name="description"', content):
                 pages_missing_description += 1
 
-            # Check title template (should have | or -)
+            # Require the site name in ordinary page titles. Exempt the home page,
+            # which uses only that name, and redirect stubs, which immediately
+            # send readers elsewhere.
             title_match = re.search(r"<title>([^<]+)</title>", content)
-            if title_match:
-                title = title_match.group(1)
-                if " | " not in title and " - " not in title:
-                    pages_missing_title_template += 1
+            is_redirect = 'http-equiv="refresh"' in content
+            if site_name and title_match and rel_path != "index.html" and not is_redirect:
+                if site_name not in html.unescape(title_match.group(1)):
+                    pages_missing_site_name += 1
 
             # Check JSON-LD
             if "application/ld+json" in content:
@@ -2396,11 +2407,8 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
         else:
             info.append("✅ All pages have meta descriptions")
 
-        if pages_missing_title_template > 0:
-            warnings.append(
-                f"⚠️  {pages_missing_title_template} pages have plain titles "
-                "(consider adding site name)"
-            )
+        if pages_missing_site_name > 0:
+            warnings.append(f"⚠️  {pages_missing_site_name} pages have titles without the site name")
 
         if pages_with_json_ld > 0:
             info.append(f"✅ {pages_with_json_ld} pages have JSON-LD structured data")

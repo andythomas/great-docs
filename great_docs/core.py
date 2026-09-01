@@ -13331,6 +13331,9 @@ anchor-sections: true
         if "gd-lightbox" not in config["filters"]:
             config["filters"].append("gd-lightbox")
 
+        # Compose each page's browser title during Quarto rendering.
+        self._write_title_partial(config)
+
         # Apply explicit navbar ordering from config (if set)
         self._reorder_navbar(config)
 
@@ -15002,6 +15005,119 @@ anchor-sections: true
         # Fallback to site-relative path (works for most crawlers)
         return source.name  # pragma: no cover
 
+    def _get_site_name(self) -> str:
+        """
+        Resolve the site name used in page titles
+
+        Read `website.title` from the generated `_quarto.yml` first because
+        Quarto uses this value. Otherwise, use the configured display name or
+        detected package name.
+
+        Returns
+        -------
+        :
+            The site name, or an empty string if none is available.
+        """
+        quarto_yml = self.project_path / "_quarto.yml"
+        if quarto_yml.exists():
+            try:
+                with open(quarto_yml, "r") as f:
+                    config = read_yaml(f) or {}
+            except (OSError, ValueError):
+                config = {}
+            website = config.get("website")
+            if isinstance(website, dict):
+                title = website.get("title")
+                if isinstance(title, str) and title:
+                    return title
+        return self._config.display_name or self._detect_package_name() or ""
+
+    def _build_title_template_line(self, template: object) -> str | None:
+        """
+        Convert the configured page-title template to Pandoc syntax
+
+        Apply the template only to titled pages. For untitled pages, including
+        the home page, Quarto leaves `$title-prefix$` unset and sets
+        `$pagetitle$` to the site name. These pages therefore show only the site
+        name.
+
+        Parameters
+        ----------
+        template
+            Value of `seo.title_template`, written with `{page_title}` and an
+            optional `{site_name}`. Configuration values may have any type, but
+            this method supports only strings.
+
+        Returns
+        -------
+        :
+            The `<title>` element, or `None` unless the template is a string
+            that contains `{page_title}` and excludes `$`.
+        """
+        page_key = "{page_title}"
+        site_key = "{site_name}"
+
+        if not isinstance(template, str):
+            return None
+
+        # `$` opens a Pandoc template expression and would corrupt the partial.
+        if "$" in template or page_key not in template:
+            return None
+
+        titled = template.replace(page_key, "$pagetitle$").replace(site_key, "$title-prefix$")
+        return f"<title>$if(title-prefix)${titled}$else$$pagetitle$$endif$</title>"
+
+    def _write_title_partial(self, config: dict) -> None:
+        """
+        Write a Quarto metadata partial with the configured page title
+
+        Replace the bundled partial's `<title>` element and preserve its other
+        tags. The bundled copy keeps the metadata independent of the installed
+        Quarto version. Leave Quarto's default title unchanged when SEO is
+        disabled, when the template is unsupported, or when the HTML
+        configuration is unavailable.
+
+        Parameters
+        ----------
+        config
+            Contents of `_quarto.yml`. The method registers the partial in this
+            mapping.
+
+        Returns
+        -------
+        :
+            Nothing.
+        """
+        if not self._config.seo_enabled:
+            return
+
+        title_line = self._build_title_template_line(self._config.seo_title_template)
+        if title_line is None:
+            print(
+                "Warning: seo.title_template must be a string containing "
+                "{page_title} but no '$'. Using Quarto's default page titles."
+            )
+            return
+
+        html_config = config.get("format", {}).get("html")
+        if not isinstance(html_config, dict):
+            return
+
+        # Use a callable replacement so backslashes and `$` remain literal.
+        partial = re.sub(
+            r"<title>.*</title>",
+            lambda _match: title_line,
+            (self.assets_path / "metadata.html").read_text(encoding="utf-8"),
+        )
+        (self.project_path / "metadata.html").write_text(partial, encoding="utf-8")
+
+        partials = html_config.get("template-partials", [])
+        if isinstance(partials, str):
+            partials = [partials]
+        if "metadata.html" not in partials:
+            partials.append("metadata.html")
+        html_config["template-partials"] = partials
+
     def _get_seo_options(self) -> dict:
         """
         Get SEO options for the post-render script.
@@ -15022,7 +15138,6 @@ anchor-sections: true
             "seo_enabled": self._config.seo_enabled,
             "canonical_enabled": self._config.canonical_enabled,
             "canonical_base_url": self._get_canonical_base_url(),
-            "title_template": self._config.seo_title_template,
             "structured_data_enabled": self._config.structured_data_enabled,
             "structured_data_type": self._config.structured_data_type,
             "default_description": (
@@ -15033,7 +15148,7 @@ anchor-sections: true
             "package_license": metadata.get("license", ""),
             "package_version": metadata.get("version", ""),
             "repo_url": metadata.get("urls", {}).get("Repository", ""),
-            "site_name": self._config.display_name or self._detect_package_name() or "",
+            "site_name": self._get_site_name(),
             # Social cards
             "social_cards_enabled": self._config.social_cards_enabled,
             "social_cards_image": social_image_url,

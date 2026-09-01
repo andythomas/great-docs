@@ -394,55 +394,6 @@ def inject_json_ld(html_content: str, page_path: str) -> str:
     return html_content
 
 
-def apply_title_template(html_content: str, page_path: str) -> str:
-    """
-    Apply page title template for better SEO.
-
-    Parameters
-    ----------
-    html_content
-        The HTML content to modify.
-    page_path
-        The page path relative to the site root.
-
-    Returns
-    -------
-    str
-        The modified HTML with templated title.
-    """
-    if not _gd_options.get("seo_enabled", False):
-        return html_content
-
-    template = _gd_options.get("title_template", "{page_title} | {site_name}")
-    site_name = _gd_options.get("site_name", "")
-
-    if not site_name or not template:
-        return html_content
-
-    # Extract current page title
-    title_match = re.search(r"<title>([^<]*)</title>", html_content)
-    if not title_match:
-        return html_content
-
-    current_title = title_match.group(1).strip()
-
-    # Skip if already has a pipe (already templated)
-    if " | " in current_title or " - " in current_title:
-        # Check if it ends with site name already
-        if current_title.endswith(site_name):
-            return html_content
-
-    # Build new title from template
-    new_title = template.replace("{page_title}", current_title).replace("{site_name}", site_name)
-
-    # Replace title tag
-    html_content = html_content.replace(
-        f"<title>{title_match.group(1)}</title>", f"<title>{new_title}</title>"
-    )
-
-    return html_content
-
-
 def inject_noindex_meta(html_content: str, page_path: str) -> str:
     """
     Inject noindex/nofollow meta tags for internal or draft pages.
@@ -624,7 +575,6 @@ def apply_seo_processing(html_content: str, page_path: str) -> str:
     html_content = inject_canonical_url(html_content, page_path)
     html_content = inject_meta_description(html_content, page_path)
     html_content = inject_json_ld(html_content, page_path)
-    html_content = apply_title_template(html_content, page_path)
     html_content = inject_noindex_meta(html_content, page_path)
     html_content = inject_social_cards(html_content, page_path)
     return html_content

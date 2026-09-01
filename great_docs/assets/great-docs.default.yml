@@ -712,7 +712,10 @@ seo:
     # Base URL (e.g. "https://example.github.io/pkg/"); auto-detected from
     # GitHub Pages when null.
     base_url: null
-  title_template: "{page_title} | {site_name}"   # supports {page_title} and {site_name}
+  # Requires {page_title}; {site_name} is optional. Omit {site_name} to remove the
+  # site-name component from titled pages. Untitled pages, including the home
+  # page, show only the site name.
+  title_template: "{page_title} | {site_name}"
   structured_data:
     enabled: true              # Add JSON-LD to pages
     type: SoftwareSourceCode   # Schema.org type
