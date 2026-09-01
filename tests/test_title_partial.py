@@ -119,3 +119,14 @@ def test_title_line_applies_template_only_to_titled_pages(template: str, titled:
 def test_title_line_rejects_missing_page_placeholder_or_dollar(template: str):
     """Reject templates that omit `{page_title}` or contain `$`"""
     assert GreatDocs._build_title_template_line(None, template) is None  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("template", [None, False, 42, ["{page_title}"]])
+def test_title_line_rejects_non_string_templates(template: object):
+    """
+    Handle non-string page-title templates
+
+    YAML parses an empty `title_template:` as `None`. Treat every non-string
+    value as unsupported so the build keeps Quarto's titles.
+    """
+    assert GreatDocs._build_title_template_line(None, template) is None  # type: ignore[arg-type]

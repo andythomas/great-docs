@@ -15032,7 +15032,7 @@ anchor-sections: true
                     return title
         return self._config.display_name or self._detect_package_name() or ""
 
-    def _build_title_template_line(self, template: str) -> str | None:
+    def _build_title_template_line(self, template: object) -> str | None:
         """
         Convert the configured page-title template to Pandoc syntax
 
@@ -15045,16 +15045,20 @@ anchor-sections: true
         ----------
         template
             Value of `seo.title_template`, written with `{page_title}` and an
-            optional `{site_name}`.
+            optional `{site_name}`. Configuration values may have any type, but
+            this method supports only strings.
 
         Returns
         -------
         :
-            The `<title>` element, or `None` if the template contains `$` or
-            omits `{page_title}`.
+            The `<title>` element, or `None` unless the template is a string
+            that contains `{page_title}` and excludes `$`.
         """
         page_key = "{page_title}"
         site_key = "{site_name}"
+
+        if not isinstance(template, str):
+            return None
 
         # `$` opens a Pandoc template expression and would corrupt the partial.
         if "$" in template or page_key not in template:
@@ -15090,8 +15094,8 @@ anchor-sections: true
         title_line = self._build_title_template_line(self._config.seo_title_template)
         if title_line is None:
             print(
-                "Warning: seo.title_template must contain {page_title} and must not "
-                "contain '$'. Using Quarto's default page titles."
+                "Warning: seo.title_template must be a string containing "
+                "{page_title} but no '$'. Using Quarto's default page titles."
             )
             return
 

@@ -2343,10 +2343,12 @@ def seo(project_path: str | None, fix: bool, json_output: bool) -> None:
 
         canonical_base = docs._get_canonical_base_url()
 
-        # The audit requires the site name only when `{site_name}` appears in the
-        # configured template. A template without the placeholder excludes the name.
+        # The audit requires the site name only when a string template contains
+        # `{site_name}`. A missing placeholder or non-string value skips this
+        # check.
+        title_template = docs._config.seo_title_template
         site_name = docs._get_site_name()
-        if "{site_name}" not in docs._config.seo_title_template:
+        if not isinstance(title_template, str) or "{site_name}" not in title_template:
             site_name = ""
 
         for html_file in html_files:
