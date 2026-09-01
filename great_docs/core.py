@@ -15036,13 +15036,10 @@ anchor-sections: true
         """
         Convert the configured page-title template to Pandoc syntax
 
-        Wrap the site-name portion in `$if(title-prefix)$`. Quarto leaves
-        `$title-prefix$` unset when a page has no title, so the page shows the
-        site name once. Keep `$pagetitle$` outside the conditional so Quarto
-        resolves each page's title.
-
-        A template without `{site_name}` omits the site-name component from
-        titled pages.
+        Apply the template only to titled pages. For untitled pages, including
+        the home page, Quarto leaves `$title-prefix$` unset and sets
+        `$pagetitle$` to the site name. These pages therefore show only the site
+        name.
 
         Parameters
         ----------
@@ -15060,33 +15057,11 @@ anchor-sections: true
         site_key = "{site_name}"
 
         # `$` opens a Pandoc template expression and would corrupt the partial.
-        if "$" in template:
+        if "$" in template or page_key not in template:
             return None
 
-        page_at = template.find(page_key)
-        if page_at == -1:
-            return None
-
-        site_at = template.find(site_key)
-        if site_at == -1:
-            head = template[:page_at]
-            tail = template[page_at + len(page_key) :]
-            return f"<title>{head}$pagetitle${tail}</title>"
-
-        if page_at < site_at:
-            head = template[:page_at]
-            joiner = template[page_at + len(page_key) : site_at]
-            tail = template[site_at + len(site_key) :]
-            optional = f"{joiner}$title-prefix${tail}"
-            body = f"{head}$pagetitle$$if(title-prefix)${optional}$endif$"
-        else:
-            head = template[:site_at]
-            joiner = template[site_at + len(site_key) : page_at]
-            tail = template[page_at + len(page_key) :]
-            optional = f"{head}$title-prefix${joiner}"
-            body = f"$if(title-prefix)${optional}$endif$$pagetitle${tail}"
-
-        return f"<title>{body}</title>"
+        titled = template.replace(page_key, "$pagetitle$").replace(site_key, "$title-prefix$")
+        return f"<title>$if(title-prefix)${titled}$else$$pagetitle$$endif$</title>"
 
     def _write_title_partial(self, config: dict) -> None:
         """

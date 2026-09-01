@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import great_docs
+from great_docs.core import GreatDocs
 
 VENDORED = Path(great_docs.__file__).parent / "assets" / "metadata.html"
 
@@ -90,3 +91,31 @@ def test_bundled_partial_matches_quarto_except_for_title():
     assert _without_title(VENDORED.read_text(encoding="utf-8")) == _without_title(
         theirs.read_text(encoding="utf-8")
     ), f"Bundled metadata tags differ from {theirs}"
+
+
+@pytest.mark.parametrize(
+    ("template", "titled"),
+    [
+        ("{page_title} | {site_name}", "$pagetitle$ | $title-prefix$"),
+        ("{site_name} - {page_title}", "$title-prefix$ - $pagetitle$"),
+        ("Docs: {page_title}", "Docs: $pagetitle$"),
+        ("{page_title}", "$pagetitle$"),
+    ],
+)
+def test_title_line_applies_template_only_to_titled_pages(template: str, titled: str):
+    """
+    Preserve Quarto's title for untitled pages
+
+    Quarto leaves `title-prefix` unset on untitled pages and uses the site
+    name as `pagetitle`. The conditional therefore excludes surrounding
+    template text from those pages.
+    """
+    line = GreatDocs._build_title_template_line(None, template)  # type: ignore[arg-type]
+
+    assert line == f"<title>$if(title-prefix)${titled}$else$$pagetitle$$endif$</title>"
+
+
+@pytest.mark.parametrize("template", ["{site_name}", "$pagetitle$", "{page_title} $ {site_name}"])
+def test_title_line_rejects_missing_page_placeholder_or_dollar(template: str):
+    """Reject templates that omit `{page_title}` or contain `$`"""
+    assert GreatDocs._build_title_template_line(None, template) is None  # type: ignore[arg-type]
