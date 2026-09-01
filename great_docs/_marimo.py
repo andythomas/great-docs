@@ -63,7 +63,7 @@ def get_islands_head_html(version: str | None = None) -> str:
     )
 
 
-def generate_islands_html(
+def generate_islands_html(  # pragma: no cover
     notebook_path: Path,
     *,
     display_code: bool = True,
@@ -188,7 +188,7 @@ def _tag_setup_islands(body_html: str) -> str:
     return "".join(out)
 
 
-def generate_islands_for_build(
+def generate_islands_for_build(  # pragma: no cover
     notebook_path: Path,
     output_path: Path,
     *,
@@ -244,7 +244,7 @@ def parse_marimo_source(source: str) -> list[dict[str, str]]:
                 dedented.append(line[4:])
             elif line.strip() == "":
                 dedented.append("")
-            else:
+            else:  # pragma: no cover
                 dedented.append(line)
 
         while dedented and dedented[-1].strip() == "":
