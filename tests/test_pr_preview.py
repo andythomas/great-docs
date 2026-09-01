@@ -1790,3 +1790,41 @@ def test_stream_to_file_resume_mode(monkeypatch, tmp_path):
 
     # start=2 causes initial bar.update(2), then chunk update(2)
     assert updates == [2, 2]
+
+
+# ---------------------------------------------------------------------------
+# Coverage: parse_github_url – repo becomes empty after .git stripping
+# ---------------------------------------------------------------------------
+
+
+def test_parse_github_url_repo_becomes_empty_after_git_strip():
+    assert pp.parse_github_url("https://github.com/owner/.git") is None
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _gh_path
+# ---------------------------------------------------------------------------
+
+
+def test_gh_path_returns_path(monkeypatch):
+    monkeypatch.setattr(pp.shutil, "which", lambda cmd: "/usr/bin/gh")
+    assert pp._gh_path() == "/usr/bin/gh"
+
+
+def test_gh_path_returns_none(monkeypatch):
+    monkeypatch.setattr(pp.shutil, "which", lambda cmd: None)
+    assert pp._gh_path() is None
+
+
+# ---------------------------------------------------------------------------
+# Coverage: _resolve_token – candidate not a file is skipped
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_token_skips_nonexistent_dotenv(monkeypatch, tmp_path):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(pp.shutil, "which", lambda cmd: None)
+    nonexistent = tmp_path / ".env"
+    token, source = pp.resolve_token(project_path=str(tmp_path), env_file=None)
+    assert token is None
