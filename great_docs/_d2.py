@@ -33,12 +33,10 @@ DEFAULT_PAD = 20
 # treated as diagram source.
 _OPTION_KEYS = {"theme", "dark-theme", "layout", "sketch", "pad", "scale"}
 
-# Match ```{d2}```, ```d2, or ```{.d2} fenced blocks (with optional trailing
-# attributes on the fence line, which we ignore).
-_BLOCK_PATTERN = re.compile(
-    r"```\{?\.?d2[^\n}]*\}?[ \t]*\n(.*?)```",
-    re.DOTALL,
-)
+# A fence line: optional indent, a run of >= 3 backticks, then an info string.
+_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,})[ \t]*(.*?)[ \t]*$")
+# A d2 info string: `d2`, `{d2}`, `{.d2}`, `{d2 …}` — d2 followed by a boundary.
+_D2_INFO = re.compile(r"^\{?\.?d2(?:[\s}].*)?$")
 
 # Match the opening tag of the root <svg> element.
 _SVG_TAG_PATTERN = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
@@ -80,15 +78,52 @@ def d2_available() -> bool:
 
 def extract_d2_blocks(content: str) -> list[tuple[str, str, int, int]]:
     """
-    Extract d2 code blocks from qmd/md content.
+    Extract top-level d2 code blocks from qmd/md content.
 
     Returns a list of `(full_match, diagram_code, start_pos, end_pos)` tuples.
+
+    Fence-aware: a fenced block is opened by a run of >= 3 backticks and closed
+    by a line with at least as many backticks. Only *top-level* d2 blocks are
+    returned, so a ``` ```{d2} ``` example shown inside a longer ```` ````markdown ````
+    display fence (or any other outer fence) is left untouched, and an inline
+    `` ```d2 `` mention in prose is never treated as a fence.
     """
+    lines = content.splitlines(keepends=True)
+
+    # Character offset of the start of each line, for slicing positions.
+    offsets: list[int] = []
+    off = 0
+    for ln in lines:
+        offsets.append(off)
+        off += len(ln)
+
     matches: list[tuple[str, str, int, int]] = []
-    for match in _BLOCK_PATTERN.finditer(content):
-        full_match = match.group(0)
-        diagram_code = match.group(1).strip("\n")
-        matches.append((full_match, diagram_code, match.start(), match.end()))
+    i = 0
+    n = len(lines)
+    while i < n:
+        open_match = _FENCE_OPEN.match(lines[i].rstrip("\n"))
+        if not open_match:
+            i += 1
+            continue
+
+        ticks, info = open_match.group(1), open_match.group(2).strip()
+        # A closing fence: at least as many backticks, nothing else but space.
+        close_re = re.compile(r"^[ \t]*`{" + str(len(ticks)) + r",}[ \t]*$")
+
+        j = i + 1
+        while j < n and not close_re.match(lines[j].rstrip("\n")):
+            j += 1
+
+        if j < n and _D2_INFO.match(info):
+            start = offsets[i]
+            end = offsets[j] + len(lines[j])
+            body = "".join(lines[i + 1 : j]).strip("\n")
+            matches.append((content[start:end], body, start, end))
+
+        # Skip past this whole fence (its inner lines are never re-scanned),
+        # which is what keeps nested d2 blocks from being matched.
+        i = j + 1 if j < n else n
+
     return matches
 
 
