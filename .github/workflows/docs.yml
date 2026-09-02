@@ -28,6 +28,12 @@ jobs:
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 
+      - name: Install d2 (for rendering D2 diagrams into the docs)
+        run: |
+          curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.8.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/d2" --version
+
       - name: Build docs
         run: great-docs build
 

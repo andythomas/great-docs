@@ -1,9 +1,12 @@
 # pyright: reportPrivateUsage=false
 
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from great_docs._d2 import (
     DEFAULT_DARK_THEME,
@@ -360,3 +363,31 @@ def test_process_directory_renders():
     ):
         modified = process_directory(d)
     assert modified == ["a.qmd"]
+
+
+# --------------------------------------------------------------------------- #
+# Integration: exercise the real `d2` binary (skipped when it is not installed).
+# Guards against d2 CLI/API drift that the mocked tests above cannot catch.
+# CI installs d2, so this runs there; local runs without d2 simply skip it.
+# --------------------------------------------------------------------------- #
+@pytest.mark.skipif(shutil.which("d2") is None, reason="d2 CLI not installed")
+def test_real_d2_render_end_to_end(tmp_path):
+    # The real binary produces a valid SVG with backfilled dimensions.
+    svg = render_d2_svg("a -> b\nb -> c", DEFAULT_LIGHT_THEME)
+
+    assert svg is not None
+    assert "<svg" in svg
+    assert "width=" in svg and "height=" in svg
+
+    # End to end: a d2 block becomes a themed diagram with two SVG files.
+    content = "# Title\n\n```{d2}\na -> b\n```\n"
+    new, n = process_d2_content(content, tmp_path)
+
+    assert n == 1
+    assert ".d2-diagram" in new
+
+    svgs = sorted(p.name for p in tmp_path.glob("*.svg"))
+
+    assert len(svgs) == 2
+    assert any(s.endswith("-light.svg") for s in svgs)
+    assert any(s.endswith("-dark.svg") for s in svgs)
