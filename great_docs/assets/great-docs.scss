@@ -6793,6 +6793,40 @@ html.quarto-dark .dark-mode-only {
     display: block !important;
 }
 
+/* ==========================================================================
+   D2 diagrams: build-time light + dark SVGs
+
+   d2 blocks are pre-rendered to two SVGs (a light theme and a dark theme) and
+   swapped via the .light-mode-only / .dark-mode-only classes above. Each SVG
+   carries its own background, so the container just centers and frames the
+   diagram consistently in both modes.
+   ========================================================================== */
+.d2-diagram {
+    display: flex;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+/* Quarto wraps each image in a <figure>; keep them centered and gap-free. */
+.d2-diagram figure,
+.d2-diagram p {
+    margin: 0;
+    text-align: center;
+}
+
+.d2-diagram img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+}
+
+/* Dark mode: soften the frame so it does not glow against the dark page. */
+body.quarto-dark .d2-diagram img,
+html.quarto-dark .d2-diagram img {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
 
 /* ==========================================================================
    Responsive Tables

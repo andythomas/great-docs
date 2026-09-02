@@ -419,6 +419,8 @@ ALL_PACKAGES: list[str] = [
     "gdtest_no_breadcrumbs",  # 207
     # 208: MCP object pages
     "gdtest_mcp",  # 208
+    # 209: Build-time D2 diagrams (separate light/dark SVGs)
+    "gdtest_d2_diagrams",  # 209
 ]
 
 
@@ -2333,6 +2335,13 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
     "gdtest_mcp": (
         "Document the Great Docs MCP server through an empty Python package. "
         "Exercise rendered tool, resource, resource-template and prompt pages."
+    ),
+    "gdtest_d2_diagrams": (
+        "User-guide pages with `{d2}` (and plain ```d2) diagram blocks, pre-rendered "
+        "at build time by the `d2` CLI. Each diagram should become a `.d2-diagram` "
+        "container holding two `<img>` elements — a light-theme and a dark-theme SVG "
+        "swapped via `.light-mode-only` / `.dark-mode-only` — with the generated "
+        "`d2-<hash>-{light,dark}.svg` files copied into the site."
     ),
 }
 
