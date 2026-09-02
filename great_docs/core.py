@@ -16432,6 +16432,18 @@ anchor-sections: true
                     f"Expanded {len(mock_modified)} mock-code cell(s): " + ", ".join(mock_modified)
                 )
 
+            # Pre-render d2 diagrams to light + dark SVGs before Quarto sees them.
+            # (Mermaid is rendered by Quarto client-side; d2 has no native support.)
+            from great_docs._d2 import process_directory as _render_d2
+
+            d2_cache = self.project_root / ".great-docs-cache" / "d2"
+            d2_modified = _render_d2(self.project_path, cache_dir=d2_cache)
+            if d2_modified:
+                log.detail(
+                    f"Rendered d2 diagrams in {len(d2_modified)} page(s): "
+                    + ", ".join(d2_modified)
+                )
+
             # Get environment with QUARTO_PYTHON set
             quarto_env = self._get_quarto_env()
 
