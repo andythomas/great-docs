@@ -4,7 +4,10 @@ import griffe as gf
 import pytest
 
 from great_docs._apiref._tools import _render
-from great_docs._builtin.normalization._doctest import normalize_doctests
+from great_docs._builtin.normalization._doctest import (
+    _fence_doctest_blocks,
+    normalize_doctests,
+)
 from great_docs.hooks._object_resolved import emit_object_resolved
 
 
@@ -23,17 +26,94 @@ def test_doctests_are_fenced_for_every_parser(parser: str):
 
     assert result is obj
     assert obj.docstring.value == (
-        "Example.\n\n```python\n>>> for i in range(2):\n...     print(i)\n```\n0\n1"
+        "Example.\n\n```python\n>>> for i in range(2):\n...     print(i)\n0\n1\n```"
     )
 
 
 def test_separate_doctest_groups_get_separate_fences():
-    obj = _function(">>> first()\nText.\n>>> second()", "numpy")
+    obj = _function(">>> first()\n\nText.\n\n>>> second()", "numpy")
 
     normalize_doctests(obj)
 
     assert obj.docstring.value.count("```python") == 2
     assert obj.docstring.value.count("```") == 4
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            "- A bullet:\n\n  >>> f()\n  1\n",
+            "- A bullet:\n\n  ```python\n  >>> f()\n  1\n  ```\n",
+            id="list-item",
+        ),
+        pytest.param(
+            "Example:\n    >>> f()\n    3\n",
+            "Example:\n    ```python\n    >>> f()\n    3\n    ```\n",
+            id="section-body",
+        ),
+        pytest.param(
+            "Indented:\n\n    >>> f()\n    1\n",
+            "Indented:\n\n    ```python\n    >>> f()\n    1\n    ```\n",
+            id="indented-block",
+        ),
+    ],
+)
+def test_fence_markers_match_prompt_indentation(source: str, expected: str):
+    """
+    Fence markers match the indentation of their prompts
+
+    A column-zero fence closes its containing list item or indented block. Test
+    the transform directly because Griffe dedents each `Docstring` value and
+    would remove the indentation under test.
+    """
+    assert _fence_doctest_blocks(source) == expected
+
+
+def test_fence_contains_expected_output():
+    """
+    Expected output remains inside the example's fence
+
+    Quarto parses unfenced output such as `<Widget>` as raw HTML and omits it
+    from the page.
+    """
+    obj = _function(">>> Widget()\n<Widget>", "numpy")
+
+    normalize_doctests(obj)
+
+    assert obj.docstring.value == "```python\n>>> Widget()\n<Widget>\n```"
+
+
+def test_unseparated_examples_share_one_fence():
+    """Examples without a separating blank line form one block"""
+    obj = _function(">>> first()\n1\n>>> second()\n2", "numpy")
+
+    normalize_doctests(obj)
+
+    assert obj.docstring.value == "```python\n>>> first()\n1\n>>> second()\n2\n```"
+
+
+def test_blank_line_ends_example():
+    """A blank line ends the example, matching `doctest` parsing"""
+    obj = _function(">>> f()\n1\n\nProse about the result.", "numpy")
+
+    normalize_doctests(obj)
+
+    assert obj.docstring.value == "```python\n>>> f()\n1\n```\n\nProse about the result."
+
+
+def test_dedent_ends_expected_output():
+    """
+    A dedent ends the expected output
+
+    A subsequent list item belongs to neither the output nor the example's
+    block. Including it would consume the rest of the list.
+    """
+    obj = _function("- First:\n\n  >>> f()\n  1\n- Second:", "numpy")
+
+    normalize_doctests(obj)
+
+    assert obj.docstring.value == "- First:\n\n  ```python\n  >>> f()\n  1\n  ```\n- Second:"
 
 
 @pytest.mark.parametrize(
@@ -293,4 +373,31 @@ def test_native_dialect_doctests_reach_the_qmd_fenced(parser: str, docstring: st
     qmd = _render_with_hooks(source, "convert", parser=parser)
 
     assert ">>>" in qmd, "the sample rendered without its doctest at all"
+    assert _unfenced_prompts(qmd) == []
+
+
+def test_indented_example_remains_inside_list_item():
+    """
+    An indented example remains intact inside its rendered list item
+
+    The fence markers must stay inside the bullet, and the expected output must
+    stay inside the fence.
+    """
+    source = '''
+    def listed():
+        """
+        Return a listed value.
+
+        Examples
+        --------
+        - First bullet:
+
+          >>> listed()
+          <Listed>
+        """
+    '''
+
+    qmd = _render_with_hooks(source, "listed")
+
+    assert "  ```python\n  >>> listed()\n  <Listed>\n  ```" in qmd
     assert _unfenced_prompts(qmd) == []
