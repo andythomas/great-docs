@@ -870,10 +870,7 @@ def _import_cli_from_source(
     import importlib
     import sys
 
-    try:
-        import click
-    except ImportError:
-        return None
+    from ._typer_cli import to_click_command
 
     str_dir = str(tmp_dir)
     sys.path.insert(0, str_dir)
@@ -886,11 +883,11 @@ def _import_cli_from_source(
 
         module = importlib.import_module(cli_module)
 
-        # Find Click command/group
+        # Find a Click command/group or Typer app
         cli_obj = None
         for attr_name in ["cli", "main", "app", "command"]:
-            obj = getattr(module, attr_name, None)
-            if isinstance(obj, (click.Command, click.Group)):
+            obj = to_click_command(getattr(module, attr_name, None))
+            if obj is not None:
                 cli_obj = obj
                 break
 
@@ -898,8 +895,8 @@ def _import_cli_from_source(
             for attr_name in dir(module):
                 if attr_name.startswith("_"):
                     continue
-                obj = getattr(module, attr_name)
-                if isinstance(obj, (click.Command, click.Group)):
+                obj = to_click_command(getattr(module, attr_name))
+                if obj is not None:
                     cli_obj = obj
                     break
 
@@ -1331,37 +1328,43 @@ def snapshot_cli_from_click(cli_obj: object) -> CliCommandInfo | None:
     Parameters
     ----------
     cli_obj
-        A `click.BaseCommand` instance (Command or Group).
+        A `click.BaseCommand` instance (Command or Group), or a `typer.Typer`
+        app (which is converted to its underlying Click command).
 
     Returns
     -------
     CliCommandInfo or None
-        The CLI snapshot, or `None` if `cli_obj` is not a Click command.
+        The CLI snapshot, or `None` if `cli_obj` is not a Click command or
+        Typer app.
     """
-    try:
-        import click
-    except ImportError:  # pragma: no cover
-        return None  # pragma: no cover
+    from ._typer_cli import to_click_command
 
-    if not isinstance(cli_obj, (click.Command, click.Group)):
+    cmd = to_click_command(cli_obj)
+    if cmd is None:
         return None
 
-    return _snapshot_click_command(cli_obj)
+    return _snapshot_click_command(cmd)
 
 
 def _snapshot_click_command(cmd: object) -> CliCommandInfo:
-    """Recursively snapshot a Click command tree."""
-    import click
+    """Recursively snapshot a Click command tree.
+
+    Parameters are classified with duck-typing (`param_type_name` / a dict-like `commands` mapping)
+    rather than `isinstance` so this handles both plain Click commands and Typer's vendored-Click
+    commands.
+    """
+    from ._typer_cli import is_cli_group, param_kind
 
     name = getattr(cmd, "name", "") or ""
     help_text = getattr(cmd, "help", "") or ""
     hidden = getattr(cmd, "hidden", False)
     deprecated = getattr(cmd, "deprecated", False)
-    is_group = isinstance(cmd, click.Group)
+    is_group = is_cli_group(cmd)
 
     options: list[CliOptionInfo] = []
     for param in getattr(cmd, "params", []):
-        if isinstance(param, click.Option):
+        kind = param_kind(param)
+        if kind == "option":
             # Use the longest option name (e.g. --verbose over -v)
             opt_name = max(param.opts, key=len) if param.opts else param.name or ""
             options.append(
@@ -1374,7 +1377,7 @@ def _snapshot_click_command(cmd: object) -> CliCommandInfo:
                     help=param.help,
                 )
             )
-        elif isinstance(param, click.Argument):
+        elif kind == "argument":
             options.append(
                 CliOptionInfo(
                     name=param.name or "",
