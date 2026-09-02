@@ -11,6 +11,7 @@ from typing import Any
 from yaml12 import format_yaml, parse_yaml, read_yaml, write_yaml
 
 from ._subprocess import TEXT_MODE_KWARGS
+from ._typer_cli import is_cli_command, is_cli_group, param_kind, to_click_command
 from ._utils import QUARTO_YML_HEADER, is_great_docs_build_dir
 from .config import Config, create_default_config
 
@@ -1714,7 +1715,9 @@ class GreatDocs:
                                         entry["extras"] = sorted(req.extras)
                                     group_deps.append(entry)
                                 except Exception:  # pragma: no cover
-                                    group_deps.append({"name": dep_str, "specifier": ""})  # pragma: no cover
+                                    group_deps.append(
+                                        {"name": dep_str, "specifier": ""}
+                                    )  # pragma: no cover
                         opt_deps_full[group] = group_deps
                     metadata["optional_dependencies_full"] = opt_deps_full
 
@@ -4058,7 +4061,7 @@ class GreatDocs:
             return None
 
         try:
-            import click
+            import click  # noqa: F401  (availability guard; converters handle the rest)
         except ImportError:  # pragma: no cover
             print("Click not installed, skipping CLI documentation")  # pragma: no cover
             return None  # pragma: no cover
@@ -4083,10 +4086,10 @@ class GreatDocs:
                     import importlib
 
                     module = importlib.import_module(module_path)
-                    # Look for Click command/group in module
+                    # Look for a Click command/group or Typer app in the module
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
-                        if isinstance(attr, (click.Command, click.Group)):
+                        if is_cli_command(attr):
                             cli_module_path = module_path
                             break
                     if cli_module_path:
@@ -4114,25 +4117,29 @@ class GreatDocs:
         if cli_name:
             cli_obj = getattr(module, cli_name, None)
 
-        # Otherwise, search for Click commands/groups
+        # Otherwise, search for Click commands/groups (or Typer apps)
         if not cli_obj:
             for attr_name in ["cli", "main", "app", "command", importable_name]:
                 attr = getattr(module, attr_name, None)
-                if isinstance(attr, (click.Command, click.Group)):
+                if is_cli_command(attr):
                     cli_obj = attr
                     cli_name = attr_name
                     break
 
-        # If still not found, look for any Click command/group
+        # If still not found, look for any Click command/group or Typer app
         if not cli_obj:
             for attr_name in dir(module):
                 if attr_name.startswith("_"):
                     continue
                 attr = getattr(module, attr_name)
-                if isinstance(attr, (click.Command, click.Group)):
+                if is_cli_command(attr):
                     cli_obj = attr
                     cli_name = attr_name
                     break
+
+        # Normalize to a Click command so the extraction below can introspect
+        # params/subcommands uniformly (Typer apps are converted here).
+        cli_obj = to_click_command(cli_obj)
 
         if not cli_obj:
             print(f"No Click command/group found in {cli_module_path}")
@@ -4157,7 +4164,7 @@ class GreatDocs:
         if not metadata.get("cli_enabled", False):
             return None
         try:
-            import click
+            import click  # noqa: F401  (availability guard; converters handle the rest)
         except ImportError:
             return None
 
@@ -4173,10 +4180,7 @@ class GreatDocs:
                     import importlib
 
                     m = importlib.import_module(mod)
-                    if any(
-                        isinstance(getattr(m, a, None), (click.Command, click.Group))
-                        for a in dir(m)
-                    ):
+                    if any(is_cli_command(getattr(m, a, None)) for a in dir(m)):
                         cli_module_path = mod
                         break
                 except ImportError:
@@ -4192,20 +4196,20 @@ class GreatDocs:
 
         cli_name = metadata.get("cli_name")
         if cli_name:
-            obj = getattr(module, cli_name, None)
-            if isinstance(obj, (click.Command, click.Group)):
+            obj = to_click_command(getattr(module, cli_name, None))
+            if obj is not None:
                 return obj
 
         for attr_name in ["cli", "main", "app", "command", importable_name]:
-            obj = getattr(module, attr_name, None)
-            if isinstance(obj, (click.Command, click.Group)):
+            obj = to_click_command(getattr(module, attr_name, None))
+            if obj is not None:
                 return obj
 
         for attr_name in dir(module):
             if attr_name.startswith("_"):
                 continue
-            obj = getattr(module, attr_name)
-            if isinstance(obj, (click.Command, click.Group)):
+            obj = to_click_command(getattr(module, attr_name))
+            if obj is not None:
                 return obj
         return None
 
@@ -4271,22 +4275,23 @@ class GreatDocs:
             Dictionary containing command information including options, arguments, and parsed
             examples.
         """
-        import click
-
         full_path = f"{parent_path} {name}".strip() if parent_path else name
 
         # Get the actual --help output from Click
         help_text = self._get_click_help_text(cmd, full_path)
 
-        # Extract options and arguments from Click params
+        # Extract options and arguments from the params. Parameters are classified
+        # by Click's `param_type_name` rather than `isinstance` so this works
+        # for Typer's vendored-Click parameters too (see `_typer_cli`).
         options = []
         arguments = []
         for param in cmd.params:
-            if isinstance(param, click.Option):
+            kind = param_kind(param)
+            if kind == "option":
                 opt_info = self._extract_click_option(param)
                 if opt_info:
                     options.append(opt_info)
-            elif isinstance(param, click.Argument):
+            elif kind == "argument":
                 arg_info = self._extract_click_argument(param)
                 if arg_info:
                     arguments.append(arg_info)
@@ -4309,7 +4314,7 @@ class GreatDocs:
             "deprecated": getattr(cmd, "deprecated", False),
             "hidden": getattr(cmd, "hidden", False),
             "commands": [],
-            "is_group": isinstance(cmd, click.Group),
+            "is_group": is_cli_group(cmd),
             "options": options,
             "arguments": arguments,
             "description": description,
@@ -4317,7 +4322,7 @@ class GreatDocs:
         }
 
         # Extract subcommands if this is a group
-        if isinstance(cmd, click.Group):
+        if is_cli_group(cmd):
             for subcmd_name, subcmd in cmd.commands.items():
                 if not getattr(subcmd, "hidden", False):
                     subcmd_info = self._extract_click_command(subcmd, subcmd_name, full_path)
@@ -4345,11 +4350,16 @@ class GreatDocs:
         ):
             default = None
 
+        # Flags have no meaningful value type. Plain Click reports the type name
+        # "BOOL" for these; Typer's vendored Click reports "boolean" instead, so
+        # suppress the type for any flag rather than relying on the name.
+        opt_type = None if param.is_flag or type_name.upper() == "BOOL" else type_name.upper()
+
         return {
             "names": names,
             "name_display": ", ".join(names),
             "help": param.help or "",
-            "type": type_name.upper() if type_name != "BOOL" else None,
+            "type": opt_type,
             "default": default,
             "required": param.required,
             "is_flag": param.is_flag,
@@ -4489,10 +4499,10 @@ class GreatDocs:
         str
             The formatted help text as it would appear from `--help`.
         """
-        import click
-
-        # Create a context to get the help text
-        ctx = click.Context(cmd, info_name=full_path)
+        # Build the context from the command's own `context_class` so the help
+        # is rendered by the same Click the command belongs to. This matters for
+        # Typer, which vendors its own Click (see `_typer_cli`).
+        ctx = cmd.context_class(cmd, info_name=full_path)
         return cmd.get_help(ctx)
 
     def _generate_cli_reference_pages(self, cli_info: dict) -> list[str | dict]:
@@ -6286,7 +6296,9 @@ class GreatDocs:
                 if root_index_file:  # pragma: no cover
                     href = get_clean_href(root_index_file)  # pragma: no cover
                     if root_index_file.get("title"):  # pragma: no cover
-                        contents.append({"text": root_index_file["title"], "href": href})  # pragma: no cover
+                        contents.append(
+                            {"text": root_index_file["title"], "href": href}
+                        )  # pragma: no cover
                     else:
                         contents.append(href)  # pragma: no cover
 
@@ -9661,7 +9673,9 @@ class GreatDocs:
                     lines.append(f"        members: false  # {method_count} methods listed below")
                     large_classes.append(class_name)
                 elif method_count > 0:  # pragma: no cover
-                    lines.append(f"      - {class_name}  # {method_count} method(s)")  # pragma: no cover
+                    lines.append(
+                        f"      - {class_name}  # {method_count} method(s)"
+                    )  # pragma: no cover
                 else:
                     lines.append(f"      - {class_name}")
             has_prev_section = True
@@ -10251,7 +10265,9 @@ class GreatDocs:
             if not _curated_skill:
                 pkg_name = self._detect_package_name() or ""
                 for cand in [pkg_name.replace("_", "-"), pkg_name]:  # pragma: no cover
-                    if cand and (package_root / "skills" / cand / "SKILL.md").exists():  # pragma: no cover
+                    if (
+                        cand and (package_root / "skills" / cand / "SKILL.md").exists()
+                    ):  # pragma: no cover
                         _curated_skill = True  # pragma: no cover
                         break  # pragma: no cover
 
@@ -14640,7 +14656,9 @@ anchor-sections: true
             name = entry.get("name")
             file_path = entry.get("file")
             if not name or not file_path:  # pragma: no cover
-                print(f"Warning: skill.skills[{i}] missing 'name' or 'file', skipping")  # pragma: no cover
+                print(
+                    f"Warning: skill.skills[{i}] missing 'name' or 'file', skipping"
+                )  # pragma: no cover
                 continue  # pragma: no cover
 
             src = package_root / file_path

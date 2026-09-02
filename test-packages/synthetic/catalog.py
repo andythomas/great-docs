@@ -69,6 +69,7 @@ ALL_PACKAGES: list[str] = [
     # 46–47: CLI documentation
     "gdtest_cli_click",  # 46
     "gdtest_cli_nested",  # 47
+    "gdtest_cli_typer",  # 46b (Typer CLI; vendors Click)
     # 48–50: Config-driven features
     "gdtest_explicit_ref",  # 48
     "gdtest_kitchen_sink",  # 49
@@ -962,6 +963,13 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "and config group (show, set). The CLI Reference should show the "
         "multi-level command hierarchy with subgroups. The API Reference "
         "should show Engine (class) and run_task (function)."
+    ),
+    "gdtest_cli_typer": (
+        "A package whose CLI is built with Typer (which vendors its own copy of "
+        "Click) and cli.enabled=true in config. The sidebar should show a CLI "
+        "Reference section documenting the Typer commands: top-level format and "
+        "version commands, plus a nested db group (clear, info). The API "
+        "Reference should show Formatter (class) and format_text (function)."
     ),
     "gdtest_explicit_ref": (
         "Reference structure is defined in great-docs.yml with two sections: "
