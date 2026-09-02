@@ -10,6 +10,7 @@ CLI.
 from __future__ import annotations
 
 import importlib
+import sys
 import types
 from pathlib import Path
 from unittest.mock import patch
@@ -94,6 +95,25 @@ class TestTyperHelpers:
         assert to_click_command("nope") is None
         assert to_click_command(object()) is None
         assert to_click_command(None) is None
+
+    def test_is_typer_app_false_when_typer_not_installed(self, monkeypatch):
+        """Graceful degradation: no Typer installed -> not a Typer app (no raise)."""
+        from great_docs._typer_cli import is_typer_app
+
+        # A None entry in sys.modules makes `import typer` raise ImportError.
+        monkeypatch.setitem(sys.modules, "typer", None)
+
+        assert is_typer_app(object()) is False
+
+    def test_to_click_command_returns_none_when_typer_not_installed(self, monkeypatch):
+        """A non-Click object cannot be coerced when Typer is unavailable."""
+        from great_docs._typer_cli import to_click_command
+
+        monkeypatch.setitem(sys.modules, "typer", None)
+
+        # Click is still importable, so this reaches (and survives) the failed
+        # Typer import before returning None.
+        assert to_click_command(object()) is None
 
     def test_is_cli_command(self):
         from great_docs._typer_cli import is_cli_command
