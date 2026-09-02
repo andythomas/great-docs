@@ -1250,6 +1250,43 @@ The standalone extension works with any Quarto HTML-based format:
 
 The player adapts to available width and works with both light and dark themes.
 
+### Sizing tips for RevealJS presentations
+
+By default the Termshow player scales to fill the full slide width. On a RevealJS slide this can
+make the terminal too large for the viewport, especially at 1920×1080 resolution where the
+recording may overflow the bottom of the slide.
+
+To fit it comfortably, add a small CSS file and reference it in your YAML header.
+
+Create a `termshow-slides.css` file in your project:
+
+```css
+/* termshow-slides.css */
+.reveal .gd-termshow {
+    max-width: 70%;         /* adjust to taste */
+    margin-inline: auto;
+}
+```
+
+Then reference it in the YAML header of your presentation:
+
+```yaml
+format:
+  revealjs:
+    css: termshow-slides.css
+```
+
+A few guidelines:
+
+- **Start around 70–75%** and adjust from there. The right value depends on your terminal
+  dimensions (an 80-column recording needs less room than a 120-column one) and your slide
+  aspect ratio.
+- **Use `margin-inline: auto`** to center the player on the slide.
+- **Avoid setting a fixed `height`**. The player maintains its aspect ratio automatically;
+  constraining only the width lets it scale naturally.
+- **Preview at presentation resolution** (typically 1920×1080 or 1280×720) to verify the recording
+  fits comfortably within the slide bounds.
+
 ## Next Steps
 
 Terminal recordings bring CLI workflows to life with crisp, interactive playback directly in your
