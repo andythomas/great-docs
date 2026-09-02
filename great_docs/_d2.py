@@ -351,7 +351,7 @@ def process_directory(directory: Path, cache_dir: Path | None = None) -> list[st
         if process_qmd_file(qmd, cache_dir):
             try:
                 rel = str(qmd.relative_to(directory))
-            except ValueError:
+            except ValueError:  # pragma: no cover - rglob always yields subpaths
                 rel = str(qmd)
             modified.append(rel)
     return modified
