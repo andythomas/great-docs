@@ -92,6 +92,52 @@ def test_extract_does_not_match_mermaid():
     assert extract_d2_blocks(content) == []
 
 
+def test_extract_ignores_inline_fence_in_prose():
+    # An inline `` ```d2 `` mention mid-sentence must NOT be treated as a fence,
+    # and must not swallow a real fenced block that follows it.
+    content = (
+        "The plain ```` ```d2 ```` fence is also recognized:\n\nx -> y block below:\n\n"
+        "```d2\nx -> y -> z\n```\n"
+    )
+    blocks = extract_d2_blocks(content)
+    assert len(blocks) == 1
+    assert blocks[0][1] == "x -> y -> z"
+
+
+def test_extract_indented_fence():
+    content = "  ```{d2}\n  a -> b\n  ```"
+    blocks = extract_d2_blocks(content)
+    assert len(blocks) == 1
+    assert "a -> b" in blocks[0][1]
+
+
+def test_extract_ignores_d2_nested_in_display_fence():
+    # A ````markdown display fence SHOWS d2 syntax literally; the inner ```{d2}
+    # must NOT be rendered. Only the real top-level block below it should match.
+    content = (
+        "````markdown\n"
+        "```{d2}\n"
+        "Start -> Decision\n"
+        "```\n"
+        "````\n"
+        "\n"
+        "Real diagram:\n"
+        "\n"
+        "```{d2}\n"
+        "a -> b\n"
+        "```\n"
+    )
+    blocks = extract_d2_blocks(content)
+    assert len(blocks) == 1, "only the real top-level block should match"
+    assert blocks[0][1] == "a -> b"
+
+
+def test_extract_unterminated_fence_ignored():
+    # An opening fence with no closing fence is not rendered.
+    content = "```{d2}\na -> b\nno closing fence here\n"
+    assert extract_d2_blocks(content) == []
+
+
 # --------------------------------------------------------------------------- #
 # Option parsing
 # --------------------------------------------------------------------------- #
