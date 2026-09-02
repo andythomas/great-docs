@@ -832,8 +832,7 @@ def test_no_fabricated_docstring_sections(pkg_name: str):
         soup = _load_html(html_file)
         fabricated = soup.select("[class*=doc-section]")
         assert not fabricated, (
-            f"{html_file.name}: found {len(fabricated)} fabricated "
-            f"doc-section element(s)"
+            f"{html_file.name}: found {len(fabricated)} fabricated doc-section element(s)"
         )
 
 
@@ -874,10 +873,7 @@ def test_docstring_citations_resolve():
     if not _has_rendered_site("gdtest_bibliography"):
         pytest.skip("gdtest_bibliography not rendered")
 
-    pages = [
-        p for p in _ref_dir("gdtest_bibliography").glob("*.html")
-        if p.name != "index.html"
-    ]
+    pages = [p for p in _ref_dir("gdtest_bibliography").glob("*.html") if p.name != "index.html"]
     assert pages, "no reference pages were rendered"
 
     citations = 0
@@ -928,18 +924,14 @@ def test_local_citations_render_as_a_list(pkg_name: str):
         if main is None:
             continue
 
-        assert ".. [" not in main.get_text(), (
-            f"{html_file.name}: contains a raw RST citation"
-        )
+        assert ".. [" not in main.get_text(), f"{html_file.name}: contains a raw RST citation"
         list_items = main.select("ol li")
         if list_items:
             pages_with_lists.append(html_file.name)
         if any(expected_author in li.get_text() for li in list_items):
             pages_with_author.append(html_file.name)
 
-    assert pages_with_lists, (
-        f"{pkg_name}: no reference page contains a citation list"
-    )
+    assert pages_with_lists, f"{pkg_name}: no reference page contains a citation list"
     assert pages_with_author, (
         f"{pkg_name}: no citation list contains expected author {expected_author}"
     )
@@ -996,9 +988,7 @@ def test_citation_references_resolve_both_ways():
 
     assert forward, f"{pkg}: no reference links to a citation"
     assert backward, f"{pkg}: no citation links back to a reference"
-    assert lettered_pages, (
-        f"{pkg}: no page contains lettered backlinks for repeated references"
-    )
+    assert lettered_pages, f"{pkg}: no page contains lettered backlinks for repeated references"
 
 
 @requires_bs4
@@ -1960,12 +1950,8 @@ def test_sphinx_roles_converted_under_sphinx_parser():
     # `schedule` is documented in this fixture, so autolinking can replace its
     # code span with a cross-reference. Accept either rendered form.
     code_spans = {c.get_text(strip=True) for c in prose.select("code, a.gdls-code")}
-    assert "TimeoutError" in code_spans, (
-        "the :py:exc: role did not render as inline code"
-    )
-    assert "schedule()" in code_spans, (
-        "the :func: role did not render as callable inline code"
-    )
+    assert "TimeoutError" in code_spans, "the :py:exc: role did not render as inline code"
+    assert "schedule()" in code_spans, "the :func: role did not render as callable inline code"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -11489,3 +11475,119 @@ def test_DED_bibliography_csl_applies_numeric_style():
     # References still resolve.
     assert soup.find(id="refs") is not None, "References section should render"
     assert "ref-knuth1984" in html, "Citation anchor should resolve"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DED: D2 diagrams (gdtest_d2_diagrams) — build-time light/dark SVG rendering
+#
+# The d2 site is rendered only when the `d2` CLI is installed (CI installs it;
+# local runs need `brew install d2`). These tests skip cleanly when the site is
+# not rendered, or when a page rendered without diagrams because d2 was missing.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_D2_PKG = "gdtest_d2_diagrams"
+
+
+def _d2_page(page_name: str) -> "Path":
+    """Return a rendered d2 user-guide page, skipping if unavailable."""
+    if not _has_rendered_site(_D2_PKG):
+        pytest.skip(f"{_D2_PKG} not rendered")
+    page = _site_dir(_D2_PKG) / "user-guide" / page_name
+    if not page.exists():
+        pytest.skip(f"{page_name} not rendered")
+    return page
+
+
+def _skip_if_no_diagrams(html: str) -> None:
+    """Skip when d2 was unavailable at render time (blocks left as code)."""
+    if "d2-diagram" not in html:
+        pytest.skip("no d2 diagrams in output (d2 CLI unavailable at render time)")
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_DED_d2_diagram_container_and_theme_images():
+    """gdtest_d2_diagrams: a {d2} block becomes a .d2-diagram with light+dark imgs."""
+    page = _d2_page("basic.html")
+    html = page.read_text(encoding="utf-8")
+    _skip_if_no_diagrams(html)
+    soup = _load_html(page)
+
+    containers = soup.select("div.d2-diagram")
+    assert containers, "Expected a .d2-diagram container"
+    c = containers[0]
+    light = c.select("img.light-mode-only")
+    dark = c.select("img.dark-mode-only")
+    assert len(light) == 1, "Expected exactly one light-mode image"
+    assert len(dark) == 1, "Expected exactly one dark-mode image"
+    assert str(light[0]["src"]).endswith("-light.svg")
+    assert str(dark[0]["src"]).endswith("-dark.svg")
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_DED_d2_theme_svgs_exist_and_differ():
+    """gdtest_d2_diagrams: referenced light/dark SVGs are copied into the site and differ.
+
+    The two files come from d2's light (theme 0) and dark (theme 200) renderings,
+    so their content — including background fills — must not be identical. Each
+    also carries backfilled width/height so the <img> renders at a real size.
+    """
+    page = _d2_page("basic.html")
+    html = page.read_text(encoding="utf-8")
+    _skip_if_no_diagrams(html)
+    soup = _load_html(page)
+
+    c = soup.select_one("div.d2-diagram")
+    assert c is not None
+    light_src = str(c.select_one("img.light-mode-only")["src"])
+    dark_src = str(c.select_one("img.dark-mode-only")["src"])
+
+    light_svg = page.parent / light_src
+    dark_svg = page.parent / dark_src
+    assert light_svg.exists(), f"Light SVG not copied into site: {light_src}"
+    assert dark_svg.exists(), f"Dark SVG not copied into site: {dark_src}"
+
+    light_text = light_svg.read_text(encoding="utf-8")
+    dark_text = dark_svg.read_text(encoding="utf-8")
+    assert "<svg" in light_text and "<svg" in dark_text
+    assert light_text != dark_text, "Light and dark SVGs should differ (distinct themes)"
+    # Dimension backfill: the root <svg> must carry width/height (else <img> collapses).
+    assert "width=" in light_text and "height=" in light_text
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_DED_d2_both_fence_styles_render_and_inline_ignored():
+    """gdtest_d2_diagrams: sequence.html renders exactly two diagrams.
+
+    The page has a ``{d2}`` block and a plain ```` ```d2 ```` block (both should
+    render), plus an inline ```` ```d2 ```` mention in prose (which must NOT be
+    turned into a diagram). Two containers proves both fence styles work and the
+    inline mention was correctly ignored.
+    """
+    page = _d2_page("sequence.html")
+    html = page.read_text(encoding="utf-8")
+    _skip_if_no_diagrams(html)
+    soup = _load_html(page)
+
+    containers = soup.select("div.d2-diagram")
+    assert len(containers) == 2, f"Expected 2 diagrams (both fence styles), got {len(containers)}"
+    for c in containers:
+        assert c.select_one("img.light-mode-only") is not None
+        assert c.select_one("img.dark-mode-only") is not None
+
+
+@pytest.mark.dedicated
+@requires_bs4
+def test_DED_d2_block_replaced_not_left_as_code():
+    """gdtest_d2_diagrams: the diagram source is replaced by an image, not shown as code.
+
+    The basic diagram's node label ("Decision") lives only inside the external
+    SVG file, so it must not appear anywhere in the page HTML. If it did, the
+    fence was left as a rendered code block instead of being pre-rendered.
+    """
+    page = _d2_page("basic.html")
+    html = page.read_text(encoding="utf-8")
+    _skip_if_no_diagrams(html)
+    assert "Decision" not in html, "d2 source leaked into HTML — block was not pre-rendered"
