@@ -11160,6 +11160,9 @@ body-classes: "gd-homepage"
         if not self._config.is_python_project:
             return None
 
+        import html as _html
+
+        from ._apiref._render.html_table import html_table
         from ._icons import get_icon_svg
         from ._translations import get_translation
 
@@ -11192,36 +11195,49 @@ body-classes: "gd-homepage"
             all_dep_names |= {d["name"] for d in deps}
         pypi_dates = self._fetch_pypi_dates(all_dep_names)
 
+        # Column widths (%)
+        _COL_WIDTHS_4 = (35, 30, 25, 10)  # Package / Version / Last Published / PyPI
+        _COL_WIDTHS_5 = (28, 24, 20, 20, 8)  # … + Environment Marker
+
+        def _build_dep_rows(deps: list[dict], has_markers: bool) -> list[list[str]]:
+            dep_rows: list[list[str]] = []
+            for dep in deps:
+                name = dep["name"]
+                spec = f"<code>{_html.escape(dep['specifier'])}</code>" if dep["specifier"] else "—"
+                date_str = _html.escape(pypi_dates.get(name, "—"))
+                pypi_cell = (
+                    f'<a href="https://pypi.org/project/{_html.escape(name)}/"'
+                    f' class="gd-pypi-link">{_link_svg}</a>'
+                )
+                pkg_cell = f'<code class="gd-no-link">{_html.escape(name)}</code>'
+                if has_markers:
+                    marker = (
+                        f"<code>{_html.escape(dep['marker'])}</code>" if dep.get("marker") else ""
+                    )
+                    dep_rows.append([pkg_cell, spec, marker, date_str, pypi_cell])
+                else:
+                    dep_rows.append([pkg_cell, spec, date_str, pypi_cell])
+            return dep_rows
+
         sections: list[str] = []
 
         # ── Runtime Dependencies ──────────────────────────────────────
         if runtime_deps:
             has_markers = any(d.get("marker") for d in runtime_deps)
-            header_cols = f"| {_pkg_col} | {_ver_col} | Last Published | PyPI |"
-            separator = "|----|----|----|----|"
-            if has_markers:
-                header_cols = f"| {_pkg_col} | {_ver_col} | {_marker_col} | Last Published | PyPI |"
-                separator = "|----|----|----|----|----|"
-
-            rows: list[str] = []
-            for dep in runtime_deps:
-                name = dep["name"]
-                spec = f"`{dep['specifier']}`" if dep["specifier"] else "—"
-                date_str = pypi_dates.get(name, "—")
-                pypi_cell = f"[{_link_svg}](https://pypi.org/project/{name}/){{.gd-pypi-link}}"
-                if has_markers:
-                    marker = f"`{dep['marker']}`" if dep.get("marker") else ""
-                    rows.append(
-                        f"| `{name}`{{.gd-no-link}} | {spec} | {marker}"
-                        f" | {date_str} | {pypi_cell} |"
-                    )
-                else:
-                    rows.append(f"| `{name}`{{.gd-no-link}} | {spec} | {date_str} | {pypi_cell} |")
-
+            headers = (
+                [_pkg_col, _ver_col, _marker_col, "Last Published", "PyPI"]
+                if has_markers
+                else [_pkg_col, _ver_col, "Last Published", "PyPI"]
+            )
+            col_widths = _COL_WIDTHS_5 if has_markers else _COL_WIDTHS_4
+            table_html = html_table(
+                _build_dep_rows(runtime_deps, has_markers),
+                headers=headers,
+                col_widths=col_widths,
+                table_class="gd-dep-table",
+            )
             sections.append(f"## {_runtime}\n")
-            sections.append(header_cols)
-            sections.append(separator)
-            sections.extend(rows)
+            sections.append(table_html)
             sections.append("")
 
         # ── Optional Dependencies ─────────────────────────────────────
@@ -11233,34 +11249,19 @@ body-classes: "gd-homepage"
 
                 if group_deps:
                     has_markers = any(d.get("marker") for d in group_deps)
-                    header_cols = f"| {_pkg_col} | {_ver_col} | Last Published | PyPI |"
-                    separator = "|----|----|----|----|"
-                    if has_markers:
-                        header_cols = (
-                            f"| {_pkg_col} | {_ver_col} | {_marker_col} | Last Published | PyPI |"
-                        )
-                        separator = "|----|----|----|----|----|"
-
-                    sections.append(header_cols)
-                    sections.append(separator)
-
-                    for dep in group_deps:
-                        name = dep["name"]
-                        spec = f"`{dep['specifier']}`" if dep["specifier"] else "—"
-                        date_str = pypi_dates.get(name, "—")
-                        pypi_cell = (
-                            f"[{_link_svg}](https://pypi.org/project/{name}/){{.gd-pypi-link}}"
-                        )
-                        if has_markers:
-                            marker = f"`{dep['marker']}`" if dep.get("marker") else ""
-                            sections.append(
-                                f"| `{name}`{{.gd-no-link}} | {spec} | {marker}"
-                                f" | {date_str} | {pypi_cell} |"
-                            )
-                        else:
-                            sections.append(
-                                f"| `{name}`{{.gd-no-link}} | {spec} | {date_str} | {pypi_cell} |"
-                            )
+                    headers = (
+                        [_pkg_col, _ver_col, _marker_col, "Last Published", "PyPI"]
+                        if has_markers
+                        else [_pkg_col, _ver_col, "Last Published", "PyPI"]
+                    )
+                    col_widths = _COL_WIDTHS_5 if has_markers else _COL_WIDTHS_4
+                    table_html = html_table(
+                        _build_dep_rows(group_deps, has_markers),
+                        headers=headers,
+                        col_widths=col_widths,
+                        table_class="gd-dep-table",
+                    )
+                    sections.append(table_html)
                     sections.append("")
                 else:
                     sections.append("*No dependencies declared.*\n")
@@ -16440,8 +16441,7 @@ anchor-sections: true
             d2_modified = _render_d2(self.project_path, cache_dir=d2_cache)
             if d2_modified:
                 log.detail(
-                    f"Rendered d2 diagrams in {len(d2_modified)} page(s): "
-                    + ", ".join(d2_modified)
+                    f"Rendered d2 diagrams in {len(d2_modified)} page(s): " + ", ".join(d2_modified)
                 )
 
             # Get environment with QUARTO_PYTHON set
