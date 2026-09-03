@@ -42320,9 +42320,9 @@ def test_generate_package_info_page_basic():
 
         content = pkg_info.read_text(encoding="utf-8")
         assert "Package Info" in content
-        assert "`numpy`{.gd-no-link}" in content
-        assert "`>=1.24`" in content
-        assert "`pandas`{.gd-no-link}" in content
+        assert 'class="gd-no-link">numpy</code>' in content
+        assert "&gt;=1.24" in content
+        assert 'class="gd-no-link">pandas</code>' in content
         assert "pypi.org/project/numpy" in content
         assert "pypi.org/project/pandas" in content
         assert "Runtime Dependencies" in content
@@ -42366,9 +42366,9 @@ def test_generate_package_info_page_with_optional_deps():
         assert "Optional Dependencies" in content
         assert "### `dev`" in content
         assert "### `docs`" in content
-        assert "`pytest`{.gd-no-link}" in content or "`pytest`" in content
-        assert "`coverage`{.gd-no-link}" in content or "`coverage`" in content
-        assert "`quartodoc`{.gd-no-link}" in content or "`quartodoc`" in content
+        assert "pytest" in content
+        assert "coverage" in content
+        assert "quartodoc" in content
         # Summary counts
         assert "3 groups" in content or "2 groups" in content
 
@@ -42397,7 +42397,7 @@ def test_generate_package_info_page_with_markers():
         content = (gd_dir / "package-info.qmd").read_text(encoding="utf-8")
         assert "Environment Marker" in content
         assert "python_version" in content
-        assert "`typing-extensions`" in content or "`typing_extensions`" in content
+        assert "typing-extensions" in content or "typing_extensions" in content
 
 
 def test_generate_package_info_page_disabled():

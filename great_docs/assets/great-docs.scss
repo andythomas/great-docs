@@ -206,6 +206,12 @@ body.quarto-dark table.gd-summary-table td:last-child {
    color: var(--bs-body-color);
 }
 
+// Dependency tables on the Package Info page (fixed column widths via <th style="width: X%">)
+table.gd-dep-table {
+   table-layout: fixed;
+   width: 100%;
+}
+
 .table > tbody {
    // quarto adds a bottom color that is different from the border color,
    // that looks good the default
