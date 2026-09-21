@@ -420,15 +420,15 @@ def _exclusive_to_moving_content(
 
 
 def _categorize_move_contents(
-    move: Move,
+    source: Path,
     config_path: Path,
     documents: set[Path],
     blockers: list[Note],
     follow_up: list[Note],
 ) -> None:
-    """Classify every file a move brings in, the same way for every move"""
+    """Classify every file a documentation source brings in, moved or left in place"""
     try:
-        for path in tree_files(move.source):
+        for path in tree_files(source):
             if path == config_path:
                 continue
             if path.name == "__init__.py" or path.name in _MANIFESTS:
@@ -460,9 +460,9 @@ def _categorize_move_contents(
     except (OSError, MigrationError) as error:
         blockers.append(
             Note(
-                f"Cannot inspect {move.source}: {error}",
+                f"Cannot inspect {source}: {error}",
                 category="Files That Could Not Be Read",
-                path=move.source,
+                path=source,
             )
         )
 
@@ -538,7 +538,7 @@ def _fold_in_static_directories(
             moves.append(move)
             folded.add(candidate)
             if retain(candidate):
-                _categorize_move_contents(move, config_path, documents, blockers, follow_up)
+                _categorize_move_contents(move.source, config_path, documents, blockers, follow_up)
     return follow_up
 
 
@@ -914,7 +914,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     for move in moves:
         if not retain(move.source):
             continue
-        _categorize_move_contents(move, config_path, documents, blockers, follow_up)
+        _categorize_move_contents(move.source, config_path, documents, blockers, follow_up)
     for name in ("README.md", "README.rst", "index.qmd", "index.md"):
         path = root / name
         if path.is_file():
