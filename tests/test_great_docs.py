@@ -3801,6 +3801,26 @@ def test_user_guide_warns_on_no_guide_files(capsys):
         assert "contains no .qmd or .md files" in captured.out
 
 
+def test_user_guide_discovery_ignores_reserved_build_directory():
+    """Auto-discovery must not sweep the build directory's own leftovers into the guide."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.1.0"\n'
+        )
+        (project_path / "great-docs.yml").write_text("user_guide: .\n")
+        (project_path / "guide.qmd").write_text("# Guide\n")
+        build_dir = project_path / "great-docs"
+        build_dir.mkdir()
+        (build_dir / "leftover.qmd").write_text("# Leftover\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        result = docs._discover_user_guide()
+
+        assert result is not None
+        assert {f["path"] for f in result["files"]} == {project_path.resolve() / "guide.qmd"}
+
+
 def test_user_guide_config_warns_when_both_exist(capsys):
     """Test warning when both config option and conventional directory exist."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -5448,6 +5468,32 @@ def test_process_sections_discovers_and_copies():
         sidebar_ids = [s.get("id") for s in config["website"]["sidebar"] if isinstance(s, dict)]
 
         assert "examples" in sidebar_ids
+
+
+def test_process_sections_ignores_reserved_build_directory(monkeypatch):
+    """Section file discovery must exclude the build directory's own leftovers."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "great-docs.yml").write_text("sections:\n  - title: Notes\n    dir: .\n")
+        build_dir = project_path / "great-docs"
+        build_dir.mkdir()
+        (build_dir / "_quarto.yml").write_text("website:\n  navbar:\n    left: []\n  sidebar: []\n")
+        (build_dir / "leftover.qmd").write_text("# Leftover\n")
+        (project_path / "notes.md").write_text("# Notes\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        captured: list[Path] = []
+        original = docs._copy_section_files
+
+        def spy(files, source_dir, dest_dir):
+            captured.extend(files)
+            return original(files, source_dir, dest_dir)
+
+        monkeypatch.setattr(docs, "_copy_section_files", spy)
+        docs._process_sections()
+
+        assert project_path.resolve() / "notes.md" in captured
+        assert build_dir.resolve() / "leftover.qmd" not in captured
 
 
 def test_copy_section_files_strips_numeric_directory_prefixes():

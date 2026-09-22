@@ -3172,13 +3172,20 @@ class GreatDocs:
 
             section_type = section_cfg.get("type", "default")
 
-            # Discover .qmd / .md files
+            reserved = {
+                self.layout.build_dir,
+                self.layout.site_dir,
+                self.layout.cache_dir,
+                self.layout.freeze_dir,
+            }
+
+            # Discover .qmd / .md files, skipping reserved build/cache directories
             files = sorted(
-                [
-                    f
-                    for f in source_path.rglob("*")
-                    if f.suffix in (".qmd", ".md") and f.name != "README.md"
-                ]
+                f
+                for f in source_path.rglob("*")
+                if f.suffix in (".qmd", ".md")
+                and f.name != "README.md"
+                and not any(parent in reserved for parent in f.parents)
             )
 
             if not files:
@@ -5663,10 +5670,11 @@ class GreatDocs:
             print(f"   ⚠️  User guide directory '{user_guide_dir}' is empty")
             return None
 
+        reserved = {self.layout.build_dir, self.layout.site_dir, self.layout.cache_dir, self.layout.freeze_dir}
         for item in dir_contents:
             if item.is_file() and item.suffix in valid_extensions:
                 guide_files.append(item)
-            elif item.is_dir():
+            elif item.is_dir() and item not in reserved and not item.name.startswith("."):
                 # Recursively check subdirectories for guide files at any depth
                 for ext in valid_extensions:
                     for subitem in item.rglob(f"*{ext}"):
