@@ -228,6 +228,20 @@ def test_implicit_input_insertions_preserve_other_yaml(tmp_path: Path, text: str
         assert "# Auto" in result
 
 
+def test_set_config_values_descends_into_an_existing_list_entry() -> None:
+    from great_docs._layout_migration.content import set_config_values
+
+    result = set_config_values("sections: [{dir: essays}]\n", {("sections", 0, "dir"): "docs"})
+    assert read_yaml(io.StringIO(result)) == {"sections": [{"dir": "docs"}]}
+
+
+def test_set_config_values_overwrites_a_wrongly_shaped_intermediate() -> None:
+    from great_docs._layout_migration.content import set_config_values
+
+    result = set_config_values("hero: [1, 2]\n", {("hero", "logo"): "x.svg"})
+    assert read_yaml(io.StringIO(result)) == {"hero": {"logo": "x.svg"}}
+
+
 def test_link_to_html_resolves_a_moved_quarto_source(tmp_path: Path) -> None:
     guide = tmp_path / "user_guide"
     guide.mkdir()

@@ -261,17 +261,23 @@ def _scalar(value: str, node: ScalarNode) -> str:
 
 def _set(config: dict[str, Any], path: ConfigPath, value: Any) -> None:
     parent: Any = config
-    for key in path[:-1]:
-        # Descend into an existing dict or list (e.g. `sections`) as-is, since the
-        # caller found that container in `config` itself. Auto-vivify a fresh dict
-        # only where the key is missing or holds something else, matching how a
-        # newly discovered, previously unconfigured leaf gets nested.
-        if isinstance(parent, list):
+    for position, key in enumerate(path[:-1]):
+        if isinstance(key, int):
+            # An int key names an entry the caller already found in `config`
+            # (e.g. a `sections[index]`); index into it rather than auto-vivifying,
+            # which would discard the sibling entries around it.
             parent = parent[key]
             continue
+        # Auto-vivify a container of whatever shape the *next* key needs, matching
+        # how a newly discovered, previously unconfigured leaf gets nested. Judge
+        # by the next key rather than the current value's type: an existing value
+        # of the wrong shape (e.g. a list where a dict is needed) must still be
+        # overwritten, the same as a missing one, rather than raising.
+        next_key = path[position + 1]
+        expected = list if isinstance(next_key, int) else dict
         existing = parent.get(key)
-        if not isinstance(existing, (dict, list)):
-            existing = {}
+        if not isinstance(existing, expected):
+            existing = expected()
             parent[key] = existing
         parent = existing
     parent[path[-1]] = value

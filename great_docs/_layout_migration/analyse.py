@@ -325,6 +325,10 @@ def _dedicated_directories(config: dict[str, Any], root: Path) -> list[tuple[Pat
     marimo = config.get("marimo", False)
     if marimo is True or isinstance(marimo, dict) and marimo.get("enabled"):
         if (root / "notebooks").exists() or (root / "notebooks").is_symlink():
+            # ("marimo",) is a sentinel tag, not a real YAML config path: the
+            # notebook directory name ("notebooks") is a hardcoded convention, not a
+            # string stored under the "marimo" key, so it never appears in
+            # `content._PATH_FIELDS` and `rewrite_config` never rewrites it.
             selected.append((root / "notebooks", ("marimo",)))
     for path, _ in selected:
         check_symlinks(path)
@@ -728,6 +732,10 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         blockers.append(Note(str(error), category="Files That Could Not Be Read"))
         selected = []
     content_directories = _content_directories(config, root)
+    # ("index",) and ("config",) are sentinel tags, not real YAML config paths: neither
+    # names a field in `content._PATH_FIELDS`, so `exact_match`'s two-entry allowlist
+    # below isn't the only thing keeping them out of `pinned_values`/`pinned_fields` —
+    # `rewrite_config` never even considers rewriting a path under either tag.
     for name in ("index.qmd", "index.md"):
         if (root / name).exists() or (root / name).is_symlink():
             selected.append((root / name, ("index",)))
@@ -735,6 +743,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     selected.append((config_path, ("config",)))
     in_place_sources: list[Path] = []
     pinned_values: dict[ConfigPath, str] = {}
+    pinned_fields: set[ConfigPath] = set()
     for index, (source, config_field) in enumerate(selected):
         if source == root or not source.is_relative_to(root):
             blockers.append(
@@ -809,27 +818,33 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                         path=source,
                     )
                 )
-                children = []
-            if not children:
-                follow_up.append(
-                    Note(
-                        f"Documentation source is empty; nothing to migrate: {source}",
-                        category="Files Retained As-Is",
-                        path=source,
-                    )
-                )
             else:
-                for child in children:
-                    moves.append(Move(child, destination / nested_name / child.name))
-                pinned_values[config_field] = nested_name
-                follow_up.append(
-                    Note(
-                        f"Documentation source already at the destination; contents moved to "
-                        f"{(destination / nested_name).relative_to(root)}",
-                        category="Files Retained As-Is",
-                        path=source,
+                if not children:
+                    # Pin the field without a replacement value: the source stays on
+                    # disk exactly where it is, so the generic rewrite pass must leave
+                    # its text span untouched rather than rebasing it to "." (source
+                    # relative to itself).
+                    pinned_fields.add(config_field)
+                    follow_up.append(
+                        Note(
+                            f"Documentation source is empty; nothing to migrate: {source}",
+                            category="Files Retained As-Is",
+                            path=source,
+                        )
                     )
-                )
+                else:
+                    for child in children:
+                        moves.append(Move(child, destination / nested_name / child.name))
+                    pinned_fields.add(config_field)
+                    pinned_values[config_field] = nested_name
+                    follow_up.append(
+                        Note(
+                            f"Documentation source already at the destination; contents moved to "
+                            f"{(destination / nested_name).relative_to(root)}",
+                            category="Files Retained As-Is",
+                            path=source,
+                        )
+                    )
         else:
             target = destination / source.relative_to(root)
             if source == config_path:
@@ -1001,7 +1016,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     try:
         final_text = set_config_values(materialised, pinned_values)
         rewritten = rewrite_config(
-            final_text, tuple(moves), root, destination, pinned=frozenset(pinned_values)
+            final_text, tuple(moves), root, destination, pinned=frozenset(pinned_fields)
         ).encode("utf-8")
         if rewritten != before:
             edits.append(Edit(config_path, before, rewritten))
