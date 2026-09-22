@@ -676,6 +676,52 @@ def test_destination_nested_inside_source_still_blocks(project: Path) -> None:
     )
 
 
+def test_user_guide_at_destination_nests_into_user_guide_folder(project: Path) -> None:
+    put(project, "great-docs.yml", "user_guide: docs\n")
+    put(project, "docs/guide.qmd", "# Guide\n")
+    put(project, "docs/notes/extra.md", "# Extra\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert Move(project / "docs/guide.qmd", project / "docs/user-guide/guide.qmd") in result.moves
+    assert Move(project / "docs/notes", project / "docs/user-guide/notes") in result.moves
+    assert not any(move.source == project / "docs" for move in result.moves)
+    edit = next(edit for edit in result.edits if edit.path == project / "great-docs.yml")
+    config = read_yaml(io.StringIO(edit.after.decode()))
+    assert config["user_guide"] == "user-guide"
+    assert any(
+        "already at the destination" in message.lower() for message in result.follow_up
+    )
+
+
+def test_section_dir_at_destination_nests_using_original_name(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{title: Project docs, dir: docs}]\n")
+    put(project, "docs/notes.md", "# Notes\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert Move(project / "docs/notes.md", project / "docs/docs/notes.md") in result.moves
+    edit = next(edit for edit in result.edits if edit.path == project / "great-docs.yml")
+    config = read_yaml(io.StringIO(edit.after.decode()))
+    assert config["sections"][0]["dir"] == "docs"
+
+
+def test_empty_exact_match_source_migrates_without_a_nested_folder(project: Path) -> None:
+    put(project, "great-docs.yml", "user_guide: docs\n")
+    (project / "docs").mkdir()
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert not any(move.destination.is_relative_to(project / "docs/user-guide") for move in result.moves)
+    assert any("nothing to migrate" in message.lower() for message in result.follow_up)
+
+
+def test_custom_pages_at_destination_still_blocks(project: Path) -> None:
+    put(project, "great-docs.yml", "custom_pages: {dir: docs}\n")
+    put(project, "docs/about.html", "<h1>About</h1>\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any(
+        "overlaps the destination" in message.lower() for message in result.blockers
+    )
+
+
 def test_directory_holding_a_render_script_does_not_fold_in(project: Path) -> None:
     put(project, "great-docs.yml", "module: sample\npre_render: tools/build.py\n")
     put(project, "tools/build.py", "print('build')\n")

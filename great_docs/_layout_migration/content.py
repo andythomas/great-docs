@@ -262,9 +262,18 @@ def _scalar(value: str, node: ScalarNode) -> str:
 def _set(config: dict[str, Any], path: ConfigPath, value: Any) -> None:
     parent: Any = config
     for key in path[:-1]:
-        if not isinstance(parent.get(key), dict):
-            parent[key] = {}
-        parent = parent[key]
+        # Descend into an existing dict or list (e.g. `sections`) as-is, since the
+        # caller found that container in `config` itself. Auto-vivify a fresh dict
+        # only where the key is missing or holds something else, matching how a
+        # newly discovered, previously unconfigured leaf gets nested.
+        if isinstance(parent, list):
+            parent = parent[key]
+            continue
+        existing = parent.get(key)
+        if not isinstance(existing, (dict, list)):
+            existing = {}
+            parent[key] = existing
+        parent = existing
     parent[path[-1]] = value
 
 

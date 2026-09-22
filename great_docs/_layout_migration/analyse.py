@@ -293,42 +293,42 @@ def _logo_candidates(package: str, *, hero: bool) -> list[str]:
     return candidates
 
 
-def _dedicated_directories(config: dict[str, Any], root: Path) -> list[Path]:
-    selected: list[Path] = []
+def _dedicated_directories(config: dict[str, Any], root: Path) -> list[tuple[Path, ConfigPath]]:
+    selected: list[tuple[Path, ConfigPath]] = []
     guide = config.get("user_guide")
     if isinstance(guide, str) and not Path(guide).is_absolute():
-        selected.append(root / guide)
+        selected.append((root / guide, ("user_guide",)))
     elif not isinstance(guide, str):
         for name in ("user_guide", "user-guide"):
             if (root / name).exists() or (root / name).is_symlink():
-                selected.append(root / name)
+                selected.append((root / name, ("user_guide",)))
                 break
     sections = config.get("sections") or []
     if not isinstance(sections, list):
         raise MigrationError("Narrative sections must be a list of directory mappings")
-    for section in sections:
+    for index, section in enumerate(sections):
         if (
             isinstance(section, dict)
             and isinstance(section.get("dir"), str)
             and not Path(section["dir"]).is_absolute()
         ):
-            selected.append(root / section["dir"])
+            selected.append((root / section["dir"], ("sections", index, "dir")))
     custom = config.get("custom_pages")
     if custom is None:
         if (root / "custom").exists() or (root / "custom").is_symlink():
-            selected.append(root / "custom")
+            selected.append((root / "custom", ("custom_pages",)))
     else:
         for entry in custom if isinstance(custom, list) else [custom]:
             directory = entry.get("dir") if isinstance(entry, dict) else entry
             if isinstance(directory, str) and not Path(directory).is_absolute():
-                selected.append(root / directory)
+                selected.append((root / directory, ("custom_pages",)))
     marimo = config.get("marimo", False)
     if marimo is True or isinstance(marimo, dict) and marimo.get("enabled"):
         if (root / "notebooks").exists() or (root / "notebooks").is_symlink():
-            selected.append(root / "notebooks")
-    for path in selected:
+            selected.append((root / "notebooks", ("marimo",)))
+    for path, _ in selected:
         check_symlinks(path)
-    return [absolute_path(path) for path in selected]
+    return [(absolute_path(path), field) for path, field in selected]
 
 
 def _content_directories(config: dict[str, Any], root: Path) -> tuple[ContentDirectory, ...]:
@@ -730,11 +730,12 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     content_directories = _content_directories(config, root)
     for name in ("index.qmd", "index.md"):
         if (root / name).exists() or (root / name).is_symlink():
-            selected.append(root / name)
+            selected.append((root / name, ("index",)))
             break
-    selected.append(config_path)
+    selected.append((config_path, ("config",)))
     in_place_sources: list[Path] = []
-    for index, source in enumerate(selected):
+    pinned_values: dict[ConfigPath, str] = {}
+    for index, (source, config_field) in enumerate(selected):
         if source == root or not source.is_relative_to(root):
             blockers.append(
                 Note(
@@ -745,7 +746,11 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             )
             continue
         in_place = source != destination and source.is_relative_to(destination)
-        if _overlaps(source, destination) and not in_place:
+        exact_match = source == destination and config_field[:1] in {
+            ("user_guide",),
+            ("sections",),
+        }
+        if _overlaps(source, destination) and not in_place and not exact_match:
             blockers.append(
                 Note(
                     f"Documentation source overlaps the destination: {source}",
@@ -753,7 +758,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                     path=source,
                 )
             )
-        for other in selected[:index]:
+        for other, _ in selected[:index]:
             if _overlaps(source, other):
                 blockers.append(
                     Note(
@@ -788,6 +793,43 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                     path=source,
                 )
             )
+        elif exact_match:
+            nested_name = (
+                "user-guide"
+                if config_field[:1] == ("user_guide",)
+                else source.relative_to(root).as_posix()
+            )
+            try:
+                children = sorted(source.iterdir())
+            except OSError as error:
+                blockers.append(
+                    Note(
+                        f"Cannot inspect {source}: {error}",
+                        category="Files That Could Not Be Read",
+                        path=source,
+                    )
+                )
+                children = []
+            if not children:
+                follow_up.append(
+                    Note(
+                        f"Documentation source is empty; nothing to migrate: {source}",
+                        category="Files Retained As-Is",
+                        path=source,
+                    )
+                )
+            else:
+                for child in children:
+                    moves.append(Move(child, destination / nested_name / child.name))
+                pinned_values[config_field] = nested_name
+                follow_up.append(
+                    Note(
+                        f"Documentation source already at the destination; contents moved to "
+                        f"{(destination / nested_name).relative_to(root)}",
+                        category="Files Retained As-Is",
+                        path=source,
+                    )
+                )
         else:
             target = destination / source.relative_to(root)
             if source == config_path:
@@ -957,7 +999,10 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         )
     )
     try:
-        rewritten = rewrite_config(materialised, tuple(moves), root, destination).encode("utf-8")
+        final_text = set_config_values(materialised, pinned_values)
+        rewritten = rewrite_config(
+            final_text, tuple(moves), root, destination, pinned=frozenset(pinned_values)
+        ).encode("utf-8")
         if rewritten != before:
             edits.append(Edit(config_path, before, rewritten))
     except MigrationError as error:
