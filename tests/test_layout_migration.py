@@ -663,6 +663,11 @@ def test_section_dir_under_destination_stays_in_place(project: Path) -> None:
     config = read_yaml(io.StringIO(edit.after.decode()))
     assert config["sections"][0]["dir"] == "guide"
     assert any("already lives inside the destination" in message for message in result.follow_up)
+    # Shortening `dir` is unavoidable here, and it shortens the published path too.
+    assert any(
+        "Published path for this section changes from docs/guide to guide" in message
+        for message in result.follow_up
+    )
 
 
 def test_destination_nested_inside_source_still_blocks(project: Path) -> None:
@@ -685,6 +690,52 @@ def test_user_guide_at_destination_nests_into_user_guide_folder(project: Path) -
     config = read_yaml(io.StringIO(edit.after.decode()))
     assert config["user_guide"] == "user-guide"
     assert any("already at the destination" in message.lower() for message in result.follow_up)
+
+
+def test_exact_match_child_named_like_a_discovery_input_is_not_a_conflict(
+    project: Path,
+) -> None:
+    # `docs/index.md` would change source discovery only if it stayed put. It is an
+    # exact-match source's child, so it moves into `docs/user-guide/` with its siblings.
+    put(project, "great-docs.yml", "user_guide: docs\n")
+    put(project, "docs/guide.qmd", "# Guide\n")
+    put(project, "docs/index.md", "# Index\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert Move(project / "docs/index.md", project / "docs/user-guide/index.md") in result.moves
+
+
+def test_discovery_input_beside_an_in_place_source_still_blocks(project: Path) -> None:
+    # Nothing moves `docs/index.md` away when the section beside it stays in place, so
+    # it would still change source discovery after the migration.
+    put(project, "great-docs.yml", "sections: [{dir: docs/guide}]\n")
+    put(project, "docs/guide/start.md", "# Start\n")
+    put(project, "docs/index.md", "# Index\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any("would change source discovery" in message for message in result.blockers)
+
+
+def test_exact_match_and_ordinary_sections_migrate_together(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: docs}, {dir: guides}]\n")
+    put(project, "docs/notes.md", "# Notes\n")
+    put(project, "guides/start.md", "# Start\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert Move(project / "docs/notes.md", project / "docs/docs/notes.md") in result.moves
+    assert Move(project / "guides", project / "docs/guides") in result.moves
+    edit = next(edit for edit in result.edits if edit.path == project / "great-docs.yml")
+    config = read_yaml(io.StringIO(edit.after.decode()))
+    assert [section["dir"] for section in config["sections"]] == ["docs", "guides"]
+
+
+def test_section_nested_inside_an_exact_match_user_guide_still_blocks(project: Path) -> None:
+    # One selected source's directory contains another's, which per-child decomposition
+    # must not quietly make acceptable.
+    put(project, "great-docs.yml", "user_guide: docs\nsections: [{dir: docs/tutorials}]\n")
+    put(project, "docs/guide.qmd", "# Guide\n")
+    put(project, "docs/tutorials/first.md", "# First\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any("Selected documentation sources overlap" in message for message in result.blockers)
 
 
 def test_exact_match_migration_applies_to_disk(project: Path) -> None:

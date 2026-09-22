@@ -3172,20 +3172,19 @@ class GreatDocs:
 
             section_type = section_cfg.get("type", "default")
 
-            reserved = {
-                self.layout.build_dir,
-                self.layout.site_dir,
-                self.layout.cache_dir,
-                self.layout.freeze_dir,
-            }
-
-            # Discover .qmd / .md files, skipping reserved build/cache directories
+            # Discover .qmd / .md files, skipping this project's own generated output at
+            # any depth. Only ancestors within the section directory are consulted, since
+            # a hidden directory above the project says nothing about the content inside.
             files = sorted(
                 f
                 for f in source_path.rglob("*")
                 if f.suffix in (".qmd", ".md")
                 and f.name != "README.md"
-                and not any(parent in reserved for parent in f.parents)
+                and not any(
+                    self._is_reserved_output_directory(parent)
+                    for parent in f.parents
+                    if parent != source_path and parent.is_relative_to(source_path)
+                )
             )
 
             if not files:
@@ -3202,7 +3201,11 @@ class GreatDocs:
 
             # Copy asset directories (images, data, code snippets, etc.)
             for item in source_path.iterdir():
-                if item.is_dir() and self._is_asset_dir(item):
+                if (
+                    item.is_dir()
+                    and not self._is_reserved_output_directory(item)
+                    and self._is_asset_dir(item)
+                ):
                     dst_dir = dest_dir / item.name
                     if dst_dir.exists():
                         shutil.rmtree(dst_dir)
@@ -5670,11 +5673,10 @@ class GreatDocs:
             print(f"   ⚠️  User guide directory '{user_guide_dir}' is empty")
             return None
 
-        reserved = {self.layout.build_dir, self.layout.site_dir, self.layout.cache_dir, self.layout.freeze_dir}
         for item in dir_contents:
             if item.is_file() and item.suffix in valid_extensions:
                 guide_files.append(item)
-            elif item.is_dir() and item not in reserved and not item.name.startswith("."):
+            elif item.is_dir() and not self._is_reserved_output_directory(item):
                 # Recursively check subdirectories for guide files at any depth
                 for ext in valid_extensions:
                     for subitem in item.rglob(f"*{ext}"):
@@ -5853,13 +5855,50 @@ class GreatDocs:
 
         # Also copy any asset directories (images, data, code snippets, etc.)
         for item in source_dir.iterdir():
-            if item.is_dir() and self._is_asset_dir(item):
+            if (
+                item.is_dir()
+                and not self._is_reserved_output_directory(item)
+                and self._is_asset_dir(item)
+            ):
                 dst_dir = target_dir / item.name
                 if dst_dir.exists():
                     shutil.rmtree(dst_dir)  # pragma: no cover
                 shutil.copytree(item, dst_dir)
 
         return copied_files
+
+    def _is_reserved_output_directory(self, path: Path) -> bool:
+        """
+        Whether a directory is, or contains, this project's own generated output
+
+        Membership is decided by containment rather than by name, because the build
+        directory's name and depth differ between layouts. An unmigrated project builds
+        into `great-docs/` beside the configuration, while a migrated one builds into
+        `_quarto/default/` two levels below the content directory. Comparing a content
+        directory's children against the build directory by name or identity therefore
+        misses the migrated case, where the child is only an ancestor of the build
+        directory.
+
+        Parameters
+        ----------
+        path
+            A directory encountered while walking user content.
+
+        Returns
+        -------
+        bool
+            `True` when the directory is hidden, is one of the generated output
+            locations, or is an ancestor of one.
+        """
+        if path.name.startswith("."):
+            return True
+        reserved = (
+            self.layout.build_dir,
+            self.layout.site_dir,
+            self.layout.cache_dir,
+            self.layout.freeze_dir,
+        )
+        return any(path == location or location.is_relative_to(path) for location in reserved)
 
     @staticmethod
     def _is_asset_dir(directory: Path) -> bool:

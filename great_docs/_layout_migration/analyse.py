@@ -734,8 +734,10 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     content_directories = _content_directories(config, root)
     # ("index",) and ("config",) are sentinel tags, not real YAML config paths: neither
     # names a field in `content._PATH_FIELDS`, so `exact_match`'s two-entry allowlist
-    # below isn't the only thing keeping them out of `pinned_values`/`pinned_fields` —
-    # `rewrite_config` never even considers rewriting a path under either tag.
+    # below isn't the only thing keeping them out of `pinned_values`/`pinned_fields`.
+    # `rewrite_config` never even considers rewriting a path under either tag. The same
+    # is not true of ("custom_pages",), which does name a rewritable field and is kept
+    # out of the allowlist deliberately.
     for name in ("index.qmd", "index.md"):
         if (root / name).exists() or (root / name).is_symlink():
             selected.append((root / name, ("index",)))
@@ -802,6 +804,22 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                     path=source,
                 )
             )
+            # Leaving the directory where it is means its configured `dir` shortens to a
+            # path relative to the new configuration location, and a section's published
+            # directory is that value slugged. Report the resulting URL change, which no
+            # choice of nested name can avoid here.
+            if config_field[:1] == ("sections",):
+                old_value = source.relative_to(root).as_posix()
+                new_value = Path(os.path.relpath(source, destination)).as_posix()
+                if old_value != new_value:
+                    follow_up.append(
+                        Note(
+                            f"Published path for this section changes from "
+                            f"{section_slug(old_value)} to {section_slug(new_value)}: {source}",
+                            category="Configuration to Review",
+                            path=source,
+                        )
+                    )
         elif exact_match:
             nested_name = (
                 "user-guide"
@@ -827,7 +845,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                     pinned_fields.add(config_field)
                     follow_up.append(
                         Note(
-                            f"Documentation source is empty; nothing to migrate: {source}",
+                            f"Documentation source is empty; nothing to migrate: {source}. "
+                            f"No content is published from here until files are added.",
                             category="Files Retained As-Is",
                             path=source,
                         )
@@ -864,7 +883,12 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         if (root / name).is_file() or not (root / name).exists():
             retain(root / name)
         target = destination / name
-        if target.exists() and not any(move.destination == target for move in moves):
+        # A discovery name at the destination is only a conflict when it will still be
+        # there afterwards. It survives neither when something else moves onto it nor
+        # when it moves away itself, which an exact-match source's per-child moves do.
+        if target.exists() and not any(
+            move.destination == target or move.source == target for move in moves
+        ):
             blockers.append(
                 Note(
                     f"Existing destination input would change source discovery: {target}",

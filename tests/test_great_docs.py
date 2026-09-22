@@ -3808,17 +3808,52 @@ def test_user_guide_discovery_ignores_reserved_build_directory():
         (project_path / "pyproject.toml").write_text(
             '[project]\nname = "test"\nversion = "0.1.0"\n'
         )
-        (project_path / "great-docs.yml").write_text("user_guide: .\n")
-        (project_path / "guide.qmd").write_text("# Guide\n")
-        build_dir = project_path / "great-docs"
-        build_dir.mkdir()
-        (build_dir / "leftover.qmd").write_text("# Leftover\n")
+        # A migrated layout: the configuration lives in docs/, so the build directory is
+        # docs/_quarto/default/ and only its grandparent is a child of the guide source.
+        docs_dir = project_path / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "great-docs.yml").write_text("user_guide: .\n")
+        (docs_dir / "guide.qmd").write_text("# Guide\n")
+        leftover = docs_dir / "_quarto/default/reference/other.qmd"
+        leftover.parent.mkdir(parents=True)
+        leftover.write_text("# Leftover\n")
 
         docs = GreatDocs(project_path=tmp_dir)
         result = docs._discover_user_guide()
 
         assert result is not None
-        assert {f["path"] for f in result["files"]} == {project_path.resolve() / "guide.qmd"}
+        assert {f["path"].resolve() for f in result["files"]} == {
+            (docs_dir / "guide.qmd").resolve()
+        }
+
+
+def test_user_guide_asset_copy_skips_the_staged_quarto_project():
+    """Staging the guide must not copy the build directory into itself."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        project_path = Path(tmp_dir)
+        (project_path / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.1.0"\n'
+        )
+        docs_dir = project_path / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "great-docs.yml").write_text("user_guide: .\n")
+        (docs_dir / "guide.qmd").write_text("---\ntitle: Guide\n---\n\n![Chart](images/c.png)\n")
+        (docs_dir / "images").mkdir()
+        (docs_dir / "images/c.png").write_bytes(b"chart")
+        # A previous build's staged Quarto project sits beside the real content. Its
+        # leading underscore makes `_is_asset_dir` claim it, and the copy destination is
+        # inside it, so copying it would recurse until the path grew too long.
+        stale = docs_dir / "_quarto/default/reference/other.qmd"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("# Leftover\n")
+        (docs_dir / "_quarto/default/_quarto.yml").write_text(QUARTO_YML_HEADER + "project: {}\n")
+
+        docs = GreatDocs(project_path=tmp_dir)
+        docs._prepare_build_directory()
+        docs._copy_user_guide_to_docs(docs._discover_user_guide())
+
+        assert (docs.build_dir / "user-guide/images/c.png").read_bytes() == b"chart"
+        assert not list(docs.build_dir.rglob("_quarto"))
 
 
 def test_user_guide_config_warns_when_both_exist(capsys):
@@ -5474,12 +5509,18 @@ def test_process_sections_ignores_reserved_build_directory(monkeypatch):
     """Section file discovery must exclude the build directory's own leftovers."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
-        (project_path / "great-docs.yml").write_text("sections:\n  - title: Notes\n    dir: .\n")
-        build_dir = project_path / "great-docs"
-        build_dir.mkdir()
+        # A migrated layout: the build directory is docs/_quarto/default/, nested two
+        # levels below the section source, so a direct-child comparison never sees it.
+        docs_dir = project_path / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "great-docs.yml").write_text("sections:\n  - title: Notes\n    dir: .\n")
+        build_dir = docs_dir / "_quarto/default"
+        build_dir.mkdir(parents=True)
         (build_dir / "_quarto.yml").write_text("website:\n  navbar:\n    left: []\n  sidebar: []\n")
-        (build_dir / "leftover.qmd").write_text("# Leftover\n")
-        (project_path / "notes.md").write_text("# Notes\n")
+        leftover = build_dir / "reference/other.qmd"
+        leftover.parent.mkdir()
+        leftover.write_text("# Leftover\n")
+        (docs_dir / "notes.md").write_text("# Notes\n")
 
         docs = GreatDocs(project_path=tmp_dir)
         captured: list[Path] = []
@@ -5492,8 +5533,10 @@ def test_process_sections_ignores_reserved_build_directory(monkeypatch):
         monkeypatch.setattr(docs, "_copy_section_files", spy)
         docs._process_sections()
 
-        assert project_path.resolve() / "notes.md" in captured
-        assert build_dir.resolve() / "leftover.qmd" not in captured
+        resolved = {path.resolve() for path in captured}
+
+        assert (docs_dir / "notes.md").resolve() in resolved
+        assert leftover.resolve() not in resolved
 
 
 def test_copy_section_files_strips_numeric_directory_prefixes():
