@@ -687,6 +687,60 @@ def test_user_guide_at_destination_nests_into_user_guide_folder(project: Path) -
     assert any("already at the destination" in message.lower() for message in result.follow_up)
 
 
+def test_exact_match_migration_applies_to_disk(project: Path) -> None:
+    from great_docs._layout_migration import apply
+
+    put(project, "great-docs.yml", "user_guide: docs\n")
+    put(project, "docs/guide.qmd", "# Guide\n")
+    put(project, "docs/notes/extra.md", "# Extra\n")
+    migration = analyse(Layout.make(project), Path("docs"))
+    assert not migration.blockers
+    apply(migration)
+    assert (project / "docs/user-guide/guide.qmd").read_text() == "# Guide\n"
+    assert (project / "docs/user-guide/notes/extra.md").read_text() == "# Extra\n"
+    assert (project / "docs/great-docs.yml").is_file()
+    assert not (project / "docs/guide.qmd").exists()
+    assert not (project / "docs/notes").exists()
+    config = read_yaml(project / "docs/great-docs.yml")
+    assert config["user_guide"] == "user-guide"
+
+
+def test_exact_match_migration_rolls_back_on_mid_migration_failure(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib
+
+    from great_docs._layout_migration import MigrationError, apply
+
+    put(project, "great-docs.yml", "user_guide: docs\n")
+    put(project, "docs/guide.qmd", "# Guide\n")
+    put(project, "docs/notes/extra.md", "# Extra\n")
+    # `apply()` unconditionally creates `.great-docs-cache` (the recovery journal's parent)
+    # if absent, and never removes it again; pre-creating it here keeps that pre-existing,
+    # out-of-scope directory-lifecycle quirk from tripping the snapshot comparison below,
+    # which is meant to test rollback of the moved files, not that quirk.
+    (project / ".great-docs-cache").mkdir()
+    before = snapshot(project)
+    migration = analyse(Layout.make(project), Path("docs"))
+    assert not migration.blockers
+
+    application = importlib.import_module("great_docs._layout_migration.apply")
+    move = application._move
+    triggered = []
+
+    def fail_after_first_child(source: Path, destination: Path) -> None:
+        move(source, destination)
+        if source.name == "guide.qmd" and not triggered:
+            triggered.append(True)
+            raise OSError("Simulated failure after the first child move")
+
+    monkeypatch.setattr(application, "_move", fail_after_first_child)
+    with pytest.raises(MigrationError):
+        apply(migration)
+
+    assert snapshot(project) == before
+
+
 def test_section_dir_at_destination_nests_using_original_name(project: Path) -> None:
     put(project, "great-docs.yml", "sections: [{title: Project docs, dir: docs}]\n")
     put(project, "docs/notes.md", "# Notes\n")
