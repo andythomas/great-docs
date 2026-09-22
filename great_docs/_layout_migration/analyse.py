@@ -733,6 +733,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             selected.append(root / name)
             break
     selected.append(config_path)
+    in_place_sources: list[Path] = []
     for index, source in enumerate(selected):
         if source == root or not source.is_relative_to(root):
             blockers.append(
@@ -743,7 +744,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 )
             )
             continue
-        if _overlaps(source, destination):
+        in_place = source != destination and source.is_relative_to(destination)
+        if _overlaps(source, destination) and not in_place:
             blockers.append(
                 Note(
                     f"Documentation source overlaps the destination: {source}",
@@ -769,12 +771,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                         path=source,
                     )
                 )
-        target = destination / source.relative_to(root)
-        if source == config_path:
-            target = destination / config_path.name
-        if source.exists() or source.is_symlink():
-            moves.append(Move(source, target))
-        else:
+        if not (source.exists() or source.is_symlink()):
             blockers.append(
                 Note(
                     f"Documentation source does not exist: {source}",
@@ -782,6 +779,20 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                     path=source,
                 )
             )
+        elif in_place:
+            in_place_sources.append(source)
+            follow_up.append(
+                Note(
+                    f"Documentation source already lives inside the destination; left in place: {source}",
+                    category="Files Retained As-Is",
+                    path=source,
+                )
+            )
+        else:
+            target = destination / source.relative_to(root)
+            if source == config_path:
+                target = destination / config_path.name
+            moves.append(Move(source, target))
 
     for name in (
         "user_guide",
@@ -911,10 +922,10 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 )
             )
 
-    for move in moves:
-        if not retain(move.source):
+    for source in [move.source for move in moves] + in_place_sources:
+        if not retain(source):
             continue
-        _categorize_move_contents(move.source, config_path, documents, blockers, follow_up)
+        _categorize_move_contents(source, config_path, documents, blockers, follow_up)
     for name in ("README.md", "README.rst", "index.qmd", "index.md"):
         path = root / name
         if path.is_file():

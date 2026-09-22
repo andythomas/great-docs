@@ -653,6 +653,29 @@ def test_fold_in_candidate_overlapping_the_destination_stays_in_place(project: P
     assert not any(move.source == project / "docs" for move in result.moves)
 
 
+def test_section_dir_under_destination_stays_in_place(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: docs/guide}]\n")
+    put(project, "docs/guide/start.md", "# Start\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert not any(move.source == project / "docs/guide" for move in result.moves)
+    edit = next(edit for edit in result.edits if edit.path == project / "great-docs.yml")
+    config = read_yaml(io.StringIO(edit.after.decode()))
+    assert config["sections"][0]["dir"] == "guide"
+    assert any(
+        "already lives inside the destination" in message for message in result.follow_up
+    )
+
+
+def test_destination_nested_inside_source_still_blocks(project: Path) -> None:
+    put(project, "great-docs.yml", "user_guide: docs\n")
+    put(project, "docs/guide.md", "# Guide\n")
+    result = analyse(Layout.make(project), Path("docs/nested"))
+    assert any(
+        "overlaps the destination" in message.lower() for message in result.blockers
+    )
+
+
 def test_directory_holding_a_render_script_does_not_fold_in(project: Path) -> None:
     put(project, "great-docs.yml", "module: sample\npre_render: tools/build.py\n")
     put(project, "tools/build.py", "print('build')\n")
@@ -776,7 +799,7 @@ def test_migration_applies_cache_move_to_disk(project: Path) -> None:
     assert not (project / ".great-docs-cache/snapshots").exists()
 
 
-@pytest.mark.parametrize("source", ["sample", "src", "user_guide/sub", "great-docs", "docs/inside"])
+@pytest.mark.parametrize("source", ["sample", "src", "user_guide/sub", "great-docs"])
 def test_overlapping_sources_are_blocked(project: Path, source: str) -> None:
     put(project, "great-docs.yml", f"sections: [{{dir: {source}}}]\n")
     put(project, "user_guide/sub/page.md", "# Page")
