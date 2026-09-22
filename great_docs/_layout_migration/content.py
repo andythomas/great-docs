@@ -268,19 +268,29 @@ def _set(config: dict[str, Any], path: ConfigPath, value: Any) -> None:
     parent[path[-1]] = value
 
 
-def rewrite_config(text: str, moves: tuple[Move, ...], source_dir: Path, destination: Path) -> str:
+def rewrite_config(
+    text: str,
+    moves: tuple[Move, ...],
+    source_dir: Path,
+    destination: Path,
+    *,
+    pinned: frozenset[ConfigPath] = frozenset(),
+) -> str:
     """
     Rebase documented path scalars while preserving all surrounding YAML bytes
 
-    Keep URLs, absolute paths, and guide-relative ordering unchanged. Validate
-    the complete result with YAML 1.2 against an independently updated mapping.
-    Reject spans shared by aliases, explicit tags, or block scalars.
+    Keep URLs, absolute paths, guide-relative ordering, and any field named in
+    `pinned` unchanged. Validate the complete result with YAML 1.2 against an
+    independently updated mapping. Reject spans shared by aliases, explicit
+    tags, or block scalars.
     """
     config = read_config(text)
     expected = copy.deepcopy(config)
     nodes, unsafe = _nodes(text)
     replacements: list[tuple[int, int, str]] = []
     for path, value in config_paths(config):
+        if path in pinned:
+            continue
         target = local_path(value, source_dir)
         if target is None or Path(value).is_absolute():
             continue

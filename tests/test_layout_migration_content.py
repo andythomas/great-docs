@@ -20,6 +20,15 @@ def test_rebase_preserves_yaml_comment(tmp_path: Path) -> None:
     )
 
 
+def test_pinned_path_is_left_untouched(tmp_path: Path) -> None:
+    text = "user_guide: docs\nbibliography: refs.bib\n"
+    result = rewrite_config(
+        text, (), tmp_path, tmp_path / "docs", pinned=frozenset({("user_guide",)})
+    )
+    assert "user_guide: docs" in result
+    assert "bibliography: ../refs.bib" in result
+
+
 @pytest.mark.parametrize("destination", ["docs", "website/reference"])
 def test_config_changes_only_path_spans(tmp_path: Path, destination: str) -> None:
     text = (
