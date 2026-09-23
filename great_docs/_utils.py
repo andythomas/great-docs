@@ -101,11 +101,13 @@ def is_great_docs_build_dir(path: Path) -> bool:
     Identify a directory Great Docs generated and owns
 
     A generated directory either contains a readable UTF-8 `_quarto.yml` that
-    begins with the complete generated-file header, or holds nothing but the
-    generated `.gitignore` a fresh clone leaves behind before the first
-    build (`.gitignore`'s own `!.gitignore` rule keeps it, and only it,
-    tracked by git). Either exact match prevents build cleanup from treating
-    a user directory as generated output.
+    begins with the complete generated-file header, or holds nothing but a
+    `.gitignore` beginning with the generated content a fresh clone leaves
+    before its first build (`.gitignore`'s own `!.gitignore` rule keeps it,
+    and only it, tracked by git). Both checks match a prefix rather than the
+    whole file, so a genuine render's own additions to `.gitignore` (Quarto's
+    `.quarto/` cache and `*.quarto_ipynb` rules) do not make ownership
+    unrecognisable.
 
     Parameters
     ----------
@@ -133,7 +135,7 @@ def is_great_docs_build_dir(path: Path) -> bool:
     if len(entries) != 1 or entries[0].name != ".gitignore" or entries[0].is_symlink():
         return False
     try:
-        return entries[0].read_text(encoding="utf-8") == GITIGNORE_CONTENT
+        return entries[0].read_text(encoding="utf-8").startswith(GITIGNORE_CONTENT)
     except (OSError, UnicodeDecodeError):
         return False
 

@@ -83,6 +83,16 @@ def test_is_great_docs_build_dir_recognises_a_pristine_clone(tmp_path):
     assert is_great_docs_build_dir(build_dir) is True
 
 
+def test_is_great_docs_build_dir_recognises_a_gitignore_with_quarto_appended_rules(tmp_path):
+    build_dir = tmp_path / "great-docs"
+    build_dir.mkdir()
+    (build_dir / ".gitignore").write_text(
+        GITIGNORE_CONTENT + "\n/.quarto/\n**/*.quarto_ipynb\n", encoding="utf-8"
+    )
+
+    assert is_great_docs_build_dir(build_dir) is True
+
+
 def test_is_great_docs_build_dir_rejects_a_foreign_gitignore(tmp_path):
     build_dir = tmp_path / "great-docs"
     build_dir.mkdir()
