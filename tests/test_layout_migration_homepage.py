@@ -28,7 +28,7 @@ def test_readme_homepage_keeps_published_identity(tmp_path: Path, suffix: str) -
     "target, readme",
     [("../index.qmd", False), ("../other/index.qmd", True), ("../missing.qmd", True)],
 )
-def test_missing_page_still_blocks(tmp_path: Path, target: str, readme: bool) -> None:
+def test_missing_page_is_follow_up_not_a_blocker(tmp_path: Path, target: str, readme: bool) -> None:
     (tmp_path / "great-docs.yml").write_text("module: sample\n")
     if readme:
         (tmp_path / "README.md").write_text("# Home\n")
@@ -37,7 +37,8 @@ def test_missing_page_still_blocks(tmp_path: Path, target: str, readme: bool) ->
     original = f"[Missing]({target})\n"
     (guide / "01-guide.qmd").write_text(original)
     proposal = analyse(Layout.make(tmp_path), tmp_path / "docs")
-    assert proposal.blockers
+    assert not proposal.blockers
+    assert proposal.follow_up
     assert (guide / "01-guide.qmd").read_text() == original
     assert not (tmp_path / "docs").exists()
 

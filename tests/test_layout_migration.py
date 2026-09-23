@@ -1585,6 +1585,25 @@ def test_move_contents_flag_package_metadata_and_dynamic_files(project: Path) ->
     assert unsupported.category == "reStructuredText Files to Check"
 
 
+def test_move_contents_flags_a_manifest_name_at_the_source_top_level(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: essays}]\n")
+    put(project, "essays/setup.py", "")
+    put(project, "essays/one.md", "# One\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    note = next(n for n in result.blockers if "package sources or metadata" in n.lower())
+    assert note.category == "Package Files Mixed Into Docs"
+
+
+def test_move_contents_does_not_flag_a_manifest_name_nested_deeper(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: essays}]\n")
+    put(project, "essays/_includes/setup.py", "")
+    put(project, "essays/one.md", "# One\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("package sources or metadata" in n.lower() for n in result.blockers)
+    dynamic = next(n for n in result.follow_up if "notebook references" in n.lower())
+    assert dynamic.category == "Scripts and Notebooks to Verify"
+
+
 def test_inspection_errors_are_categorized(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     put(project, "great-docs.yml", "bibliography: refs.bib\n")
     put(project, "refs.bib", "@book{ref}\n")

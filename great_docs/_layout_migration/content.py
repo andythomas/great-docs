@@ -474,6 +474,22 @@ def rewrite_document(
                         check_symlinks(input_target)
                     elif not resolved and _GENERATED_REFERENCE.fullmatch(unquote(url.path)):
                         continue
+                    elif not resolved:
+                        # `target` was computed from `source`'s current, pre-move location, so
+                        # a reference nothing here resolves was already broken before the move.
+                        # The migration didn't break it and can't fix it either; leave the text
+                        # untouched and flag it for manual review instead of blocking on it.
+                        line, snippet = _locate(text, start)
+                        follow_up.append(
+                            Note(
+                                f"Reference to a page that does not exist in {source}: {value}",
+                                category="References Already Broken Before the Move",
+                                path=source,
+                                line=line,
+                                snippet=snippet,
+                            )
+                        )
+                        continue
                     else:
                         raise MigrationError(
                             f"Cannot resolve rendered page reference in {source}: {value}"
@@ -487,7 +503,19 @@ def rewrite_document(
                     # Generated API pages have published identities but no repository source.
                     continue
                 else:
-                    raise MigrationError(f"Broken reference in {source}: {value}")
+                    # Same reasoning as the rendered-page case above: already broken before
+                    # the move, so not this migration's problem to fix.
+                    line, snippet = _locate(text, start)
+                    follow_up.append(
+                        Note(
+                            f"Reference to a file that does not exist in {source}: {value}",
+                            category="References Already Broken Before the Move",
+                            path=source,
+                            line=line,
+                            snippet=snippet,
+                        )
+                    )
+                    continue
         except (OSError, MigrationError) as error:
             line, snippet = _locate(text, start)
             blockers.append(

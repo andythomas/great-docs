@@ -435,7 +435,10 @@ def _categorize_move_contents(
         for path in tree_files(source):
             if path == config_path:
                 continue
-            if path.name == "__init__.py" or path.name in _MANIFESTS:
+            # A manifest name only signals real package metadata at the documentation
+            # source's own top level; the same name several directories deeper (e.g. a
+            # `setup.py` helper script under an `_includes` folder) is a coincidence.
+            if path.name == "__init__.py" or (path.name in _MANIFESTS and path.parent == source):
                 blockers.append(
                     Note(
                         f"Documentation directory contains package sources or metadata: {path}",

@@ -179,12 +179,13 @@ def test_include_reference_to_untouched_file_is_rewritten_not_blocked(tmp_path: 
     assert result == "{{< include ../../CONTRIBUTING.md >}}\n"
 
 
-def test_broken_static_target_blocks(tmp_path: Path) -> None:
+def test_broken_static_target_is_follow_up_not_a_blocker(tmp_path: Path) -> None:
     page = tmp_path / "index.md"
-    _, _, _, blockers = rewrite_document(
+    _, _, follow_up, blockers = rewrite_document(
         "![Missing](missing.png)", page, (Move(page, tmp_path / "docs/index.md"),)
     )
-    assert any("missing.png" in message for message in blockers)
+    assert not blockers
+    assert any("missing.png" in message for message in follow_up)
 
 
 def test_moved_link_target_is_rebased_for_retained_page(tmp_path: Path) -> None:
@@ -288,10 +289,11 @@ def test_generated_page_recognition_keeps_missing_input_checks(
     tmp_path: Path, reference: str
 ) -> None:
     page = tmp_path / "index.qmd"
-    _, _, _, blockers = rewrite_document(
+    _, _, follow_up, blockers = rewrite_document(
         f"[Missing]({reference})", page, (Move(page, tmp_path / "docs/index.qmd"),)
     )
-    assert any(reference in message for message in blockers)
+    assert not blockers
+    assert any(reference in message for message in follow_up)
 
 
 def test_numeric_prefix_reference_resolves_across_the_move(tmp_path: Path) -> None:
@@ -317,13 +319,14 @@ def test_explicit_user_guide_ordering_does_not_strip_prefixes(tmp_path: Path) ->
     (guide / "00-introduction.qmd").write_text("[Install](installation.qmd)")
     (guide / "01-installation.qmd").write_text("# Installation")
     content_directories = (ContentDirectory(guide, "user-guide", False),)
-    _, _, _, blockers = rewrite_document(
+    _, _, follow_up, blockers = rewrite_document(
         (guide / "00-introduction.qmd").read_text(),
         guide / "00-introduction.qmd",
         (Move(guide, tmp_path / "docs/user_guide"),),
         content_directories=content_directories,
     )
-    assert any("installation.qmd" in message for message in blockers)
+    assert not blockers
+    assert any("installation.qmd" in message for message in follow_up)
 
 
 def test_renamed_directory_html_reference_resolves(tmp_path: Path) -> None:
@@ -484,4 +487,31 @@ def test_broken_reference_note_has_a_category_and_excerpt(tmp_path: Path) -> Non
     _, _, _, blockers = rewrite_document(text, page, (Move(page, tmp_path / "docs/index.qmd"),))
     note = next(n for n in blockers if n.category == "Broken References to Fix")
     assert note.line == 2
+    assert note.snippet == "[Other](other.html)"
+
+
+def test_reference_broken_before_the_move_is_follow_up_not_a_blocker(tmp_path: Path) -> None:
+    page = tmp_path / "index.qmd"
+    text = "see\n[datasets.yml](datasets.yml)\n"
+    rewritten, _, follow_up, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert not blockers
+    assert rewritten == text
+    note = next(n for n in follow_up if n.category == "References Already Broken Before the Move")
+    assert note.line == 2
+    assert note.snippet == "[datasets.yml](datasets.yml)"
+
+
+def test_rendered_page_reference_broken_before_the_move_is_follow_up_not_a_blocker(
+    tmp_path: Path,
+) -> None:
+    page = tmp_path / "index.qmd"
+    text = "see\n[Other](other.html)\n"
+    rewritten, _, follow_up, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert not blockers
+    assert rewritten == text
+    note = next(n for n in follow_up if n.category == "References Already Broken Before the Move")
     assert note.snippet == "[Other](other.html)"
