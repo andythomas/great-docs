@@ -959,6 +959,9 @@ def migrate_layout(
         if layout.source_dir != root and is_default_destination:
             target = layout.source_dir
         elif is_default_destination and is_default_config:
+            # An explicit --config is disambiguating which file to use, not requesting
+            # automatic destination selection; skip the fallback so it can't silently
+            # substitute a different directory than the one --config points at.
             target = migration_api.select_destination(layout)
         check_symlinks(target)
         target = absolute_path(target)
