@@ -1764,6 +1764,16 @@ def test_destination_that_is_itself_a_recognised_build_dir_does_not_block(projec
     assert not any("already contains unrelated content" in message for message in result.blockers)
 
 
+def test_destination_content_referenced_by_a_moving_document_is_accounted_for(
+    project: Path,
+) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.qmd", "[Notes](../docs/notes.md)\n")
+    put(project, "docs/notes.md", "# Notes\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("already contains unrelated content" in message for message in result.blockers)
+
+
 def test_select_destination_falls_through_to_doc_when_docs_is_unusable(project: Path) -> None:
     from great_docs._layout_migration import select_destination
 
