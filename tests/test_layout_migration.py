@@ -198,8 +198,10 @@ def test_dry_run_report_groups_blockers_by_category(project: Path) -> None:
         ],
     )
     assert result.exit_code != 0
-    assert "Blocking Problem (1)" in result.output
-    assert "Conflicts at the Destination (1)" in result.output
+    assert "Blocking Problems (2)" in result.output
+    assert "Conflicts at the Destination (2)" in result.output
+    assert "Destination already exists" in result.output
+    assert "already contains unrelated content" in result.output
 
 
 def test_dry_run_report_prints_a_located_excerpt(project: Path) -> None:
@@ -1732,3 +1734,71 @@ def test_pycache_is_not_descended_into_by_the_implicit_input_walk(project: Path)
     put(project, "recordings/__pycache__/session.termshow", "recording data")
     result = analyse(Layout.make(project), Path("docs"))
     assert not any("Review terminal recording" in message for message in result.follow_up)
+
+
+def test_destination_with_unrelated_content_blocks(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any("already contains unrelated content" in message for message in result.blockers)
+
+
+def test_destination_absent_or_empty_does_not_block(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("already contains unrelated content" in message for message in result.blockers)
+    (project / "docs").mkdir()
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("already contains unrelated content" in message for message in result.blockers)
+
+
+def test_destination_that_is_itself_a_recognised_build_dir_does_not_block(project: Path) -> None:
+    from great_docs._utils import GITIGNORE_CONTENT
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "great-docs/.gitignore", GITIGNORE_CONTENT)
+    result = analyse(Layout.make(project), Path("great-docs"))
+    assert not any("already contains unrelated content" in message for message in result.blockers)
+
+
+def test_select_destination_falls_through_to_doc_when_docs_is_unusable(project: Path) -> None:
+    from great_docs._layout_migration import select_destination
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    layout = Layout.make(project)
+    assert select_destination(layout) == project / "doc"
+
+
+def test_select_destination_falls_through_to_website_when_docs_and_doc_are_unusable(
+    project: Path,
+) -> None:
+    from great_docs._layout_migration import select_destination
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    put(project, "doc/OTHER_NOTES.md", "# Notes\n")
+    layout = Layout.make(project)
+    assert select_destination(layout) == project / "website"
+
+
+def test_select_destination_exhausted_still_returns_website_and_analyse_still_blocks(
+    project: Path,
+) -> None:
+    from great_docs._layout_migration import select_destination
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/a.md", "# Notes\n")
+    put(project, "doc/b.md", "# Notes\n")
+    put(project, "website/c.md", "# Notes\n")
+    layout = Layout.make(project)
+    destination = select_destination(layout)
+    assert destination == project / "website"
+    result = analyse(layout, destination)
+    assert any("already contains unrelated content" in message for message in result.blockers)

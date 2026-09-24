@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from great_docs._content_naming import section_slug
-from great_docs._layout import Layout
+from great_docs._layout import CONVENTIONAL_DOC_DIRS, Layout
 from great_docs._utils import is_great_docs_build_dir, recognised_build_dirs
 
 from .content import (
@@ -1059,6 +1059,36 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers,
         )
     )
+
+    referenced_inputs: set[Path] = set(config_referenced)
+    for doc in sorted(documents):
+        try:
+            text = doc.read_bytes().decode("utf-8")
+        except (OSError, UnicodeError):
+            continue
+        _, inputs, _, _ = rewrite_document(
+            text, doc, tuple(moves), content_directories=content_directories
+        )
+        referenced_inputs.update(
+            target
+            for target in inputs
+            if target.is_relative_to(root) and moved_path(target, tuple(moves)) == target
+        )
+
+    if destination.exists() and any(destination.iterdir()) and destination not in generated:
+        accounted_for = any(
+            source == destination or source.is_relative_to(destination) for source, _ in selected
+        ) or any(target.is_relative_to(destination) for target in referenced_inputs)
+        if not accounted_for:
+            blockers.append(
+                Note(
+                    f"Destination already contains unrelated content: {destination}. "
+                    f"Pass a different --to name for the documentation directory.",
+                    category="Conflicts at the Destination",
+                    path=destination,
+                )
+            )
+
     try:
         final_text = set_config_values(materialised, pinned_values)
         rewritten = rewrite_config(
@@ -1394,3 +1424,23 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         except (OSError, MigrationError) as error:
             blockers.append(Note(str(error), category="Conflicts at the Destination", path=target))
     return result()
+
+
+def select_destination(layout: Layout) -> Path:
+    """
+    Pick the first conventional destination not already holding unrelated content
+
+    Tries `CONVENTIONAL_DOC_DIRS` in order, using `analyse` itself to test each
+    candidate. Only called for an unrequested destination — the caller must
+    use an explicitly requested one as-is, so a deliberate choice that
+    conflicts with existing content still surfaces today's blocker rather
+    than being silently substituted.
+    """
+    for name in CONVENTIONAL_DOC_DIRS:
+        candidate = layout.package_root / name
+        if not any(
+            "already contains unrelated content" in note
+            for note in analyse(layout, candidate).blockers
+        ):
+            return candidate
+    return layout.package_root / CONVENTIONAL_DOC_DIRS[-1]
