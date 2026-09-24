@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import click
 
 from . import __version__
-from ._layout import Layout, _find_package_root
+from ._layout import CONVENTIONAL_DOC_DIRS, Layout, _find_package_root
 from ._subprocess import TEXT_MODE_KWARGS
 from .core import GreatDocs
 
@@ -945,7 +945,10 @@ def migrate_layout(
         if config_path:
             check_symlinks(Path(config_path))
         else:
-            for candidate in (root / "great-docs.yml", root / "docs/great-docs.yml"):
+            for candidate in (
+                root / "great-docs.yml",
+                *(root / name / "great-docs.yml" for name in CONVENTIONAL_DOC_DIRS),
+            ):
                 if candidate.is_file():
                     check_symlinks(candidate)
         layout = Layout.make(root, Path(config_path) if config_path else None)
@@ -1000,7 +1003,7 @@ def migrate_layout(
         click.echo(f"Deployment directory: {completed.site_dir.relative_to(root)}")
         at_root = Path.cwd().resolve() == root
         selection = [] if at_root else ["--project-path", str(root)]
-        if selected != root / "docs/great-docs.yml":
+        if selected not in (root / name / "great-docs.yml" for name in CONVENTIONAL_DOC_DIRS):
             selection += ["--config", str(selected.relative_to(root) if at_root else selected)]
         click.echo("Build or preview the migrated documentation:")
         click.echo("  " + shlex.join(["great-docs", "build", *selection]))

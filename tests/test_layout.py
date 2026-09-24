@@ -153,6 +153,35 @@ def test_missing_automatic_config_preserves_root_candidate(tmp_path: Path) -> No
     assert layout.build_dir == tmp_path / "great-docs"
 
 
+def test_conventional_config_found_in_doc_directory(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n")
+    config = _write_config(tmp_path / "doc" / "great-docs.yml")
+
+    layout = Layout.make(tmp_path)
+
+    assert layout.config_path == config
+    assert layout.build_dir == tmp_path / "doc" / "_quarto" / "default"
+
+
+def test_conventional_config_found_in_website_directory(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n")
+    config = _write_config(tmp_path / "website" / "great-docs.yml")
+
+    layout = Layout.make(tmp_path)
+
+    assert layout.config_path == config
+
+
+def test_automatic_selection_rejects_configs_in_two_conventional_directories(
+    tmp_path: Path,
+) -> None:
+    _write_config(tmp_path / "docs" / "great-docs.yml")
+    _write_config(tmp_path / "doc" / "great-docs.yml")
+
+    with pytest.raises(LayoutError, match="more than one conventional"):
+        Layout.make(tmp_path)
+
+
 @pytest.mark.parametrize(
     "manifest",
     ["pyproject.toml", "setup.py", "go.mod", "Cargo.toml"],

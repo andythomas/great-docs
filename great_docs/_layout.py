@@ -177,7 +177,9 @@ def _select_config(
     if config_path is not None:
         selected = config_path.resolve()
         if create and not selected.exists():
-            conventional = [package_root / "great-docs.yml", package_root / "docs/great-docs.yml"]
+            conventional = [package_root / "great-docs.yml"] + [
+                package_root / name / "great-docs.yml" for name in CONVENTIONAL_DOC_DIRS
+            ]
             if any(path.is_file() and path.resolve() != selected for path in conventional):
                 raise LayoutError(
                     "A conventional configuration already exists. Select it or migrate the project before creating another configuration."
@@ -189,18 +191,26 @@ def _select_config(
         return selected
 
     root_config = package_root / "great-docs.yml"
-    docs_config = package_root / "docs" / "great-docs.yml"
+    conventional_configs = [
+        package_root / name / "great-docs.yml" for name in CONVENTIONAL_DOC_DIRS
+    ]
     root_exists = root_config.is_file()
-    docs_exists = docs_config.is_file()
-    if root_exists and docs_exists:
+    found = [path for path in conventional_configs if path.is_file()]
+    if root_exists and found:
         raise LayoutError(
             "Found Great Docs configuration files in both the package root "
-            "and docs/. Select one explicitly."
+            f"and {found[0].parent.name}/. Select one explicitly."
+        )
+    if len(found) > 1:
+        names = ", ".join(f"{path.parent.name}/" for path in found)
+        raise LayoutError(
+            f"Found Great Docs configuration files in more than one conventional "
+            f"directory: {names}. Select one explicitly."
         )
     if root_exists:
         return root_config
-    if docs_exists:
-        return docs_config
+    if found:
+        return found[0]
     if create:
-        return docs_config
+        return conventional_configs[0]
     return root_config

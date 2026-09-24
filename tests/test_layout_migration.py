@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 from yaml12 import read_yaml
 
-from great_docs._layout import Layout
+from great_docs._layout import CONVENTIONAL_DOC_DIRS, Layout
 from great_docs._layout_migration import analyse
 from great_docs._layout_migration.model import MigrationError, Move, Note, fingerprint
 from great_docs._utils import QUARTO_YML_HEADER
@@ -119,7 +119,7 @@ def test_migration_command_repeat_is_read_only(
     assert result.exit_code == 0, result.output
     assert (project / destination / "great-docs.yml").is_file()
     assert str(Path(destination) / "_site") in result.output
-    if destination != "docs":
+    if destination not in CONVENTIONAL_DOC_DIRS:
         import shlex
 
         commands = [
@@ -135,6 +135,18 @@ def test_migration_command_repeat_is_read_only(
     assert result.exit_code == 0, result.output
     assert "no migration is needed" in result.output.lower()
     assert snapshot(project) == before
+
+
+def test_build_and_preview_hints_omit_config_for_every_conventional_destination(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(
+        cli,
+        ["migrate-layout", "--project-path", str(project), "--to", "doc", "--yes"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "--config" not in result.output
 
 
 def test_migration_falls_back_to_doc_when_docs_has_unrelated_content(project: Path) -> None:
