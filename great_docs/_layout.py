@@ -39,8 +39,8 @@ class Layout:
         Resolve a documentation layout from project context
 
         Automatic selection considers configuration files at the package root
-        and in `docs/`. An explicit configuration must remain within the
-        discovered package root.
+        and in `docs/`, `doc/`, or `website/`. An explicit configuration must
+        remain within the discovered package root.
 
         Parameters
         ----------

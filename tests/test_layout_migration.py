@@ -137,13 +137,14 @@ def test_migration_command_repeat_is_read_only(
     assert snapshot(project) == before
 
 
+@pytest.mark.parametrize("destination", CONVENTIONAL_DOC_DIRS)
 def test_build_and_preview_hints_omit_config_for_every_conventional_destination(
-    project: Path, monkeypatch: pytest.MonkeyPatch
+    project: Path, destination: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(project)
     result = CliRunner().invoke(
         cli,
-        ["migrate-layout", "--project-path", str(project), "--to", "doc", "--yes"],
+        ["migrate-layout", "--project-path", str(project), "--to", destination, "--yes"],
     )
     assert result.exit_code == 0, result.output
     assert "--config" not in result.output
@@ -1786,6 +1787,26 @@ def test_destination_absent_or_empty_does_not_block(project: Path) -> None:
     result = analyse(Layout.make(project), Path("docs"))
     assert not any("already contains unrelated content" in message for message in result.blockers)
     (project / "docs").mkdir()
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("already contains unrelated content" in message for message in result.blockers)
+
+
+def test_destination_with_only_dotfiles_does_not_block(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/.gitkeep", "")
+    put(project, "docs/.DS_Store", "")
+    (project / "docs" / "empty").mkdir()
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("already contains unrelated content" in message for message in result.blockers)
+
+
+def test_destination_holding_only_a_nested_build_dir_does_not_block(project: Path) -> None:
+    from great_docs._utils import GITIGNORE_CONTENT
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/_quarto/default/.gitignore", GITIGNORE_CONTENT)
     result = analyse(Layout.make(project), Path("docs"))
     assert not any("already contains unrelated content" in message for message in result.blockers)
 

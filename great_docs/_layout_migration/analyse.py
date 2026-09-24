@@ -1075,19 +1075,35 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             if target.is_relative_to(root) and moved_path(target, tuple(moves)) == target
         )
 
-    if destination.exists() and any(destination.iterdir()) and destination not in generated:
-        accounted_for = any(
-            source == destination or source.is_relative_to(destination) for source, _ in selected
-        ) or any(target.is_relative_to(destination) for target in referenced_inputs)
-        if not accounted_for:
-            blockers.append(
-                Note(
-                    f"Destination already contains unrelated content: {destination}. "
-                    f"Pass a different --to name for the documentation directory.",
-                    category="Conflicts at the Destination",
-                    path=destination,
+    # Everything a moving document references, or that a dedicated source already
+    # covers, is legitimate content at the destination. Anything else present there —
+    # once dotfiles, empty directories, and great-docs' own build-artefact names are
+    # excluded — means the destination already serves an unrelated purpose.
+    if destination.exists() and destination not in generated:
+        ignorable_names = {"_quarto", "_site", "_freeze", "__pycache__"}
+
+        def is_ignorable_destination_child(child: Path) -> bool:
+            if child.name.startswith(".") or child.name in ignorable_names:
+                return True
+            return child.is_dir() and not any(child.iterdir())
+
+        meaningful = [
+            child for child in destination.iterdir() if not is_ignorable_destination_child(child)
+        ]
+        if meaningful:
+            accounted_for = any(
+                source == destination or source.is_relative_to(destination)
+                for source, _ in selected
+            ) or any(target.is_relative_to(destination) for target in referenced_inputs)
+            if not accounted_for:
+                blockers.append(
+                    Note(
+                        f"Destination already contains unrelated content: {destination}. "
+                        f"Pass a different --to name for the documentation directory.",
+                        category="Conflicts at the Destination",
+                        path=destination,
+                    )
                 )
-            )
 
     try:
         final_text = set_config_values(materialised, pinned_values)

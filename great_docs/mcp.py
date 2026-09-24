@@ -33,7 +33,7 @@ from mcp.types import (
 )
 from pydantic import AnyUrl
 
-from ._layout import Layout, LayoutError
+from ._layout import CONVENTIONAL_DOC_DIRS, Layout, LayoutError
 from ._utils import is_in_great_docs_build_dir, recognised_build_dirs
 
 server = Server("great-docs")
@@ -1339,7 +1339,9 @@ async def handle_completion(
 
         if argument.name == "config_path":
             root = _get_project_root(arguments.get("project_path"))
-            paths = [root / "great-docs.yml", root / "docs/great-docs.yml"]
+            paths = [root / "great-docs.yml"] + [
+                root / name / "great-docs.yml" for name in CONVENTIONAL_DOC_DIRS
+            ]
             return Completion(
                 values=[str(path) for path in paths if path.is_file() and value in str(path)]
             )
