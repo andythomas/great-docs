@@ -295,17 +295,26 @@ def _logo_candidates(package: str, *, hero: bool) -> list[str]:
 
 def _dedicated_directories(config: dict[str, Any], root: Path) -> list[tuple[Path, ConfigPath]]:
     selected: list[tuple[Path, ConfigPath]] = []
+    sections = config.get("sections") or []
+    if not isinstance(sections, list):
+        raise MigrationError("Narrative sections must be a list of directory mappings")
+    section_dirs = {
+        root / section["dir"]
+        for section in sections
+        if isinstance(section, dict)
+        and isinstance(section.get("dir"), str)
+        and not Path(section["dir"]).is_absolute()
+    }
     guide = config.get("user_guide")
     if isinstance(guide, str) and not Path(guide).is_absolute():
         selected.append((root / guide, ("user_guide",)))
     elif not isinstance(guide, str):
         for name in ("user_guide", "user-guide"):
+            if root / name in section_dirs:
+                continue
             if (root / name).exists() or (root / name).is_symlink():
                 selected.append((root / name, ("user_guide",)))
                 break
-    sections = config.get("sections") or []
-    if not isinstance(sections, list):
-        raise MigrationError("Narrative sections must be a list of directory mappings")
     for index, section in enumerate(sections):
         if (
             isinstance(section, dict)
@@ -343,16 +352,26 @@ def _content_directories(config: dict[str, Any], root: Path) -> tuple[ContentDir
     `sections` config fields; keep the two in sync when either changes.
     """
     directories: list[ContentDirectory] = []
+    sections = config.get("sections") or []
+    section_dirs = {
+        root / section["dir"]
+        for section in sections
+        if isinstance(section, dict)
+        and isinstance(section.get("dir"), str)
+        and not Path(section["dir"]).is_absolute()
+    }
     guide = config.get("user_guide")
     strip = not isinstance(guide, list)
     if isinstance(guide, str) and not Path(guide).is_absolute():
         directories.append(ContentDirectory(root / guide, "user-guide", strip))
     elif not isinstance(guide, str):
         for name in ("user_guide", "user-guide"):
+            if root / name in section_dirs:
+                continue
             if (root / name).exists() or (root / name).is_symlink():
                 directories.append(ContentDirectory(root / name, "user-guide", strip))
                 break
-    for section in config.get("sections") or []:
+    for section in sections:
         if (
             isinstance(section, dict)
             and isinstance(section.get("dir"), str)

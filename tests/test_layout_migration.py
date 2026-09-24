@@ -616,6 +616,32 @@ def test_mixed_fold_in_and_protected_directories(project: Path) -> None:
     assert project / "assets" not in moved
 
 
+def test_section_dir_matching_default_user_guide_name_is_selected_once(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert [move for move in result.moves if move.source == project / "user_guide"] == [
+        Move(project / "user_guide", project / "docs/user_guide")
+    ]
+
+
+def test_explicit_user_guide_matching_a_section_dir_still_blocks(project: Path) -> None:
+    put(project, "great-docs.yml", "user_guide: notes\nsections: [{dir: notes}]\n")
+    put(project, "notes/page.md", "# Page\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any("Selected documentation sources overlap" in message for message in result.blockers)
+
+
+def test_content_directories_deduplicates_a_section_matching_the_default_guide_name() -> None:
+    from great_docs._layout_migration.analyse import _content_directories
+
+    config = {"sections": [{"dir": "user_guide"}]}
+    root = Path("/project")
+    directories = _content_directories(config, root)
+    assert [directory.source for directory in directories] == [root / "user_guide"]
+
+
 def test_absolutely_pinned_directory_does_not_fold_in_via_document_link(project: Path) -> None:
     directory = project / "essays"
     put(project, "essays/one.md", "# One\n")
