@@ -633,13 +633,15 @@ def test_explicit_user_guide_matching_a_section_dir_still_blocks(project: Path) 
     assert any("Selected documentation sources overlap" in message for message in result.blockers)
 
 
-def test_content_directories_deduplicates_a_section_matching_the_default_guide_name() -> None:
+def test_content_directories_deduplicates_a_section_matching_the_default_guide_name(
+    project: Path,
+) -> None:
     from great_docs._layout_migration.analyse import _content_directories
 
+    put(project, "user_guide/page.md", "# Page\n")
     config = {"sections": [{"dir": "user_guide"}]}
-    root = Path("/project")
-    directories = _content_directories(config, root)
-    assert [directory.source for directory in directories] == [root / "user_guide"]
+    directories = _content_directories(config, project)
+    assert [directory.source for directory in directories] == [project / "user_guide"]
 
 
 def test_absolutely_pinned_directory_does_not_fold_in_via_document_link(project: Path) -> None:
