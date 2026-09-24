@@ -1719,3 +1719,16 @@ def test_automation_output_path_is_categorized(project: Path) -> None:
     result = analyse(Layout.make(project), Path("docs"))
     note = next(n for n in result.follow_up if "update old output paths" in n.lower())
     assert note.category == "Old Output Paths to Update"
+
+
+def test_pycache_in_scripts_does_not_crash_the_automation_scan(project: Path) -> None:
+    put(project, "scripts/build.sh", "#!/bin/sh\necho build\n")
+    put(project, "scripts/__pycache__/mod.cpython-314.pyc", b"\xac\x00\xff\xfe")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("Cannot inspect automation" in message for message in result.blockers)
+
+
+def test_pycache_is_not_descended_into_by_the_implicit_input_walk(project: Path) -> None:
+    put(project, "recordings/__pycache__/session.termshow", "recording data")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not any("Review terminal recording" in message for message in result.follow_up)

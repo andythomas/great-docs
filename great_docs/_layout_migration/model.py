@@ -138,5 +138,7 @@ def tree_files(path: Path) -> list[Path]:
         raise MigrationError(f"Migration source is not a file or directory: {path}")
     files: list[Path] = []
     for child in sorted(path.iterdir()):
+        if child.name == "__pycache__":
+            continue
         files.extend(tree_files(child))
     return files

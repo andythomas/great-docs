@@ -572,7 +572,7 @@ def _walk_into(path: Path, generated: list[Path], ignored: frozenset[Path] | Non
     """Whether a directory the implicit-input walk finds should be descended into"""
     return (
         not path.name.startswith(".")
-        and path.name not in {"_quarto", "_site", "_freeze"}
+        and path.name not in {"_quarto", "_site", "_freeze", "__pycache__"}
         and path not in generated
         and not path.is_symlink()
         and (ignored is None or path not in ignored)
