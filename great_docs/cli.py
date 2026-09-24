@@ -950,11 +950,16 @@ def migrate_layout(
                     check_symlinks(candidate)
         layout = Layout.make(root, Path(config_path) if config_path else None)
         target = root / destination
-        if (
-            layout.source_dir != root
-            and ctx.get_parameter_source("destination") == click.core.ParameterSource.DEFAULT
-        ):
+        is_default_destination = (
+            ctx.get_parameter_source("destination") == click.core.ParameterSource.DEFAULT
+        )
+        is_default_config = (
+            ctx.get_parameter_source("config_path") == click.core.ParameterSource.DEFAULT
+        )
+        if layout.source_dir != root and is_default_destination:
             target = layout.source_dir
+        elif is_default_destination and is_default_config:
+            target = migration_api.select_destination(layout)
         check_symlinks(target)
         target = absolute_path(target)
         if target == root or not target.is_relative_to(root):

@@ -137,6 +137,30 @@ def test_migration_command_repeat_is_read_only(
     assert snapshot(project) == before
 
 
+def test_migration_falls_back_to_doc_when_docs_has_unrelated_content(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    result = CliRunner().invoke(
+        cli, ["migrate-layout", "--project-path", str(project), "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "doc/great-docs.yml" in result.output
+    assert "docs/great-docs.yml" not in result.output
+
+
+def test_migration_explicit_to_docs_still_blocks_on_unrelated_content(project: Path) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    result = CliRunner().invoke(
+        cli,
+        ["migrate-layout", "--project-path", str(project), "--to", "docs", "--dry-run"],
+    )
+    assert result.exit_code != 0
+    assert "already contains unrelated content" in result.output.lower()
+
+
 def test_migration_command_reports_conflicts_even_with_yes(project: Path) -> None:
     put(project, "docs/great-docs.yml", "display_name: Occupied\n")
     before = snapshot(project)
