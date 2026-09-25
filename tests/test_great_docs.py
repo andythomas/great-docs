@@ -24739,6 +24739,72 @@ def test_build_dynamic_fallback_to_static():
             assert call_count == 2  # first dynamic, then static
 
 
+def test_build_dynamic_fallback_preserves_the_quarto_yml_header():
+    """The static-analysis retry rewrites api-reference.dynamic without losing the ownership header."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+        (Path(tmp_dir) / "great-docs.yml").write_text("", encoding="utf-8")
+
+        call_count = 0
+
+        def build_side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("Dynamic mode failed")
+
+        mock_builder = MagicMock()
+        mock_builder.build.side_effect = build_side_effect
+        mock_builder_class = MagicMock()
+        mock_builder_class.return_value = mock_builder
+
+        with (
+            patch("great_docs.core._ensure_quarto_installed"),
+            patch.object(docs, "_prepare_build_directory"),
+            patch.object(docs, "_refresh_api_reference_config"),
+            patch.object(docs, "_generate_llms_txt"),
+            patch.object(docs, "_generate_llms_full_txt"),
+            patch.object(docs, "_detect_package_name", return_value="mypkg"),
+            patch.object(docs, "_generate_source_links_json"),
+            patch.object(docs, "_get_package_metadata", return_value={}),
+            patch.object(docs, "_process_user_guide"),
+            patch.object(docs, "_copy_assets", return_value=False),
+            patch.object(docs, "_get_quarto_env", return_value={}),
+            patch(
+                "great_docs._apiref.api_reference.APIReference",
+                mock_builder_class,
+            ),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.stderr = iter([])
+            proc.wait.return_value = None
+            proc.returncode = 0
+            mock_popen.return_value = proc
+
+            docs._has_api_reference = True
+            docs._config = MagicMock()
+            docs._config.versions = None
+            docs._config.has_versions = False
+            docs._config.changelog_enabled = False
+            docs._config.sections = None
+            docs._config.dynamic = True
+
+            docs.build_dir.mkdir(parents=True, exist_ok=True)
+            quarto_yml = docs.build_dir / "_quarto.yml"
+            quarto_yml.write_text(
+                QUARTO_YML_HEADER
+                + format_yaml({"api-reference": {"package": "mypkg", "dynamic": True}}),
+                encoding="utf-8",
+            )
+
+            docs.build(watch=False, refresh=True)
+
+            assert quarto_yml.read_text(encoding="utf-8").startswith(QUARTO_YML_HEADER)
+
+
 def test_build_static_mode_failure_exits():
     """Test build() exits when static mode also fails."""
 

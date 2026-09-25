@@ -16680,8 +16680,7 @@ anchor-sections: true
                             qconfig = read_yaml(f) or {}
                         if "api-reference" in qconfig:
                             qconfig["api-reference"]["dynamic"] = False
-                            with open(quarto_yml, "w") as f:
-                                write_yaml(qconfig, f)
+                            self._write_quarto_yml(quarto_yml, qconfig)
                         try:
                             ref = APIReference(str(quarto_yml))
                             with _quiet_prints():
