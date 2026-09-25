@@ -277,13 +277,13 @@ def test_dry_run_report_suppresses_snippet_for_code_blocks(project: Path) -> Non
 
 
 def test_dry_run_report_keeps_trailing_detail_for_old_output_paths(project: Path) -> None:
-    put(project, "Makefile", "publish:\n\trsync -a great-docs/_site/ remote:/var/www\n")
+    put(project, "tox.ini", "[testenv:publish]\ncommands = rsync -a great-docs/_site/ remote:/var/www\n")
     result = CliRunner().invoke(
         cli, ["migrate-layout", "--project-path", str(project), "--dry-run", "--yes"]
     )
     assert result.exit_code == 0, result.output
     assert "Old Output Paths to Update (1)" in result.output
-    assert "Makefile; publish docs/_site" in result.output
+    assert "tox.ini; publish docs/_site" in result.output
 
 
 def test_dry_run_report_does_not_flag_a_curated_skill_file(project: Path) -> None:
@@ -1379,10 +1379,10 @@ def test_implicit_logos_become_explicit_without_losing_settings(project: Path) -
 
 
 def test_automation_follow_up_names_file_and_new_site(project: Path) -> None:
-    put(project, ".github/workflows/docs.yml", "path: great-docs/_site\n")
+    put(project, "scripts/publish.sh", "#!/bin/sh\npath=great-docs/_site\n")
     result = analyse(Layout.make(project), Path("website"))
     assert any(
-        ".github/workflows/docs.yml" in message and "website/_site" in message
+        "scripts/publish.sh" in message and "website/_site" in message
         for message in result.follow_up
     )
 
@@ -1753,11 +1753,46 @@ def test_terminal_recording_is_categorized(project: Path) -> None:
     assert note.category == "Terminal Recordings to Check"
 
 
-def test_automation_output_path_is_categorized(project: Path) -> None:
-    put(project, "Makefile", "publish:\n\trsync -a great-docs/_site/ remote:/var/www\n")
+def test_automation_output_path_in_ineligible_file_is_categorized(project: Path) -> None:
+    put(project, "tox.ini", "[testenv:publish]\ncommands = rsync -a great-docs/_site/ remote:/var/www\n")
     result = analyse(Layout.make(project), Path("docs"))
     note = next(n for n in result.follow_up if "update old output paths" in n.lower())
     assert note.category == "Old Output Paths to Update"
+    tox_ini = project / "tox.ini"
+    assert not any(edit.path == tox_ini for edit in result.edits)
+
+
+def test_automation_output_path_in_makefile_is_auto_edited(project: Path) -> None:
+    put(project, "Makefile", "publish:\n\trsync -a great-docs/_site/ remote:/var/www\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    makefile = project / "Makefile"
+    edit = next(edit for edit in result.edits if edit.path == makefile)
+    assert b"docs/_site" in edit.after
+    assert b"great-docs/_site" not in edit.after
+    assert not any(n.category == "Old Output Paths to Update" for n in result.follow_up)
+
+
+def test_automation_output_path_in_github_workflow_is_auto_edited(project: Path) -> None:
+    put(
+        project,
+        ".github/workflows/publish.yml",
+        "jobs:\n  publish:\n    steps:\n      - run: rsync -a great-docs/_site/ remote:/var/www\n",
+    )
+    result = analyse(Layout.make(project), Path("docs"))
+    workflow = project / ".github/workflows/publish.yml"
+    edit = next(edit for edit in result.edits if edit.path == workflow)
+    assert b"docs/_site" in edit.after
+    assert b"great-docs/_site" not in edit.after
+    assert not any(n.category == "Old Output Paths to Update" for n in result.follow_up)
+
+
+def test_bare_old_build_dir_reference_in_makefile_is_still_categorized(project: Path) -> None:
+    put(project, "Makefile", "clean:\n\trm -rf great-docs/\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    makefile = project / "Makefile"
+    note = next(n for n in result.follow_up if "update old output paths" in n.lower())
+    assert note.category == "Old Output Paths to Update"
+    assert not any(edit.path == makefile for edit in result.edits)
 
 
 def test_pycache_in_scripts_does_not_crash_the_automation_scan(project: Path) -> None:

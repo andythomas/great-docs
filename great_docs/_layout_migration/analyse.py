@@ -38,6 +38,8 @@ from .model import (
     tree_files,
 )
 
+_OLD_SITE_PATH = re.compile(r"great-docs(?:-[\w.-]+)?[/\\]_site")
+_OLD_BUILD_DIR = re.compile(r"great-docs(?:-[\w.-]+)?/")
 _DOCUMENT_SUFFIXES = {".md", ".qmd", ".html", ".htm"}
 _MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg", "go.mod", "Cargo.toml")
 _RESERVED = {
@@ -1358,27 +1360,37 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                         path=path,
                     )
                 )
+    auto_editable_automation = {root / "Makefile", root / "justfile"}
+    workflows_dir = root / ".github" / "workflows"
     for path in dict.fromkeys(automation):
         if not path.is_file() or not retain(path):
             continue
         try:
-            automation_text = path.read_bytes().decode("utf-8")
-            if re.search(
-                r"great-docs(?:-[\w.-]+)?[/\\]_site|great-docs(?:-[\w.-]+)?/", automation_text
-            ):
-                follow_up.append(
-                    Note(
-                        f"Update old output paths in {path}; publish "
-                        f"{os.path.relpath(destination / '_site', root)}",
-                        category="Old Output Paths to Update",
-                        path=path,
-                    )
-                )
+            before = path.read_bytes()
+            automation_text = before.decode("utf-8")
         except (OSError, UnicodeError) as error:
             blockers.append(
                 Note(
                     f"Cannot inspect automation {path}: {error}",
                     category="Files That Could Not Be Read",
+                    path=path,
+                )
+            )
+            continue
+        remaining_text = automation_text
+        if path in auto_editable_automation or path.is_relative_to(workflows_dir):
+            if _OLD_SITE_PATH.search(automation_text):
+                new_site = os.path.relpath(destination / "_site", root).replace(os.sep, "/")
+                remaining_text = _OLD_SITE_PATH.sub(new_site, automation_text)
+                after = remaining_text.encode("utf-8")
+                if after != before:
+                    edits.append(Edit(path, before, after))
+        if _OLD_SITE_PATH.search(remaining_text) or _OLD_BUILD_DIR.search(remaining_text):
+            follow_up.append(
+                Note(
+                    f"Update old output paths in {path}; publish "
+                    f"{os.path.relpath(destination / '_site', root)}",
+                    category="Old Output Paths to Update",
                     path=path,
                 )
             )
