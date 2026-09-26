@@ -810,14 +810,39 @@ def test_user_guide_in_place_under_destination_is_not_a_discovery_conflict(
     assert any("already lives inside the destination" in message for message in result.follow_up)
 
 
-def test_section_dir_in_place_matching_a_discovery_name_is_not_a_conflict(
+def test_custom_pages_in_place_under_destination_is_not_a_discovery_conflict(
     project: Path,
 ) -> None:
-    put(project, "great-docs.yml", "sections: [{dir: docs/user_guide}]\n")
-    put(project, "docs/user_guide/start.md", "# Start\n")
+    put(project, "great-docs.yml", "custom_pages: docs/custom\n")
+    put(project, "docs/custom/page.qmd", "# Page\n")
     result = analyse(Layout.make(project), Path("docs"))
     assert not result.blockers
     assert any("already lives inside the destination" in message for message in result.follow_up)
+
+
+def test_section_dir_in_place_at_a_different_discovery_name_still_blocks(
+    project: Path,
+) -> None:
+    # `docs/user_guide` is in place as a *section*, not as the user guide. Leaving it
+    # there is fine for the section itself, but once `source_dir` becomes `docs/`, the
+    # same directory also starts satisfying the implicit `user_guide` auto-discovery
+    # convention it never triggered before — publishing its contents under two roles.
+    put(project, "great-docs.yml", "sections: [{dir: docs/user_guide}]\n")
+    put(project, "docs/user_guide/start.md", "# Start\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any("would change source discovery" in message for message in result.blockers)
+
+
+def test_user_guide_in_place_at_a_different_discovery_name_still_blocks(
+    project: Path,
+) -> None:
+    # `docs/custom` is in place as the user guide, not as custom pages, but it sits at
+    # the exact name `custom_pages` auto-discovery would otherwise claim once
+    # `source_dir` becomes `docs/`.
+    put(project, "great-docs.yml", "user_guide: docs/custom\n")
+    put(project, "docs/custom/start.md", "# Start\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert any("would change source discovery" in message for message in result.blockers)
 
 
 def test_in_place_user_guide_does_not_mask_an_unrelated_readme_conflict(

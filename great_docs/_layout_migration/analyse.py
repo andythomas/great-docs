@@ -54,6 +54,19 @@ _RESERVED = {
     "test-packages",
     "scripts",
 }
+# Maps each conventional discovery name checked below to the config field whose
+# resolved source, sitting there already, is what that name would legitimately
+# discover. An in-place source under any other field is not that role, however
+# the two happen to overlap on disk today: it still gains this name's discovery
+# once its own field stops pinning `source_dir` to somewhere else.
+_DISCOVERY_ROLES: dict[str, ConfigPath] = {
+    "user_guide": ("user_guide",),
+    "user-guide": ("user_guide",),
+    "custom": ("custom_pages",),
+    "notebooks": ("marimo",),
+    "index.qmd": ("index",),
+    "index.md": ("index",),
+}
 
 
 def _git(root: Path, *args: str, input_bytes: bytes | None = None) -> bytes:
@@ -767,7 +780,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             selected.append((root / name, ("index",)))
             break
     selected.append((config_path, ("config",)))
-    in_place_sources: list[Path] = []
+    in_place_sources: dict[Path, ConfigPath] = {}
     pinned_values: dict[ConfigPath, str] = {}
     pinned_fields: set[ConfigPath] = set()
     for index, (source, config_field) in enumerate(selected):
@@ -820,7 +833,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 )
             )
         elif in_place:
-            in_place_sources.append(source)
+            in_place_sources[source] = config_field
             follow_up.append(
                 Note(
                     f"Documentation source already lives inside the destination; left in place: {source}",
@@ -910,10 +923,15 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         # A discovery name at the destination is only a conflict when it will still be
         # there afterwards. It survives neither when something else moves onto it, nor
         # when it moves away itself (an exact-match source's per-child moves do that),
-        # nor when it is already the in-place, correctly configured source.
+        # nor when it is already in place *as that name's own role* — an in-place source
+        # configured under a different field only happens to share this path today.
+        target_role = in_place_sources.get(target)
+        in_place_as_this_role = target_role is not None and target_role == _DISCOVERY_ROLES.get(
+            name
+        )
         if (
             target.exists()
-            and target not in in_place_sources
+            and not in_place_as_this_role
             and not any(move.destination == target or move.source == target for move in moves)
         ):
             blockers.append(
@@ -1030,7 +1048,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 )
             )
 
-    for source in [move.source for move in moves] + in_place_sources:
+    for source in [move.source for move in moves] + list(in_place_sources):
         if not retain(source):
             continue
         _categorize_move_contents(source, config_path, documents, blockers, follow_up)
