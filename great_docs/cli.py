@@ -921,9 +921,9 @@ def migrate_layout(
     Refuse conflicts and changed inputs even with --yes. Use --dry-run to inspect
     the proposal without writes; it takes precedence over --yes.
 
-    An unrequested default destination falls through docs/, doc/, website/ in
-    order, skipping any that already holds unrelated content; an explicit --to
-    or --config is always used as given.
+    An unrequested default destination falls through docs/, docs-website/,
+    doc/, website/ in order, skipping any that already holds unrelated
+    content; an explicit --to or --config is always used as given.
 
     Require affirmative terminal confirmation unless --yes is supplied. If a
     previous migration was interrupted, show its recovery instructions and

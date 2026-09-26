@@ -150,7 +150,9 @@ def test_build_and_preview_hints_omit_config_for_every_conventional_destination(
     assert "--config" not in result.output
 
 
-def test_migration_falls_back_to_doc_when_docs_has_unrelated_content(project: Path) -> None:
+def test_migration_falls_back_to_docs_website_when_docs_has_unrelated_content(
+    project: Path,
+) -> None:
     put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
     put(project, "user_guide/page.md", "# Page\n")
     put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
@@ -158,8 +160,24 @@ def test_migration_falls_back_to_doc_when_docs_has_unrelated_content(project: Pa
         cli, ["migrate-layout", "--project-path", str(project), "--dry-run"]
     )
     assert result.exit_code == 0, result.output
+    assert "docs-website/great-docs.yml" in result.output
+    assert "docs/great-docs.yml" not in result.output
+
+
+def test_migration_falls_back_to_doc_when_docs_and_docs_website_have_unrelated_content(
+    project: Path,
+) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    put(project, "docs-website/PERFORMANCE_NOTES.md", "# Notes\n")
+    result = CliRunner().invoke(
+        cli, ["migrate-layout", "--project-path", str(project), "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
     assert "doc/great-docs.yml" in result.output
     assert "docs/great-docs.yml" not in result.output
+    assert "docs-website/great-docs.yml" not in result.output
 
 
 def test_migration_explicit_to_docs_still_blocks_on_unrelated_content(project: Path) -> None:
@@ -1866,17 +1884,7 @@ def test_destination_content_referenced_by_a_moving_document_is_accounted_for(
     assert not any("already contains unrelated content" in message for message in result.blockers)
 
 
-def test_select_destination_falls_through_to_doc_when_docs_is_unusable(project: Path) -> None:
-    from great_docs._layout_migration import select_destination
-
-    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
-    put(project, "user_guide/page.md", "# Page\n")
-    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
-    layout = Layout.make(project)
-    assert select_destination(layout) == project / "doc"
-
-
-def test_select_destination_falls_through_to_website_when_docs_and_doc_are_unusable(
+def test_select_destination_falls_through_to_docs_website_when_docs_is_unusable(
     project: Path,
 ) -> None:
     from great_docs._layout_migration import select_destination
@@ -1884,6 +1892,32 @@ def test_select_destination_falls_through_to_website_when_docs_and_doc_are_unusa
     put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
     put(project, "user_guide/page.md", "# Page\n")
     put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    layout = Layout.make(project)
+    assert select_destination(layout) == project / "docs-website"
+
+
+def test_select_destination_falls_through_to_doc_when_docs_and_docs_website_are_unusable(
+    project: Path,
+) -> None:
+    from great_docs._layout_migration import select_destination
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    put(project, "docs-website/OTHER_NOTES.md", "# Notes\n")
+    layout = Layout.make(project)
+    assert select_destination(layout) == project / "doc"
+
+
+def test_select_destination_falls_through_to_website_when_docs_docs_website_and_doc_are_unusable(
+    project: Path,
+) -> None:
+    from great_docs._layout_migration import select_destination
+
+    put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
+    put(project, "user_guide/page.md", "# Page\n")
+    put(project, "docs/PERFORMANCE_NOTES.md", "# Notes\n")
+    put(project, "docs-website/OTHER_NOTES.md", "# Notes\n")
     put(project, "doc/OTHER_NOTES.md", "# Notes\n")
     layout = Layout.make(project)
     assert select_destination(layout) == project / "website"
@@ -1897,8 +1931,9 @@ def test_select_destination_exhausted_still_returns_website_and_analyse_still_bl
     put(project, "great-docs.yml", "sections: [{dir: user_guide}]\n")
     put(project, "user_guide/page.md", "# Page\n")
     put(project, "docs/a.md", "# Notes\n")
-    put(project, "doc/b.md", "# Notes\n")
-    put(project, "website/c.md", "# Notes\n")
+    put(project, "docs-website/b.md", "# Notes\n")
+    put(project, "doc/c.md", "# Notes\n")
+    put(project, "website/d.md", "# Notes\n")
     layout = Layout.make(project)
     destination = select_destination(layout)
     assert destination == project / "website"

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _PROJECT_MANIFESTS = ("pyproject.toml", "setup.py", "go.mod", "Cargo.toml")
-CONVENTIONAL_DOC_DIRS = ("docs", "doc", "website")
+CONVENTIONAL_DOC_DIRS = ("docs", "docs-website", "doc", "website")
 _UNSAFE_TAG_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -39,8 +39,8 @@ class Layout:
         Resolve a documentation layout from project context
 
         Automatic selection considers configuration files at the package root
-        and in `docs/`, `doc/`, or `website/`. An explicit configuration must
-        remain within the discovered package root.
+        and in `docs/`, `docs-website/`, `doc/`, or `website/`. An explicit
+        configuration must remain within the discovered package root.
 
         Parameters
         ----------

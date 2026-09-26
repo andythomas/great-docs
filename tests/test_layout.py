@@ -153,6 +153,16 @@ def test_missing_automatic_config_preserves_root_candidate(tmp_path: Path) -> No
     assert layout.build_dir == tmp_path / "great-docs"
 
 
+def test_conventional_config_found_in_docs_website_directory(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n")
+    config = _write_config(tmp_path / "docs-website" / "great-docs.yml")
+
+    layout = Layout.make(tmp_path)
+
+    assert layout.config_path == config
+    assert layout.build_dir == tmp_path / "docs-website" / "_quarto" / "default"
+
+
 def test_conventional_config_found_in_doc_directory(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n")
     config = _write_config(tmp_path / "doc" / "great-docs.yml")
