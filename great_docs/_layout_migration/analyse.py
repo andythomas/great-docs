@@ -908,10 +908,13 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             retain(root / name)
         target = destination / name
         # A discovery name at the destination is only a conflict when it will still be
-        # there afterwards. It survives neither when something else moves onto it nor
-        # when it moves away itself, which an exact-match source's per-child moves do.
-        if target.exists() and not any(
-            move.destination == target or move.source == target for move in moves
+        # there afterwards. It survives neither when something else moves onto it, nor
+        # when it moves away itself (an exact-match source's per-child moves do that),
+        # nor when it is already the in-place, correctly configured source.
+        if (
+            target.exists()
+            and target not in in_place_sources
+            and not any(move.destination == target or move.source == target for move in moves)
         ):
             blockers.append(
                 Note(

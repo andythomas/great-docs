@@ -800,6 +800,38 @@ def test_discovery_input_beside_an_in_place_source_still_blocks(project: Path) -
     assert any("would change source discovery" in message for message in result.blockers)
 
 
+def test_user_guide_in_place_under_destination_is_not_a_discovery_conflict(
+    project: Path,
+) -> None:
+    put(project, "great-docs.yml", "user_guide: docs/user_guide\n")
+    put(project, "docs/user_guide/start.md", "# Start\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert any("already lives inside the destination" in message for message in result.follow_up)
+
+
+def test_section_dir_in_place_matching_a_discovery_name_is_not_a_conflict(
+    project: Path,
+) -> None:
+    put(project, "great-docs.yml", "sections: [{dir: docs/user_guide}]\n")
+    put(project, "docs/user_guide/start.md", "# Start\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert not result.blockers
+    assert any("already lives inside the destination" in message for message in result.follow_up)
+
+
+def test_in_place_user_guide_does_not_mask_an_unrelated_readme_conflict(
+    project: Path,
+) -> None:
+    put(project, "great-docs.yml", "user_guide: docs/user_guide\n")
+    put(project, "docs/user_guide/start.md", "# Start\n")
+    put(project, "docs/README.md", "# Notes\n")
+    result = analyse(Layout.make(project), Path("docs"))
+    assert len(result.blockers) == 1
+    assert "would change source discovery" in result.blockers[0]
+    assert "README.md" in result.blockers[0]
+
+
 def test_exact_match_and_ordinary_sections_migrate_together(project: Path) -> None:
     put(project, "great-docs.yml", "sections: [{dir: docs}, {dir: guides}]\n")
     put(project, "docs/notes.md", "# Notes\n")
