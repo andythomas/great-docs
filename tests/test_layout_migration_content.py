@@ -479,6 +479,132 @@ def test_frontmatter_reference_note_has_a_category_and_excerpt(tmp_path: Path) -
     assert note.snippet == "image: cover.png"
 
 
+def test_document_bibliography_scalar_preserves_frontmatter_format(tmp_path: Path) -> None:
+    page = tmp_path / "index.qmd"
+    bibliography = tmp_path / "refs.bib"
+    bibliography.write_text("@book{ref}\n")
+    text = "---\r\ntitle: Citations\r\nbibliography: 'refs.bib' # Keep\r\n---\r\n# Home\r\n"
+    rewritten, inputs, _, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert rewritten == text.replace("'refs.bib'", "'../refs.bib'")
+    assert inputs == (bibliography,)
+    assert not blockers
+
+
+def test_document_bibliography_list_rebases_each_moved_target(tmp_path: Path) -> None:
+    guide = tmp_path / "guide"
+    guide.mkdir()
+    external = tmp_path / "outside.bib"
+    internal = guide / "inside.bib"
+    external.write_text("@book{outside}\n")
+    internal.write_text("@book{inside}\n")
+    page = guide / "index.qmd"
+    text = (
+        "---\n"
+        "bibliography: ['../outside.bib', \"inside.bib\"] # Ordered\n"
+        "title: Sources\n"
+        "---\n"
+    )
+    rewritten, inputs, _, blockers = rewrite_document(
+        text, page, (Move(guide, tmp_path / "docs/guide"),)
+    )
+    assert rewritten == text.replace("'../outside.bib'", "'../../outside.bib'")
+    assert set(inputs) == {external, internal}
+    assert not blockers
+
+
+def test_document_bibliography_uses_literal_filename_with_fragment_characters(
+    tmp_path: Path,
+) -> None:
+    bibliography = tmp_path / "refs#part%20one.bib"
+    bibliography.write_text("@book{ref}\n")
+    page = tmp_path / "index.qmd"
+    text = "---\nbibliography: 'refs#part%20one.bib'\n---\n"
+    rewritten, inputs, _, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert rewritten == "---\nbibliography: '../refs#part%20one.bib'\n---\n"
+    assert inputs == (bibliography,)
+    assert not blockers
+
+
+def test_document_bibliography_keeps_other_frontmatter_file_blocker(tmp_path: Path) -> None:
+    (tmp_path / "refs.bib").write_text("@book{ref}\n")
+    page = tmp_path / "index.qmd"
+    text = "---\nbibliography: refs.bib\nimage: cover.png\n---\n"
+    rewritten, _, _, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert rewritten == "---\nbibliography: ../refs.bib\nimage: cover.png\n---\n"
+    note = next(note for note in blockers if note.category == "Frontmatter Fields to Update Manually")
+    assert note.line == 3
+    assert note.snippet == "image: cover.png"
+
+
+def test_document_bibliography_keeps_nested_bibliography_blocker(tmp_path: Path) -> None:
+    (tmp_path / "refs.bib").write_text("@book{ref}\n")
+    page = tmp_path / "index.qmd"
+    text = (
+        "---\n"
+        "bibliography: refs.bib\n"
+        "format:\n"
+        "  html:\n"
+        "    bibliography: other.bib\n"
+        "---\n"
+    )
+    rewritten, _, _, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert rewritten == text.replace("bibliography: refs.bib", "bibliography: ../refs.bib")
+    note = next(note for note in blockers if note.category == "Frontmatter Fields to Update Manually")
+    assert note.line == 5
+    assert note.snippet == "    bibliography: other.bib"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "bibliography: https://example.org/refs.bib",
+        "bibliography: /tmp/refs.bib",
+        "bibliography: missing.bib",
+        "bibliography: &refs refs.bib\nother: *refs",
+        "other: &refs refs.bib\nbibliography: *refs",
+        "bibliography: !!str refs.bib",
+        "bibliography: |\n  refs.bib",
+        "bibliography: refs.bib\nbibliography: second.bib",
+        "bibliography: [refs.bib, false]",
+        "bibliography: [refs.bib, missing.bib]",
+    ],
+)
+def test_document_bibliography_unsafe_form_keeps_manual_blocker(
+    tmp_path: Path, field: str
+) -> None:
+    (tmp_path / "refs.bib").write_text("@book{ref}\n")
+    page = tmp_path / "index.qmd"
+    text = f"---\n{field}\n---\n# Home\n"
+    rewritten, inputs, _, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert rewritten == text
+    assert not inputs
+    assert any(note.category == "Frontmatter Fields to Update Manually" for note in blockers)
+
+
+def test_document_bibliography_symlink_keeps_manual_blocker(tmp_path: Path) -> None:
+    real = tmp_path / "real.bib"
+    real.write_text("@book{ref}\n")
+    (tmp_path / "refs.bib").symlink_to(real)
+    page = tmp_path / "index.qmd"
+    text = "---\nbibliography: refs.bib\n---\n"
+    rewritten, inputs, _, blockers = rewrite_document(
+        text, page, (Move(page, tmp_path / "docs/index.qmd"),)
+    )
+    assert rewritten == text
+    assert not inputs
+    assert any(note.category == "Frontmatter Fields to Update Manually" for note in blockers)
+
+
 def test_broken_reference_note_has_a_category_and_excerpt(tmp_path: Path) -> None:
     page = tmp_path / "index.qmd"
     (tmp_path / "other.qmd").write_text("# Other\n")

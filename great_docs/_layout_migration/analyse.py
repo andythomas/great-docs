@@ -106,7 +106,7 @@ def _check_freeze_ignore_policy(
     paths: set[Path],
     retain: Callable[[Path], bool],
     retain_policy: Callable[[Path], bool],
-) -> None:
+) -> tuple[Path, ...]:
     """
     Refuse cache relocation when effective ignore rules would change
 
@@ -142,7 +142,7 @@ def _check_freeze_ignore_policy(
                 "Cannot verify freeze ignore policy outside a Git worktree; "
                 "initialise Git, check destination cache rules, and preview again"
             )
-        return
+        return ()
 
     repository = Path(os.fsdecode(_git(root, "rev-parse", "--show-toplevel")).strip())
     for path in (root, *root.parents):
@@ -204,14 +204,59 @@ def _check_freeze_ignore_policy(
             input_bytes=b"\0".join(os.fsencode(path) for path in queries) + b"\0",
         ).split(b"\0")
     )
+    exceptions: set[Path] = set()
+    tracked_destinations: set[Path] = set()
+    unignored_untracked: set[Path] = set()
     for index in range(0, len(queries), 2):
         before, after = queries[index : index + 2]
         original = root / before
+        if original in tracked:
+            tracked_destinations.add(Path(after))
+        elif original.is_file() and os.fsencode(after) not in ignored:
+            unignored_untracked.add(Path(after))
         if original in tracked and os.fsencode(after) in ignored:
-            raise MigrationError(
-                f"Migration would lose tracked cache status: {before} -> {after}. "
-                "Make the destination cache file addable in .gitignore and preview again"
+            details = _git(
+                root,
+                "check-ignore",
+                "--no-index",
+                "--verbose",
+                "-z",
+                "--stdin",
+                input_bytes=os.fsencode(after) + b"\0",
             )
+            fields = details.split(b"\0")
+            relative = Path(after)
+            freeze_root = destination.relative_to(root) / "_freeze"
+            destination_parents = [
+                parent for parent in freeze_root.parents if parent != Path(".")
+            ]
+            ignored_parents = _git(
+                root,
+                "check-ignore",
+                "--no-index",
+                "-z",
+                "--stdin",
+                input_bytes=b"\0".join(
+                    os.fsencode(parent.as_posix() + "/") for parent in destination_parents
+                )
+                + b"\0",
+            )
+            if (
+                len(fields) < 4
+                or os.fsdecode(fields[0]) != ".gitignore"
+                or ignored_parents.strip(b"\0")
+                or any(
+                    (root / parent / ".gitignore").is_file()
+                    for parent in relative.parents
+                    if parent != Path(".")
+                )
+            ):
+                raise MigrationError(
+                    f"Migration would lose tracked cache status: {before} -> {after}. "
+                    "Make the destination cache file addable in .gitignore and preview again"
+                )
+            exceptions.add(relative)
+            continue
         if original.is_dir() and any(path.is_relative_to(original) for path in tracked):
             continue
         if original in tracked:
@@ -222,6 +267,20 @@ def _check_freeze_ignore_policy(
                 "Adjust destination .gitignore rules to preserve ignored files and "
                 "tracked exceptions, then preview again"
             )
+    if exceptions and unignored_untracked:
+        raise MigrationError(
+            "Cannot preserve freeze ignore policy for untracked destination cache files; "
+            "adjust destination .gitignore rules and preview again"
+        )
+    if exceptions and any(
+        not all(re.fullmatch(r"[A-Za-z0-9._-]+", part) for part in path.parts)
+        for path in tracked_destinations
+    ):
+        raise MigrationError(
+            "Migration would lose tracked cache status with Git pattern characters in a "
+            "destination path; make those cache files addable in .gitignore and preview again"
+        )
+    return tuple(sorted(tracked_destinations)) if exceptions else ()
 
 
 def _overlaps(left: Path, right: Path) -> bool:
@@ -1269,9 +1328,12 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 )
             edits.append(Edit(path, None, content))
             freeze_paths.add(path.relative_to(target_freeze))
+    freeze_exceptions: tuple[Path, ...] = ()
     if freeze.exists() or freeze_paths:
         try:
-            _check_freeze_ignore_policy(root, destination, freeze_paths, retain, retain_policy)
+            freeze_exceptions = _check_freeze_ignore_policy(
+                root, destination, freeze_paths, retain, retain_policy
+            )
         except (OSError, UnicodeError, MigrationError) as error:
             blockers.append(Note(str(error), category="Cached Build Conflicts", path=freeze))
     cache_root = root / ".great-docs-cache"
@@ -1323,6 +1385,16 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 for name in ("_quarto", "_site", ".cache")
                 if f"/{prefix}/{name}/" not in ignore_text.splitlines()
             ]
+            if freeze_exceptions:
+                directories = {
+                    parent
+                    for path in freeze_exceptions
+                    for parent in path.parents
+                    if parent.is_relative_to(Path(prefix) / "_freeze")
+                }
+                for directory in sorted(directories, key=lambda path: (len(path.parts), path)):
+                    additions.extend((f"!/{directory.as_posix()}/", f"/{directory.as_posix()}/*"))
+                additions.extend(f"!/{path.as_posix()}" for path in freeze_exceptions)
             if additions:
                 updated = (
                     ignore_text

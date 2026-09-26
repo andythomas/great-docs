@@ -400,6 +400,56 @@ _SHORTCODE_FILE_ARGUMENT = re.compile(
 )
 
 
+def _rewrite_bibliography(
+    frontmatter: str, source: Path, relocated: Path, moves: tuple[Move, ...]
+) -> tuple[str, set[Path]]:
+    """
+    Rebase local bibliography files without changing other frontmatter values
+
+    Reject the entire field when any entry lacks an independent, valid scalar
+    span or an existing local file.
+    """
+    config = read_config(frontmatter)
+    value = config.get("bibliography")
+    if isinstance(value, str):
+        entries: tuple[tuple[ConfigPath, str], ...] = ((("bibliography",), value),)
+    elif isinstance(value, list) and value and all(isinstance(item, str) for item in value):
+        entries = tuple((("bibliography", index), item) for index, item in enumerate(value))
+    else:
+        raise MigrationError("Bibliography must be a path or a nonempty list of paths")
+    nodes, unsafe = _nodes(frontmatter)
+    _check_span(("bibliography",), nodes, unsafe)
+    expected = copy.deepcopy(config)
+    replacements: list[tuple[int, int, str]] = []
+    inputs: set[Path] = set()
+    for path, original in entries:
+        target = local_path(original, source.parent)
+        if target is None or Path(original).is_absolute():
+            raise MigrationError(f"Unsupported bibliography path: {original}")
+        check_symlinks(source.parent / original)
+        if not target.is_file():
+            raise MigrationError(f"Bibliography file does not exist: {original}")
+        node = nodes.get(path)
+        if not isinstance(node, ScalarNode):
+            raise MigrationError(f"Cannot locate a bibliography path span: {path}")
+        _check_span(path, nodes, unsafe)
+        inputs.add(target)
+        replacement = Path(os.path.relpath(moved_path(target, moves), relocated.parent)).as_posix()
+        if replacement != original:
+            replacements.append(
+                (node.start_mark.index, node.end_mark.index, _scalar(replacement, node))
+            )
+        if len(path) == 1:
+            expected["bibliography"] = replacement
+        else:
+            expected["bibliography"][path[1]] = replacement
+    for start, end, replacement in sorted(replacements, reverse=True):
+        frontmatter = frontmatter[:start] + replacement + frontmatter[end:]
+    if read_config(frontmatter) != expected:
+        raise MigrationError("Rebasing bibliography changed unrelated frontmatter values")
+    return frontmatter, inputs
+
+
 def rewrite_document(
     text: str,
     source: Path,
@@ -636,9 +686,36 @@ def rewrite_document(
             )
         frontmatter = re.match(r"\A---\s*\n(.*?)\n---\s*(?:\n|$)", text, re.DOTALL)
         if frontmatter:
-            field_match = re.search(
-                r"(?m)^\s*(?:image|bibliography|csl|resources|include-in-header|include-before-body|include-after-body)\s*:",
-                frontmatter[1],
+            body = frontmatter[1]
+            bibliography = re.search(r"(?m)^[ \t]*bibliography[ \t]*:", body)
+            bibliography_rewritten = False
+            if bibliography is not None:
+                try:
+                    body, bibliography_inputs = _rewrite_bibliography(
+                        body, source, relocated, moves
+                    )
+                except (MigrationError, OSError, ValueError):
+                    pass
+                else:
+                    bibliography_rewritten = True
+                    inputs.update(bibliography_inputs)
+                    text = text[: frontmatter.start(1)] + body + text[frontmatter.end(1) :]
+            fields = (
+                "image|bibliography|csl|resources|include-in-header|include-before-body|include-after-body"
+            )
+            field_match = next(
+                (
+                    match
+                    for match in re.finditer(
+                        rf"(?m)^(?P<indent>[ \t]*)(?P<field>{fields})[ \t]*:", body
+                    )
+                    if not (
+                        bibliography_rewritten
+                        and match.group("field") == "bibliography"
+                        and not match.group("indent")
+                    )
+                ),
+                None,
             )
             if field_match:
                 line, snippet = _locate(text, frontmatter.start(1) + field_match.start())

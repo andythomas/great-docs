@@ -1227,6 +1227,103 @@ def test_migration_preserves_matching_freeze_ignore_policy(project: Path, rules:
 
 
 @pytest.mark.usefixtures("isolated_git")
+def test_migration_previews_tracked_freeze_ignore_exception(project: Path) -> None:
+    put(project, ".gitignore", "_freeze/\nother/\n")
+    put(project, "_freeze/docs/examples/figure-html/output.png", b"tracked")
+    put(project, "_freeze/docs/examples/figure-html/sibling.png", b"untracked")
+    subprocess.run(
+        ["git", "-C", str(project), "add", "-f", "_freeze/docs/examples/figure-html/output.png"],
+        check=True,
+    )
+    before = snapshot(project)
+
+    proposal = analyse(Layout.make(project), Path("docs"))
+
+    assert not proposal.blockers
+    assert any(edit.path == project / ".gitignore" for edit in proposal.edits)
+    assert snapshot(project) == before
+
+
+@pytest.mark.usefixtures("isolated_git")
+def test_migration_reopens_only_tracked_freeze_file(project: Path) -> None:
+    from great_docs._layout_migration import apply
+
+    put(project, ".gitignore", "_freeze/\nother/\n")
+    put(project, "_freeze/docs/examples/figure-html/output.png", b"tracked")
+    put(project, "_freeze/docs/examples/figure-html/sibling.png", b"untracked")
+    put(project, "other/unused.txt", "ignored")
+    subprocess.run(
+        ["git", "-C", str(project), "add", "-f", "_freeze/docs/examples/figure-html/output.png"],
+        check=True,
+    )
+
+    proposal = analyse(Layout.make(project), Path("docs"))
+    assert not proposal.blockers
+    apply(proposal)
+    subprocess.run(["git", "-C", str(project), "add", "-A"], check=True)
+    tracked = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(project),
+            "ls-files",
+            "docs/_freeze/docs/examples/figure-html/output.png",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert tracked.strip() == "docs/_freeze/docs/examples/figure-html/output.png"
+    for path, ignored in (
+        ("docs/_freeze/docs/examples/figure-html/output.png", False),
+        ("docs/_freeze/docs/examples/figure-html/sibling.png", True),
+        ("other/unused.txt", True),
+    ):
+        status = subprocess.run(
+            ["git", "-C", str(project), "check-ignore", "--no-index", "-q", path],
+            check=False,
+        ).returncode
+        assert (status == 0) is ignored
+
+
+@pytest.mark.usefixtures("isolated_git")
+def test_migration_blocks_tracked_freeze_file_under_ignored_destination_parent(
+    project: Path,
+) -> None:
+    put(project, ".gitignore", "_freeze/\n/docs/\n")
+    put(project, "_freeze/docs/examples/figure-html/output.png", b"tracked")
+    subprocess.run(
+        ["git", "-C", str(project), "add", "-f", "_freeze/docs/examples/figure-html/output.png"],
+        check=True,
+    )
+    before = snapshot(project)
+
+    proposal = analyse(Layout.make(project), Path("docs"))
+
+    assert any("tracked cache" in blocker for blocker in proposal.blockers)
+    assert snapshot(project) == before
+
+
+@pytest.mark.usefixtures("isolated_git")
+def test_migration_blocks_mixed_tracked_freeze_paths_with_pattern_characters(
+    project: Path,
+) -> None:
+    put(project, ".gitignore", "/docs/_freeze/ignored.png\n")
+    put(project, "_freeze/ignored.png", b"ignored destination")
+    put(project, "_freeze/[x].png", b"addable destination")
+    subprocess.run(
+        ["git", "-C", str(project), "add", "_freeze/ignored.png", "_freeze/[x].png"],
+        check=True,
+    )
+    before = snapshot(project)
+
+    proposal = analyse(Layout.make(project), Path("docs"))
+
+    assert any("tracked cache" in blocker for blocker in proposal.blockers)
+    assert snapshot(project) == before
+
+
+@pytest.mark.usefixtures("isolated_git")
 @pytest.mark.parametrize("ignored", [False, True])
 def test_migration_preserves_forced_cache_tracking_or_refuses(project: Path, ignored: bool) -> None:
     from great_docs._layout_migration import apply
@@ -1798,6 +1895,24 @@ def test_missing_configured_input_is_categorized(project: Path) -> None:
     result = analyse(Layout.make(project), Path("docs"))
     note = next(n for n in result.blockers if "configured input does not exist" in n.lower())
     assert note.category == "Configuration to Review"
+
+
+def test_document_bibliography_is_fingerprinted_and_invalidates_preview(project: Path) -> None:
+    from great_docs._layout_migration import apply
+
+    bibliography = put(project, "refs.bib", "@book{original}\n")
+    page = put(project, "index.qmd", "---\nbibliography: refs.bib\n---\n# Home\n")
+    proposal = analyse(Layout.make(project), Path("docs"))
+    assert not proposal.blockers
+    assert bibliography in dict(proposal.fingerprints)
+    assert next(edit for edit in proposal.edits if edit.path == page).after == (
+        b"---\nbibliography: ../refs.bib\n---\n# Home\n"
+    )
+    bibliography.write_text("@book{changed}\n")
+    before = snapshot(project)
+    with pytest.raises(MigrationError):
+        apply(proposal)
+    assert snapshot(project) == before
 
 
 def test_curated_skill_file_is_fingerprinted_without_a_review_note(project: Path) -> None:
