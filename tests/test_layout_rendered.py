@@ -198,7 +198,9 @@ class Rendered:
     executions: Path
 
 
-def make_project(root: Path, directory: str, tag: str | None, migrate: bool) -> Rendered:
+def make_project(
+    root: Path, directory: str, tag: str | None, migrate: bool, execute_cell: bool = True
+) -> Rendered:
     """
     Build a package with a two-commit history and a great-docs configuration
 
@@ -227,16 +229,29 @@ def make_project(root: Path, directory: str, tag: str | None, migrate: bool) -> 
     write_file(root, "src/layout_sample/__init__.py", PACKAGE)
     write_file(root, "README.md", "# Layout sample\n\nPackage README fallback sentinel.\n")
     write_file(root, "shared/picture.svg", IMAGE)
+    bibliography_path = "refs.bib" if migrate else "shared/references.bib"
     write_file(
         root,
-        "shared/references.bib",
+        bibliography_path,
         "@book{layoutref, title={Layout bibliography sentinel}, author={Example, Ada}, year={2020}}\n",
     )
     shared = "shared" if source == root else "../shared"
+    page_bibliography = "bibliography: ../refs.bib\n" if migrate else ""
+    jupyter_engine = "jupyter: python3\n" if execute_cell else ""
+    execution_cell = (
+        """```{python}
+import os
+from pathlib import Path
+with Path(os.environ["GD_LAYOUT_EXECUTION_LOG"]).open("a") as output:
+    output.write("executed\\n")
+print("Frozen execution sentinel")
+```"""
+        if execute_cell
+        else ""
+    )
     guide = f"""---
 title: Frozen guide
-jupyter: python3
----
+{jupyter_engine}{page_bibliography}---
 
 Guide prose sentinel. See [the homepage](../index.qmd).
 
@@ -244,13 +259,7 @@ Guide prose sentinel. See [the homepage](../index.qmd).
 
 Read the shared reference [@layoutref].
 
-```{{python}}
-import os
-from pathlib import Path
-with Path(os.environ["GD_LAYOUT_EXECUTION_LOG"]).open("a") as output:
-    output.write("executed\\n")
-print("Frozen execution sentinel")
-```
+{execution_cell}
 """
     write_file(source, "user_guide/01-frozen.qmd", guide)
     config_text = f"""module: layout_sample
@@ -267,7 +276,7 @@ skill:
 mcp:
   enabled: false
 freeze: auto
-bibliography: {shared}/references.bib
+bibliography: {bibliography_path}
 """
     if tag:
         config_text += f'''versions:
@@ -457,6 +466,26 @@ def test_user_guide_renders_execution_and_citation(rendered: Rendered) -> None:
         for src in guide.images
         if "picture.svg" in src
     )
+
+
+def test_migrated_page_bibliography_renders(tmp_path: Path, required_tools: None) -> None:
+    """Resolve a migrated page bibliography alongside the global bibliography"""
+    fixture = make_project(tmp_path, ".", None, migrate=True, execute_cell=False)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        (str(ROOT), str(tmp_path / "src"), env.get("PYTHONPATH", ""))
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", BUILD, str(tmp_path), str(fixture.layout.config_path)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    guide = Page(fixture.layout.site_dir / "user-guide/frozen.html")
+    assert "ref-layoutref" in guide.ids
 
 
 def test_api_reference_links_to_tagged_source(rendered: Rendered) -> None:

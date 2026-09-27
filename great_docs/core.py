@@ -806,7 +806,56 @@ class GreatDocs:
         )
         for start, end in reversed(spans):
             content = content[:start] + rebase(content[start:end]) + content[end:]
-        return content
+        return self._rebase_page_bibliography(content, source_file, destination_file)
+
+    def _rebase_page_bibliography(
+        self, content: str, source_file: Path, destination_file: Path
+    ) -> str:
+        match = re.match(r"\A---\s*\n(.*?)\n---\s*(?:\n|$)", content, re.DOTALL)
+        if match is None:
+            return content
+        try:
+            frontmatter = parse_yaml(match[1]) or {}
+        except ValueError:
+            return content
+        bibliography = frontmatter.get("bibliography")
+        if isinstance(bibliography, str):
+            entries = [bibliography]
+            is_list = False
+        elif isinstance(bibliography, list) and all(isinstance(item, str) for item in bibliography):
+            entries = bibliography
+            is_list = True
+        else:
+            return content
+
+        rebased: list[str] = []
+        changed = False
+        for reference in entries:
+            url = urlsplit(reference)
+            if url.scheme or url.netloc or not url.path or reference.startswith("/"):
+                rebased.append(reference)
+                continue
+            source = (source_file.parent / unquote(url.path)).resolve()
+            if not source.is_file():
+                rebased.append(reference)
+                continue
+            if source.is_relative_to(self.layout.package_root):
+                relative = source.relative_to(self.layout.package_root)
+            else:
+                import hashlib
+
+                relative = Path(hashlib.sha256(str(source).encode()).hexdigest()[:16]) / source.name
+            destination = self.build_dir / "_shared" / relative
+            copied = self._copy_source_asset(source, destination)
+            path = Path(os.path.relpath(copied, destination_file.parent)).as_posix()
+            rebased.append(urlunsplit(("", "", quote(path, safe="/"), url.query, url.fragment)))
+            changed = changed or path != reference
+
+        if not changed:
+            return content
+        frontmatter["bibliography"] = rebased if is_list else rebased[0]
+        replacement = "\n" + format_yaml(frontmatter).rstrip() + "\n"
+        return content[: match.start(1)] + replacement + content[match.end(1) :]
 
     def _source_page_destination(self, source: Path) -> Path | None:
         """
