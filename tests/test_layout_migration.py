@@ -222,6 +222,15 @@ def test_dry_run_report_prints_move_count_header(project: Path) -> None:
     assert "Blocking Problem" not in result.output
 
 
+def test_analysis_handles_directory_link_to_package_root(project: Path) -> None:
+    put(project, "great-docs.yml", "user_guide: user_guide\n")
+    put(project, "user_guide/page.qmd", "[Home](../)\n")
+
+    migration = analyse(Layout.make(project), Path("docs"))
+
+    assert not migration.blockers
+
+
 def test_dry_run_report_groups_review_items_by_category(project: Path) -> None:
     put(project, "great-docs.yml", "sections: [{dir: essays}]\n")
     put(project, "essays/notes.rst", "Notes\n")

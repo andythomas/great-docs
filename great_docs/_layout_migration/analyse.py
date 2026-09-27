@@ -608,7 +608,10 @@ def _fold_in_static_directories(
         for target in sorted(referenced):
             if not target.is_relative_to(root) or moved_path(target, tuple(moves)) != target:
                 continue
-            top = root / target.relative_to(root).parts[0]
+            relative = target.relative_to(root)
+            if not relative.parts:
+                continue
+            top = root / relative.parts[0]
             if top not in folded and top.name not in _RESERVED and top.is_dir():
                 candidates[top] = top
         to_fold = [

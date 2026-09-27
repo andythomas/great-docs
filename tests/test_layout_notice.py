@@ -40,6 +40,21 @@ def test_clean_root_notice_gives_an_applicable_command(
     assert "Dry run complete" in result.output
 
 
+def test_clean_root_notice_handles_directory_link_to_package_root(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    project(root)
+    (root / "great-docs.yml").write_text("reference: false\nuser_guide: user_guide\n")
+    (root / "user_guide").mkdir()
+    (root / "user_guide" / "page.qmd").write_text("[Home](../)\n")
+
+    notice = layout_notice(Layout.make(root))
+
+    assert notice is not None
+    assert "Migration check could not complete" not in notice
+    assert "great-docs migrate-layout" in notice
+
+
 def test_blocked_notice_gives_agent_prompt_and_selected_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
