@@ -150,7 +150,19 @@ def test_freeze_clean_accepts_ordinary_relative_cache(
 
 
 @pytest.mark.parametrize("directory", [".", "docs"])
-@pytest.mark.parametrize("mode", ["single", "versions", "watch", "preview", "preview-build"])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "single",
+        "versions",
+        "watch",
+        "preview",
+        "preview-build",
+        "blocked",
+        "analysis-error",
+        "render-error",
+    ],
+)
 def test_layout_notice_once_per_build_or_preview_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -166,7 +178,10 @@ def test_layout_notice_once_per_build_or_preview_session(
     if mode == "versions":
         config += 'versions: ["0.3", "0.2", "0.1"]\n'
     (source / "great-docs.yml").write_text(config)
-    (source / "index.qmd").write_text("# A small documentation site\n")
+    page = "# A small documentation site\n"
+    if mode == "blocked":
+        page = "---\nresources:\n  - missing.png\n---\n" + page
+    (source / "index.qmd").write_text(page)
     docs = GreatDocs(str(tmp_path))
     run = subprocess.run
     popen = subprocess.Popen
@@ -189,6 +204,8 @@ def test_layout_notice_once_per_build_or_preview_session(
 
     def start_quarto(command: list[str], *args: object, **kwargs: object) -> object:
         if command[:2] == ["quarto", "render"]:
+            if mode == "render-error":
+                return MagicMock(stdout=iter([]), stderr=iter(["Render failed"]), returncode=1)
             render(Path.cwd())
             return MagicMock(stdout=iter([]), stderr=iter([]), returncode=0)
         return popen(command, *args, **kwargs)
@@ -206,17 +223,40 @@ def test_layout_notice_once_per_build_or_preview_session(
     monkeypatch.setattr("great_docs._versioned_build.render_versions_parallel", render_versions)
     monkeypatch.setattr("http.server.ThreadingHTTPServer", MagicMock())
     monkeypatch.setattr("threading.Timer", MagicMock())
+    if mode == "analysis-error":
+        from great_docs._layout_migration.model import MigrationError
+
+        def fail_selection(_layout: object) -> Path:
+            raise MigrationError("Cannot inspect ignore policy")
+
+        monkeypatch.setattr("great_docs._layout_notice.select_destination", fail_selection)
     if mode == "preview":
         docs.layout.site_dir.mkdir(parents=True)
         (docs.layout.site_dir / "index.html").write_text("<html>Existing site</html>")
     if mode.startswith("preview"):
         docs.preview()
+    elif mode == "render-error":
+        with pytest.raises(SystemExit):
+            docs.build(refresh=False)
     else:
         docs.build(watch=mode == "watch", refresh=False)
     output = capsys.readouterr().out
-    notice = "Keep documentation in docs/ with the new layout.\nRun great-docs migrate-layout --dry-run to preview the migration.\n"
-    assert output.count(notice) == (1 if directory == "." else 0)
-    assert len(rendered) == (3 if mode in {"versions", "watch"} else 0 if mode == "preview" else 1)
+    notice = "This project has documentation at the root level, which is deprecated."
+    assert output.count(notice) == (1 if directory == "." and mode != "render-error" else 0)
+    if directory == "." and mode != "render-error":
+        if mode == "blocked":
+            assert "Ask a coding agent" in output
+        elif mode == "analysis-error":
+            assert "Migration check could not complete" in output
+        else:
+            assert "Run this command to migrate" in output
+        if mode == "watch":
+            assert output.index(notice) > output.index("Starting watch mode")
+        elif mode != "preview":
+            assert output.index(notice) > output.index("Site")
+    assert len(rendered) == (
+        3 if mode in {"versions", "watch"} else 0 if mode in {"preview", "render-error"} else 1
+    )
 
 
 @pytest.mark.parametrize(
@@ -3680,8 +3720,6 @@ class TestDetectCurrentPackage:
                 del sys.modules["tomllib"]
 
 
-
-
 class TestPrintTimingTableVersionedTop:
     def test_top_limits_pages_in_versioned_data(self, capsys):
         data = {
@@ -3703,8 +3741,6 @@ class TestPrintTimingTableVersionedTop:
         assert "page1.html" in out
         assert "page2.html" in out
         assert "page3.html" not in out
-
-
 
 
 class TestFreezeFileSearchFallback:
@@ -3868,8 +3904,6 @@ class TestFreezePersistCache:
         assert json.loads((persist_dir / "index.json").read_text()) == {"pages": []}
 
 
-
-
 class TestSetupGithubPagesPythonFloor:
     def test_detected_python_below_311_uses_minimum(self, tmp_path, monkeypatch):
         """When detected Python < 3.11, floor to 3.11 with message."""
@@ -3895,8 +3929,6 @@ class TestSetupGithubPagesPythonFloor:
         assert "needs >=3.11" in result.output
 
 
-
-
 class TestProofreadReadmeAutoDiscover:
     @patch("great_docs._harper.run_harper", return_value=[])
     @patch("great_docs._harper.check_harper_available", return_value=(True, "harper 1.0"))
@@ -3913,8 +3945,6 @@ class TestProofreadReadmeAutoDiscover:
         assert mock_run.called
         files_arg = mock_run.call_args[0][0]
         assert any("README.md" in str(f) for f in files_arg)
-
-
 
 
 class TestProofreadDictionaryFileError:
@@ -3954,8 +3984,6 @@ class TestProofreadDictionaryFileError:
                 ],
             )
         assert "Warning" in result.output or "Could not read" in result.output
-
-
 
 
 class TestProofreadIncludeDocstrings:
@@ -4010,8 +4038,6 @@ class TestProofreadIncludeDocstrings:
         assert "Python file" in result.output
 
 
-
-
 class TestProofreadTempDictCleanup:
     @patch("great_docs._harper.run_harper", return_value=[])
     @patch("great_docs._harper.check_harper_available", return_value=(True, "harper 1.0"))
@@ -4036,8 +4062,6 @@ class TestProofreadTempDictCleanup:
             )
         # Should still succeed despite unlink failure
         assert result.exit_code == 0
-
-
 
 
 class TestProofreadExceptionHandlers:
@@ -4097,8 +4121,6 @@ class TestProofreadExceptionHandlers:
         assert result.exit_code == 1
 
 
-
-
 class TestSeoSitemapParseError:
     def test_malformed_sitemap_xml(self, tmp_path, monkeypatch):
         """Malformed sitemap.xml reports parse error."""
@@ -4115,8 +4137,6 @@ class TestSeoSitemapParseError:
         runner = CliRunner()
         result = runner.invoke(cli, ["seo", "--project-path", str(tmp_path)])
         assert "malformed" in result.output.lower() or "❌" in result.output
-
-
 
 
 class TestSeoSkipInternalFiles:
@@ -4155,8 +4175,6 @@ class TestSeoSkipInternalFiles:
         assert "Analyzed 1 HTML pages" in result.output
 
 
-
-
 class TestApiDiffSymbolNoEntries:
     @patch("great_docs._api_diff.list_version_tags")
     @patch("great_docs._api_diff.symbol_history")
@@ -4186,8 +4204,6 @@ class TestApiDiffSymbolNoEntries:
             ],
         )
         assert "(no entries)" in result.output
-
-
 
 
 class TestApiDiffSymbolEntryTags:
@@ -4272,8 +4288,6 @@ class TestApiDiffSymbolEntryTags:
         assert "∆ CHANGED" in result.output
 
 
-
-
 class TestApiDiffGraphHead:
     @patch("great_docs._api_diff.build_dependency_graph")
     @patch("great_docs._api_diff.snapshot_from_griffe")
@@ -4318,8 +4332,6 @@ class TestApiDiffGraphHead:
         assert mock_snap.call_args[1]["version"] == "HEAD"
 
 
-
-
 class TestSkillInstallAutoDetect:
     @patch("great_docs._skill_install.install_skill")
     def test_auto_detect_package_from_pyproject(self, mock_install, tmp_path, monkeypatch):
@@ -4334,8 +4346,6 @@ class TestSkillInstallAutoDetect:
         result = runner.invoke(cli, ["skill", "install"])
         mock_install.assert_called_once()
         assert mock_install.call_args[1]["package"] == "my-package"
-
-
 
 
 class TestTermRenderCastFile:

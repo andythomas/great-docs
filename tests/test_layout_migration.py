@@ -13,7 +13,7 @@ from great_docs._layout import CONVENTIONAL_DOC_DIRS, Layout
 from great_docs._layout_migration import analyse
 from great_docs._layout_migration.model import MigrationError, Move, Note, fingerprint
 from great_docs._utils import QUARTO_YML_HEADER
-from great_docs.cli import cli
+from great_docs.cli import _print_notes, cli
 
 
 def test_note_behaves_as_its_message_string() -> None:
@@ -254,9 +254,76 @@ def test_dry_run_report_groups_blockers_by_category(project: Path) -> None:
     )
     assert result.exit_code != 0
     assert "Blocking Problems (2)" in result.output
-    assert "Conflicts at the Destination (2)" in result.output
+    assert "Destination Paths to Resolve (2)" in result.output
     assert "Destination already exists" in result.output
+    assert "Proposed source: great-docs.yml" in result.output
+    assert "Compare both files" in result.output
     assert "already contains unrelated content" in result.output
+    assert "Compare existing content and source discovery" in result.output
+
+
+def test_blocking_note_keeps_its_reason_when_category_can_show_a_bare_path(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = project / "guide.qmd"
+    note = Note(
+        f"A retained external document needs reference edits before migration: {path}",
+        category="References to Edit Before Migrating",
+        path=path,
+    )
+
+    _print_notes("Blocking Problems (1)", (note,), "red", root=project, err=True, blocking=True)
+
+    assert "needs reference edits before migration" in capsys.readouterr().err
+
+
+def test_destination_discovery_conflict_explains_the_next_inspection(project: Path) -> None:
+    put(project, "docs/README.md", "# Existing documentation\n")
+
+    result = CliRunner().invoke(
+        cli, ["migrate-layout", "--project-path", str(project), "--to", "docs", "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "Existing destination input would change source discovery" in result.output
+    assert "Compare the existing input with the proposed documentation" in result.output
+
+
+def test_blocked_report_explains_asset_and_include_without_changing_sources(project: Path) -> None:
+    put(project, "assets/orphan.png", b"image")
+    put(project, "assets/font.woff2", b"font")
+    put(project, "site.css", "@font-face { src: url('assets/font.woff2'); }\n")
+    put(project, "user_guide/page.qmd", "# Page\n{{< include missing.qmd >}}\n")
+    before = snapshot(project)
+
+    result = CliRunner().invoke(
+        cli, ["migrate-layout", "--project-path", str(project), "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "Resolve every blocking problem" in result.output
+    assert "Assets Needing Publication Review (2)" in result.output
+    assert "assets/orphan.png" in result.output
+    assert "assets/font.woff2" in result.output
+    assert "cannot prove how this asset is published" in result.output.lower()
+    assert "Include References to Resolve" in result.output
+    assert "user_guide/page.qmd:2" in result.output
+    assert "missing.qmd" in result.output
+    assert "Check which file this include uses" in result.output
+    assert snapshot(project) == before
+
+
+def test_duplicate_yaml_key_has_ambiguous_configuration_heading(project: Path) -> None:
+    put(project, "great-docs.yml", "repo: first\nrepo: second\n")
+
+    result = CliRunner().invoke(
+        cli, ["migrate-layout", "--project-path", str(project), "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "Ambiguous Configuration" in result.output
+    assert "Duplicate YAML key: repo" in result.output
+    assert "authoritative value" in result.output
 
 
 def test_dry_run_report_prints_a_located_excerpt(project: Path) -> None:
@@ -295,7 +362,11 @@ def test_dry_run_report_suppresses_snippet_for_code_blocks(project: Path) -> Non
 
 
 def test_dry_run_report_keeps_trailing_detail_for_old_output_paths(project: Path) -> None:
-    put(project, "tox.ini", "[testenv:publish]\ncommands = rsync -a great-docs/_site/ remote:/var/www\n")
+    put(
+        project,
+        "tox.ini",
+        "[testenv:publish]\ncommands = rsync -a great-docs/_site/ remote:/var/www\n",
+    )
     result = CliRunner().invoke(
         cli, ["migrate-layout", "--project-path", str(project), "--dry-run", "--yes"]
     )
@@ -355,7 +426,7 @@ def test_dry_run_report_highlights_the_path_within_a_mixed_category(project: Pat
         color=True,
     )
     assert result.exit_code != 0
-    assert "Configuration to Review" in result.output
+    assert "Configuration Paths and URLs to Resolve" in result.output
     assert click.style("missing.bib", fg="red") in result.output
     assert "Configured input does not exist for" in result.output
 
@@ -1856,7 +1927,7 @@ def test_inspection_errors_are_categorized(project: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(Path, "read_bytes", unreadable)
     result = analyse(Layout.make(project), Path("docs"))
     error = next(n for n in result.blockers if "cannot inspect" in n.lower() and "refs.bib" in n)
-    assert error.category == "Files That Could Not Be Read"
+    assert error.category == "Inputs That Could Not Be Inspected"
 
 
 def test_repeat_migration_reports_a_status_note(project: Path) -> None:
@@ -1880,21 +1951,21 @@ def test_relocating_migrated_project_is_blocked_with_category(project: Path) -> 
 def test_destination_must_be_a_descendant_is_categorized(project: Path) -> None:
     result = analyse(Layout.make(project), Path("."))
     note = next(n for n in result.blockers if "must be a descendant" in n.lower())
-    assert note.category == "Conflicts at the Destination"
+    assert note.category == "Destination Paths to Resolve"
 
 
 def test_missing_documentation_source_is_categorized(project: Path) -> None:
     put(project, "great-docs.yml", "sections: [{dir: essays}]\n")
     result = analyse(Layout.make(project), Path("docs"))
     note = next(n for n in result.blockers if "does not exist" in n.lower() and "essays" in n)
-    assert note.category == "Conflicts With the Source"
+    assert note.category == "Documentation Sources to Resolve"
 
 
 def test_missing_configured_input_is_categorized(project: Path) -> None:
     put(project, "great-docs.yml", "bibliography: missing.bib\n")
     result = analyse(Layout.make(project), Path("docs"))
     note = next(n for n in result.blockers if "configured input does not exist" in n.lower())
-    assert note.category == "Configuration to Review"
+    assert note.category == "Configuration Paths and URLs to Resolve"
 
 
 def test_document_bibliography_is_fingerprinted_and_invalidates_preview(project: Path) -> None:
@@ -1925,8 +1996,10 @@ def test_curated_skill_file_is_fingerprinted_without_a_review_note(project: Path
 def test_unreferenced_asset_is_categorized(project: Path) -> None:
     put(project, "assets/orphan.png", b"\x00")
     result = analyse(Layout.make(project), Path("docs"))
-    note = next(n for n in result.blockers if "unreferenced implicit asset" in n.lower())
-    assert note.category == "Assets With Unclear Ownership"
+    note = next(
+        n for n in result.blockers if "cannot prove how this asset is published" in n.lower()
+    )
+    assert note.category == "Assets Needing Publication Review"
 
 
 def test_freeze_cache_conflict_is_categorized(project: Path) -> None:
@@ -1944,7 +2017,11 @@ def test_terminal_recording_is_categorized(project: Path) -> None:
 
 
 def test_automation_output_path_in_ineligible_file_is_categorized(project: Path) -> None:
-    put(project, "tox.ini", "[testenv:publish]\ncommands = rsync -a great-docs/_site/ remote:/var/www\n")
+    put(
+        project,
+        "tox.ini",
+        "[testenv:publish]\ncommands = rsync -a great-docs/_site/ remote:/var/www\n",
+    )
     result = analyse(Layout.make(project), Path("docs"))
     note = next(n for n in result.follow_up if "update old output paths" in n.lower())
     assert note.category == "Old Output Paths to Update"

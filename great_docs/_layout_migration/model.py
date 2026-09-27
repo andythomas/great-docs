@@ -13,6 +13,12 @@ class MigrationError(ValueError):
     """Input that cannot be migrated without changing its meaning"""
 
 
+class DuplicateYAMLKey(MigrationError):
+    """
+    A mapping with competing values for one key
+    """
+
+
 class Note(str):
     """A follow-up item or blocking conflict, grouped by category with an optional excerpt"""
 

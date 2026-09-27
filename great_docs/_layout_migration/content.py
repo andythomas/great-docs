@@ -21,7 +21,15 @@ from yaml12 import read_yaml
 from great_docs._content_naming import strip_numeric_prefix
 from great_docs._source_refs import fenced_code_spans, inline_code_spans, source_reference_spans
 
-from .model import MigrationError, Move, Note, absolute_path, check_symlinks, moved_path
+from .model import (
+    DuplicateYAMLKey,
+    MigrationError,
+    Move,
+    Note,
+    absolute_path,
+    check_symlinks,
+    moved_path,
+)
 
 ConfigPath = tuple[str | int, ...]
 
@@ -212,7 +220,7 @@ def _nodes(text: str) -> tuple[dict[ConfigPath, Node], set[int]]:
                 if not isinstance(key, ScalarNode):
                     raise MigrationError("Complex YAML mapping keys cannot be migrated")
                 if key.value in keys:
-                    raise MigrationError(f"Duplicate YAML key: {key.value}")
+                    raise DuplicateYAMLKey(f"Duplicate YAML key: {key.value}")
                 keys.add(key.value)
                 visit(value, (*path, key.value), ancestors | {id(node)})
         elif isinstance(node, SequenceNode):
@@ -644,8 +652,8 @@ def rewrite_document(
                     line, snippet = _locate(text, match.start(1))
                     blockers.append(
                         Note(
-                            f"Cannot preserve include reference in {source}: {reference}",
-                            category="Includes That Can't Be Auto-Updated",
+                            f"Include target does not exist for {source}: {reference}. Check which file this include uses before and after the move.",
+                            category="Include References to Resolve",
                             path=source,
                             line=line,
                             snippet=snippet,
@@ -659,8 +667,8 @@ def rewrite_document(
                     line, snippet = _locate(text, match.start(1))
                     blockers.append(
                         Note(
-                            f"Cannot preserve include reference in {source}: {reference}",
-                            category="Includes That Can't Be Auto-Updated",
+                            f"Cannot safely rewrite include in {source}: {reference}. Check which file this include uses before and after the move.",
+                            category="Include References to Resolve",
                             path=source,
                             line=line,
                             snippet=snippet,
@@ -700,9 +708,7 @@ def rewrite_document(
                     bibliography_rewritten = True
                     inputs.update(bibliography_inputs)
                     text = text[: frontmatter.start(1)] + body + text[frontmatter.end(1) :]
-            fields = (
-                "image|bibliography|csl|resources|include-in-header|include-before-body|include-after-body"
-            )
+            fields = "image|bibliography|csl|resources|include-in-header|include-before-body|include-after-body"
             field_match = next(
                 (
                     match
@@ -719,10 +725,23 @@ def rewrite_document(
             )
             if field_match:
                 line, snippet = _locate(text, frontmatter.start(1) + field_match.start())
+                end = body.find("\n", field_match.end())
+                if end == -1:
+                    end = len(body)
+                values = [body[field_match.end() : end].strip()]
+                indent = len(field_match.group("indent"))
+                for item in body[end + 1 :].splitlines():
+                    if not item.strip():
+                        continue
+                    item_indent = len(item) - len(item.lstrip(" \t"))
+                    if item_indent <= indent:
+                        break
+                    values.append(item.strip())
+                value = " ".join(part for part in values if part) or "(empty)"
                 blockers.append(
                     Note(
-                        f"Review and manually update frontmatter file references in {source}",
-                        category="Frontmatter Fields to Update Manually",
+                        f"Check frontmatter {field_match.group('field')} value {value} in {source} against its post-move target; update it only if the target changes",
+                        category="Frontmatter References to Resolve",
                         path=source,
                         line=line,
                         snippet=snippet,

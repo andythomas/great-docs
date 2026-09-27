@@ -796,6 +796,7 @@ def _print_migration(migration: Migration) -> None:
         "red",
         root=root,
         err=True,
+        blocking=True,
     )
 
 
@@ -812,7 +813,6 @@ _SUBJECT_ONLY_CATEGORIES = frozenset(
         "Already Migrated",
         "Relocation Not Supported",
         "References Outside the Move",
-        "Assets With Unclear Ownership",
         "Old Output Paths to Update",
         "References to Edit Before Migrating",
     }
@@ -836,12 +836,14 @@ def _subject(note: "Note", root: Path) -> str:
 def _highlight_path(note: "Note", root: Path) -> str:
     """The note's message with its path swapped for a red, relative version"""
     assert note.path is not None
-    path_text = str(note.path)
-    offset = note.rfind(path_text)
-    if offset == -1:
-        return str(note)
+    if note.path == root or not note.path.is_relative_to(root):
+        message = str(note)
+        path_text = str(note.path)
+    else:
+        message = str(note).replace(str(root) + os.sep, "")
+        path_text = os.path.relpath(note.path, root)
     display_path = click.style(os.path.relpath(note.path, root), fg="red")
-    return note[:offset] + display_path + note[offset + len(path_text) :]
+    return message.replace(path_text, display_path, 1)
 
 
 def _relocate_note(note: "Note", moves: "tuple[Move, ...]") -> "Note":
@@ -859,12 +861,24 @@ def _relocate_note(note: "Note", moves: "tuple[Move, ...]") -> "Note":
 
 
 def _print_notes(
-    label: str, notes: "tuple[Note, ...]", color: str, *, root: Path, err: bool = False
+    label: str,
+    notes: "tuple[Note, ...]",
+    color: str,
+    *,
+    root: Path,
+    err: bool = False,
+    blocking: bool = False,
 ) -> None:
     """Print a category-grouped section of migration notes under a pre-formatted count header"""
     if not notes:
         return
     click.echo(click.style(label, bold=True, fg=color), err=err)
+    if blocking:
+        click.echo(
+            "Resolve every blocking problem, then run great-docs migrate-layout --dry-run "
+            "again. The migration will not apply while any blocker remains.",
+            err=err,
+        )
     categories: dict[str, list[Note]] = {}
     for note in notes:
         categories.setdefault(note.category, []).append(note)
@@ -877,7 +891,11 @@ def _print_notes(
                     click.echo(f"    {display_path}:{note.line}", err=err)
                 else:
                     click.echo(f"    {display_path}:{note.line}: {note.snippet}", err=err)
-            elif note.path is not None and category in _SUBJECT_ONLY_CATEGORIES:
+                    if blocking:
+                        reason = str(note).replace(str(note.path), "", 1).strip(" :")
+                        reason = reason.replace(str(root) + os.sep, "")
+                        click.echo(f"      {reason}", err=err)
+            elif note.path is not None and not blocking and category in _SUBJECT_ONLY_CATEGORIES:
                 click.echo(f"    {_subject(note, root)}", err=err)
             elif note.path is not None:
                 click.echo(f"    {_highlight_path(note, root)}", err=err)
@@ -3035,6 +3053,21 @@ def lint(
                     click.echo(f"❌ {n_errors} error(s), {n_warnings} warning(s)")
                 else:
                     click.echo(f"⚠️  {n_warnings} warning(s)")
+
+            try:
+                from ._layout import Layout
+                from ._layout_notice import layout_notice
+
+                layout = Layout.make(
+                    project_root,
+                    Path(config_path) if config_path is not None else None,
+                )
+            except (OSError, ValueError):
+                pass
+            else:
+                notice = layout_notice(layout)
+                if notice is not None:
+                    click.echo(notice)
 
         # Exit with non-zero status on errors (for CI)
         if result.errors:

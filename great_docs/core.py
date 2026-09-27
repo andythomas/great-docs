@@ -15953,12 +15953,16 @@ anchor-sections: true
             devnull.close()
 
     def _print_layout_notice(self) -> None:
-        """Recommend migration at the start of a root-layout build or preview"""
-        if self.layout.source_dir == self.layout.package_root:
-            print(
-                "Keep documentation in docs/ with the new layout.\n"
-                "Run great-docs migrate-layout --dry-run to preview the migration."
-            )
+        """
+        Show the migration route for the selected root-layout documentation
+        """
+        from ._layout_notice import layout_notice
+
+        notice = layout_notice(self.layout)
+        if notice is not None:
+            import click
+
+            click.echo(notice)
 
     def build(  # pragma: no cover
         self,
@@ -16025,7 +16029,6 @@ anchor-sections: true
                 "generate a configuration file."
             )
 
-        self._print_layout_notice()
         _ensure_quarto_installed()
 
         import re as _re_build
@@ -16769,6 +16772,7 @@ anchor-sections: true
             if watch:
                 log.step_done("Starting watch mode...")
                 log.footer(watch_mode=True)
+                self._print_layout_notice()
                 subprocess.run(["quarto", "preview", "--no-browser"], env=quarto_env)
                 return
             elif self._config.has_versions:
@@ -17022,6 +17026,8 @@ anchor-sections: true
 
         finally:
             os.chdir(original_dir)
+
+        self._print_layout_notice()
 
     @classmethod
     def build_from_repo(  # pragma: no cover

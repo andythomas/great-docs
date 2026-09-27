@@ -465,7 +465,7 @@ def test_include_reference_note_has_a_category_and_excerpt(tmp_path: Path) -> No
     _, _, _, blockers = rewrite_document(
         text, tmp_path / "index.qmd", (Move(tmp_path / "index.qmd", tmp_path / "docs/index.qmd"),)
     )
-    note = next(n for n in blockers if n.category == "Includes That Can't Be Auto-Updated")
+    note = next(n for n in blockers if n.category == "Include References to Resolve")
     assert note.line == 2
     assert note.snippet == "{{< include missing.qmd >}}"
 
@@ -474,9 +474,21 @@ def test_frontmatter_reference_note_has_a_category_and_excerpt(tmp_path: Path) -
     page = tmp_path / "index.qmd"
     text = "---\ntitle: Home\nimage: cover.png\n---\n# Home\n"
     _, _, _, blockers = rewrite_document(text, page, (Move(page, tmp_path / "docs/index.qmd"),))
-    note = next(n for n in blockers if n.category == "Frontmatter Fields to Update Manually")
+    note = next(n for n in blockers if n.category == "Frontmatter References to Resolve")
     assert note.line == 3
     assert note.snippet == "image: cover.png"
+
+
+def test_multiline_frontmatter_note_names_the_resource_value(tmp_path: Path) -> None:
+    page = tmp_path / "index.qmd"
+    source = "---\nresources:\n  - ../assets/graph/**\n---\n# Home\n"
+
+    _, _, _, blockers = rewrite_document(source, page, (Move(page, tmp_path / "docs/index.qmd"),))
+
+    note = next(n for n in blockers if n.category == "Frontmatter References to Resolve")
+    assert note.line == 2
+    assert "resources" in note
+    assert "../assets/graph/**" in note
 
 
 def test_document_bibliography_scalar_preserves_frontmatter_format(tmp_path: Path) -> None:
@@ -500,12 +512,7 @@ def test_document_bibliography_list_rebases_each_moved_target(tmp_path: Path) ->
     external.write_text("@book{outside}\n")
     internal.write_text("@book{inside}\n")
     page = guide / "index.qmd"
-    text = (
-        "---\n"
-        "bibliography: ['../outside.bib', \"inside.bib\"] # Ordered\n"
-        "title: Sources\n"
-        "---\n"
-    )
+    text = "---\nbibliography: ['../outside.bib', \"inside.bib\"] # Ordered\ntitle: Sources\n---\n"
     rewritten, inputs, _, blockers = rewrite_document(
         text, page, (Move(guide, tmp_path / "docs/guide"),)
     )
@@ -537,7 +544,7 @@ def test_document_bibliography_keeps_other_frontmatter_file_blocker(tmp_path: Pa
         text, page, (Move(page, tmp_path / "docs/index.qmd"),)
     )
     assert rewritten == "---\nbibliography: ../refs.bib\nimage: cover.png\n---\n"
-    note = next(note for note in blockers if note.category == "Frontmatter Fields to Update Manually")
+    note = next(note for note in blockers if note.category == "Frontmatter References to Resolve")
     assert note.line == 3
     assert note.snippet == "image: cover.png"
 
@@ -545,19 +552,12 @@ def test_document_bibliography_keeps_other_frontmatter_file_blocker(tmp_path: Pa
 def test_document_bibliography_keeps_nested_bibliography_blocker(tmp_path: Path) -> None:
     (tmp_path / "refs.bib").write_text("@book{ref}\n")
     page = tmp_path / "index.qmd"
-    text = (
-        "---\n"
-        "bibliography: refs.bib\n"
-        "format:\n"
-        "  html:\n"
-        "    bibliography: other.bib\n"
-        "---\n"
-    )
+    text = "---\nbibliography: refs.bib\nformat:\n  html:\n    bibliography: other.bib\n---\n"
     rewritten, _, _, blockers = rewrite_document(
         text, page, (Move(page, tmp_path / "docs/index.qmd"),)
     )
     assert rewritten == text.replace("bibliography: refs.bib", "bibliography: ../refs.bib")
-    note = next(note for note in blockers if note.category == "Frontmatter Fields to Update Manually")
+    note = next(note for note in blockers if note.category == "Frontmatter References to Resolve")
     assert note.line == 5
     assert note.snippet == "    bibliography: other.bib"
 
@@ -577,9 +577,7 @@ def test_document_bibliography_keeps_nested_bibliography_blocker(tmp_path: Path)
         "bibliography: [refs.bib, missing.bib]",
     ],
 )
-def test_document_bibliography_unsafe_form_keeps_manual_blocker(
-    tmp_path: Path, field: str
-) -> None:
+def test_document_bibliography_unsafe_form_keeps_manual_blocker(tmp_path: Path, field: str) -> None:
     (tmp_path / "refs.bib").write_text("@book{ref}\n")
     page = tmp_path / "index.qmd"
     text = f"---\n{field}\n---\n# Home\n"
@@ -588,7 +586,7 @@ def test_document_bibliography_unsafe_form_keeps_manual_blocker(
     )
     assert rewritten == text
     assert not inputs
-    assert any(note.category == "Frontmatter Fields to Update Manually" for note in blockers)
+    assert any(note.category == "Frontmatter References to Resolve" for note in blockers)
 
 
 def test_document_bibliography_symlink_keeps_manual_blocker(tmp_path: Path) -> None:
@@ -602,7 +600,7 @@ def test_document_bibliography_symlink_keeps_manual_blocker(tmp_path: Path) -> N
     )
     assert rewritten == text
     assert not inputs
-    assert any(note.category == "Frontmatter Fields to Update Manually" for note in blockers)
+    assert any(note.category == "Frontmatter References to Resolve" for note in blockers)
 
 
 def test_broken_reference_note_has_a_category_and_excerpt(tmp_path: Path) -> None:

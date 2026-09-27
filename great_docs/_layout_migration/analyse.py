@@ -26,6 +26,7 @@ from .content import (
     set_config_values,
 )
 from .model import (
+    DuplicateYAMLKey,
     Edit,
     Migration,
     MigrationError,
@@ -227,9 +228,7 @@ def _check_freeze_ignore_policy(
             fields = details.split(b"\0")
             relative = Path(after)
             freeze_root = destination.relative_to(root) / "_freeze"
-            destination_parents = [
-                parent for parent in freeze_root.parents if parent != Path(".")
-            ]
+            destination_parents = [parent for parent in freeze_root.parents if parent != Path(".")]
             ignored_parents = _git(
                 root,
                 "check-ignore",
@@ -475,7 +474,8 @@ def _exclusive_to_moving_content(
     except (OSError, MigrationError) as error:
         blockers.append(
             Note(
-                f"Cannot inspect git ignore rules: {error}", category="Files That Could Not Be Read"
+                f"Cannot inspect git ignore rules: {error}",
+                category="Inputs That Could Not Be Inspected",
             )
         )
         ignored = None
@@ -561,7 +561,7 @@ def _categorize_move_contents(
         blockers.append(
             Note(
                 f"Cannot inspect {source}: {error}",
-                category="Files That Could Not Be Read",
+                category="Inputs That Could Not Be Inspected",
                 path=source,
             )
         )
@@ -694,7 +694,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Cannot inspect {path}: {error}",
-                    category="Files That Could Not Be Read",
+                    category="Inputs That Could Not Be Inspected",
                     path=path,
                 )
             )
@@ -721,7 +721,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Cannot inspect ignore policy {path}: {error}",
-                    category="Files That Could Not Be Read",
+                    category="Inputs That Could Not Be Inspected",
                     path=path,
                 )
             )
@@ -749,7 +749,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         blockers.append(
             Note(
                 f"The destination must be a descendant of the package root: {destination}",
-                category="Conflicts at the Destination",
+                category="Destination Paths to Resolve",
                 path=destination,
             )
         )
@@ -762,12 +762,12 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 blockers.append(
                     Note(
                         f"Destination component is not a directory: {component}",
-                        category="Conflicts at the Destination",
+                        category="Destination Paths to Resolve",
                         path=component,
                     )
                 )
     except MigrationError as error:
-        blockers.append(Note(str(error), category="Conflicts at the Destination", path=destination))
+        blockers.append(Note(str(error), category="Destination Paths to Resolve", path=destination))
     if not retain(config_path):
         return result()
     try:
@@ -775,11 +775,20 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         text = before.decode("utf-8")
         config = read_config(text)
         rewrite_config(text, (), root, root)
+    except DuplicateYAMLKey as error:
+        blockers.append(
+            Note(
+                f"Configuration {config_path} has {error}. Ask the repository owner to choose the authoritative value.",
+                category="Ambiguous Configuration",
+                path=config_path,
+            )
+        )
+        return result()
     except (OSError, UnicodeError, MigrationError) as error:
         blockers.append(
             Note(
                 f"Cannot inspect configuration {config_path}: {error}",
-                category="Files That Could Not Be Read",
+                category="Inputs That Could Not Be Inspected",
                 path=config_path,
             )
         )
@@ -792,7 +801,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     except (OSError, UnicodeError, ValueError, configparser.Error) as error:
         blockers.append(
             Note(
-                f"Cannot inspect package metadata: {error}", category="Files That Could Not Be Read"
+                f"Cannot inspect package metadata: {error}",
+                category="Inputs That Could Not Be Inspected",
             )
         )
         package, package_sources = "", [root / "src"]
@@ -807,7 +817,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         blockers.append(
             Note(
                 f"Cannot inspect generated projects: {error}",
-                category="Files That Could Not Be Read",
+                category="Inputs That Could Not Be Inspected",
             )
         )
         generated = []
@@ -817,7 +827,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Destination overlaps package sources, shared assets, or generated output: {path}",
-                    category="Conflicts at the Destination",
+                    category="Destination Paths to Resolve",
                     path=destination,
                 )
             )
@@ -825,7 +835,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     try:
         selected = _dedicated_directories(config, root)
     except (OSError, MigrationError) as error:
-        blockers.append(Note(str(error), category="Files That Could Not Be Read"))
+        blockers.append(Note(str(error), category="Inputs That Could Not Be Inspected"))
         selected = []
     content_directories = _content_directories(config, root)
     # ("index",) and ("config",) are sentinel tags, not real YAML config paths: neither
@@ -847,7 +857,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Documentation source must be a package descendant: {source}",
-                    category="Conflicts With the Source",
+                    category="Documentation Sources to Resolve",
                     path=source,
                 )
             )
@@ -860,8 +870,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         if _overlaps(source, destination) and not in_place and not exact_match:
             blockers.append(
                 Note(
-                    f"Documentation source overlaps the destination: {source}",
-                    category="Conflicts With the Source",
+                    f"Documentation source overlaps the destination: {source} and {destination}. Inspect both paths before choosing a destination.",
+                    category="Documentation Sources to Resolve",
                     path=source,
                 )
             )
@@ -869,8 +879,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             if _overlaps(source, other):
                 blockers.append(
                     Note(
-                        f"Selected documentation sources overlap: {other} and {source}",
-                        category="Conflicts With the Source",
+                        f"Selected documentation sources overlap: {other} and {source}. Choose one non-overlapping source layout.",
+                        category="Documentation Sources to Resolve",
                         path=source,
                     )
                 )
@@ -879,15 +889,15 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 blockers.append(
                     Note(
                         f"Documentation source overlaps package sources, shared assets, or generated output: {source} and {path}",
-                        category="Conflicts With the Source",
+                        category="Documentation Sources to Resolve",
                         path=source,
                     )
                 )
         if not (source.exists() or source.is_symlink()):
             blockers.append(
                 Note(
-                    f"Documentation source does not exist: {source}",
-                    category="Conflicts With the Source",
+                    f"Documentation source does not exist: {source}. Check whether the configured path is stale or the source is missing.",
+                    category="Documentation Sources to Resolve",
                     path=source,
                 )
             )
@@ -912,7 +922,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                         Note(
                             f"Published path for this section changes from "
                             f"{section_slug(old_value)} to {section_slug(new_value)}: {source}",
-                            category="Configuration to Review",
+                            category="Configuration Paths and URLs to Resolve",
                             path=source,
                         )
                     )
@@ -928,7 +938,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 blockers.append(
                     Note(
                         f"Cannot inspect {source}: {error}",
-                        category="Files That Could Not Be Read",
+                        category="Inputs That Could Not Be Inspected",
                         path=source,
                     )
                 )
@@ -995,8 +1005,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         ):
             blockers.append(
                 Note(
-                    f"Existing destination input would change source discovery: {target}",
-                    category="Conflicts at the Destination",
+                    f"Existing destination input would change source discovery: {target}. Compare the existing input with the proposed documentation before choosing a destination.",
+                    category="Destination Paths to Resolve",
                     path=target,
                 )
             )
@@ -1034,8 +1044,19 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     try:
         materialised = set_config_values(text, implicit)
         amended = read_config(materialised)
+    except DuplicateYAMLKey as error:
+        blockers.append(
+            Note(
+                f"Configuration {config_path} has {error}. Ask the repository owner to choose the authoritative value.",
+                category="Ambiguous Configuration",
+                path=config_path,
+            )
+        )
+        materialised, amended = text, config
     except MigrationError as error:
-        blockers.append(Note(str(error), category="Configuration to Review", path=config_path))
+        blockers.append(
+            Note(str(error), category="Configuration Paths and URLs to Resolve", path=config_path)
+        )
         materialised, amended = text, config
     documents: set[Path] = set()
     config_referenced: set[Path] = set()
@@ -1069,8 +1090,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             if not source.exists():
                 blockers.append(
                     Note(
-                        f"Configured input does not exist for {'.'.join(map(str, option))}: {source}",
-                        category="Configuration to Review",
+                        f"Configured input does not exist for {'.'.join(map(str, option))}: {source}. Check the intended source before changing this field.",
+                        category="Configuration Paths and URLs to Resolve",
                         path=source,
                     )
                 )
@@ -1085,8 +1106,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             if Path(value).is_absolute() and moved_path(source, tuple(moves)) != source:
                 blockers.append(
                     Note(
-                        f"An unchanged absolute reference would point into a moved source: {source}",
-                        category="Configuration to Review",
+                        f"An unchanged absolute reference for {'.'.join(map(str, option))} would point into a moved source: {source}. Check the intended post-move target.",
+                        category="Configuration Paths and URLs to Resolve",
                         path=source,
                     )
                 )
@@ -1103,7 +1124,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Cannot inspect configured input {option}: {error}",
-                    category="Files That Could Not Be Read",
+                    category="Inputs That Could Not Be Inspected",
                 )
             )
 
@@ -1181,8 +1202,9 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 blockers.append(
                     Note(
                         f"Destination already contains unrelated content: {destination}. "
-                        f"Pass a different --to name for the documentation directory.",
-                        category="Conflicts at the Destination",
+                        "Compare existing content and source discovery before choosing "
+                        "another --to name or reconciling content.",
+                        category="Destination Paths to Resolve",
                         path=destination,
                     )
                 )
@@ -1194,8 +1216,18 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         ).encode("utf-8")
         if rewritten != before:
             edits.append(Edit(config_path, before, rewritten))
+    except DuplicateYAMLKey as error:
+        blockers.append(
+            Note(
+                f"Configuration {config_path} has {error}. Ask the repository owner to choose the authoritative value.",
+                category="Ambiguous Configuration",
+                path=config_path,
+            )
+        )
     except MigrationError as error:
-        blockers.append(Note(str(error), category="Configuration to Review", path=config_path))
+        blockers.append(
+            Note(str(error), category="Configuration Paths and URLs to Resolve", path=config_path)
+        )
 
     generated_homepage = None
     if not any((root / name).exists() for name in ("index.qmd", "index.md")) and any(
@@ -1232,7 +1264,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Cannot inspect document {path}: {error}",
-                    category="Files That Could Not Be Read",
+                    category="Inputs That Could Not Be Inspected",
                     path=path,
                 )
             )
@@ -1271,8 +1303,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             if path not in referenced:
                 blockers.append(
                     Note(
-                        f"Cannot preserve unreferenced implicit asset publication automatically: {path}",
-                        category="Assets With Unclear Ownership",
+                        f"Cannot prove how this asset is published: {path}. Inspect documentation, CSS, scripts, and Quarto resources before deciding whether it moves or stays.",
+                        category="Assets Needing Publication Review",
                         path=path,
                     )
                 )
@@ -1407,7 +1439,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Cannot inspect ignore rules {ignore}: {error}",
-                    category="Files That Could Not Be Read",
+                    category="Inputs That Could Not Be Inspected",
                     path=ignore,
                 )
             )
@@ -1424,7 +1456,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         blockers.append(
             Note(
                 f"Cannot inspect implicit documentation inputs: {error}",
-                category="Files That Could Not Be Read",
+                category="Inputs That Could Not Be Inspected",
             )
         )
 
@@ -1433,7 +1465,8 @@ def analyse(layout: Layout, destination: Path) -> Migration:
     except (OSError, MigrationError) as error:
         blockers.append(
             Note(
-                f"Cannot inspect git ignore rules: {error}", category="Files That Could Not Be Read"
+                f"Cannot inspect git ignore rules: {error}",
+                category="Inputs That Could Not Be Inspected",
             )
         )
         ignored = None
@@ -1465,7 +1498,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
             blockers.append(
                 Note(
                     f"Cannot inspect automation {path}: {error}",
-                    category="Files That Could Not Be Read",
+                    category="Inputs That Could Not Be Inspected",
                     path=path,
                 )
             )
@@ -1502,7 +1535,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 follow_up.append(
                     Note(
                         f"Review inventory location and published URL together for interlinks.sources.{name}.url: {value}",
-                        category="Configuration to Review",
+                        category="Configuration Paths and URLs to Resolve",
                     )
                 )
     site = config.get("site")
@@ -1517,7 +1550,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                 follow_up.append(
                     Note(
                         f"Review unsupported Quarto path option site.{name}: {value}",
-                        category="Configuration to Review",
+                        category="Configuration Paths and URLs to Resolve",
                     )
                 )
     targets = [move.destination for move in moves]
@@ -1526,10 +1559,16 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         try:
             check_symlinks(target)
             if target.exists() or target.is_symlink():
+                source = next((move.source for move in moves if move.destination == target), None)
+                detail = (
+                    f" Proposed source: {source}. Compare both files before reconciling content."
+                    if source is not None
+                    else " Compare the existing file with the proposed new file before reconciling content."
+                )
                 blockers.append(
                     Note(
-                        f"Destination already exists: {target}",
-                        category="Conflicts at the Destination",
+                        f"Destination already exists: {target}.{detail}",
+                        category="Destination Paths to Resolve",
                         path=target,
                     )
                 )
@@ -1538,12 +1577,12 @@ def analyse(layout: Layout, destination: Path) -> Migration:
                     blockers.append(
                         Note(
                             f"Destination component is not a directory: {parent}",
-                            category="Conflicts at the Destination",
+                            category="Destination Paths to Resolve",
                             path=parent,
                         )
                     )
         except (OSError, MigrationError) as error:
-            blockers.append(Note(str(error), category="Conflicts at the Destination", path=target))
+            blockers.append(Note(str(error), category="Destination Paths to Resolve", path=target))
     return result()
 
 
