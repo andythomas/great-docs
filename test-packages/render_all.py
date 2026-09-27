@@ -438,6 +438,9 @@ def build_package(name: str) -> dict:
         else:
             log_lines.append("\n--- great-docs init SKIPPED (config exists) ---")
 
+        layout = _package_layout(pkg_dir)
+        site_dir = layout.site_dir
+
         # Build
         log_lines.append("\n--- great-docs build ---")
         build_result = subprocess.run(
