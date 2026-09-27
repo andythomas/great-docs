@@ -1995,6 +1995,26 @@ def test_document_bibliography_is_fingerprinted_and_invalidates_preview(project:
     assert snapshot(project) == before
 
 
+def test_destination_discovery_path_created_after_preview_invalidates_migration(
+    project: Path,
+) -> None:
+    from great_docs._layout_migration import apply
+
+    proposal = analyse(Layout.make(project), Path("docs"))
+    candidate = project / "docs/index.qmd"
+    assert candidate in dict(proposal.fingerprints)
+    assert dict(proposal.fingerprints)[candidate] == fingerprint(candidate)
+
+    candidate.parent.mkdir()
+    candidate.write_text("# New destination homepage\n")
+    before = snapshot(project)
+
+    with pytest.raises(MigrationError, match="input changed; request a fresh preview"):
+        apply(proposal)
+
+    assert snapshot(project) == before
+
+
 def test_curated_skill_file_is_fingerprinted_without_a_review_note(project: Path) -> None:
     skill = put(project, "skills/sample/SKILL.md", "# Demo\n")
     result = analyse(Layout.make(project), Path("docs"))

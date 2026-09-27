@@ -992,6 +992,7 @@ def analyse(layout: Layout, destination: Path) -> Migration:
         if (root / name).is_file() or not (root / name).exists():
             retain(root / name)
         target = destination / name
+        retain(target)
         # A discovery name at the destination is only a conflict when it will still be
         # there afterwards. It survives neither when something else moves onto it, nor
         # when it moves away itself (an exact-match source's per-child moves do that),
