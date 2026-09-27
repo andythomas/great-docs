@@ -374,6 +374,7 @@ class GreatDocs:
 
         # Create the great-docs directory
         self.build_dir.mkdir(parents=True, exist_ok=True)
+        (self.build_dir / "_quarto.yml").write_text(QUARTO_YML_HEADER, encoding="utf-8")
 
         # Create necessary subdirectories
         scripts_dir = self.build_dir / "scripts"
