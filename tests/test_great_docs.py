@@ -3827,8 +3827,8 @@ def test_user_guide_discovery_ignores_reserved_build_directory():
         }
 
 
-def test_user_guide_asset_copy_skips_the_staged_quarto_project():
-    """Staging the guide must not copy the build directory into itself."""
+def test_user_guide_asset_copy_skips_the_staged_quarto_project() -> None:
+    """Keep the staged Quarto project out of copied guide assets"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         project_path = Path(tmp_dir)
         (project_path / "pyproject.toml").write_text(
@@ -3836,7 +3836,7 @@ def test_user_guide_asset_copy_skips_the_staged_quarto_project():
         )
         docs_dir = project_path / "docs"
         docs_dir.mkdir()
-        (docs_dir / "great-docs.yml").write_text("user_guide: .\n")
+        (docs_dir / "great-docs.yml").write_text("user_guide: .\nreference: false\n")
         (docs_dir / "guide.qmd").write_text("---\ntitle: Guide\n---\n\n![Chart](images/c.png)\n")
         (docs_dir / "images").mkdir()
         (docs_dir / "images/c.png").write_bytes(b"chart")
