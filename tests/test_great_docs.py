@@ -17590,6 +17590,22 @@ def test_prepare_build_directory_can_retry_after_missing_header_include(tmp_path
     )
 
 
+def test_prepare_build_directory_writes_website_project(tmp_path):
+    """The header-only ownership marker must not suppress the website project type"""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
+    (tmp_path / "great-docs.yml").write_text("display_name: My Package\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+
+    with patch.object(docs, "_add_api_reference_config"):
+        with patch.object(docs, "_update_sidebar_from_sections"):
+            with patch.object(docs, "_update_reference_index_frontmatter"):
+                docs._prepare_build_directory()
+
+    config = read_yaml(docs.build_dir / "_quarto.yml")
+    assert config["project"]["type"] == "website"
+    assert "navbar" in config["website"]
+
+
 def test_prepare_build_directory_adds_llms_links_after_api_reference_setup():
     """Include `llms.txt` links after API reference setup"""
 
