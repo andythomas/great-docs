@@ -43723,7 +43723,7 @@ def test_prepare_build_dir_missing_csl_file(tmp_path):
 def test_prepare_build_dir_missing_css_file(tmp_path):
     """Warning when custom CSS file doesn't exist."""
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "mypkg"\n')
-    (tmp_path / "great-docs.yml").write_text("css:\n  - nonexistent.css\n")
+    (tmp_path / "great-docs.yml").write_text("site:\n  css:\n    - nonexistent.css\n")
     docs = GreatDocs(project_path=str(tmp_path))
     import io
     from contextlib import redirect_stdout
@@ -43734,7 +43734,7 @@ def test_prepare_build_dir_missing_css_file(tmp_path):
             docs._prepare_build_directory()
         except Exception:
             pass
-    assert "Warning" in out.getvalue() or "warning" in out.getvalue().lower()
+    assert "Warning: CSS file not found: nonexistent.css" in out.getvalue()
 
 
 def test_prepare_build_dir_marimo_not_installed(tmp_path):
@@ -44395,6 +44395,23 @@ def test_rebase_source_references_preserves_unavailable_files(
         docs._rebase_source_references(markup, tmp_path / "README.md", docs.build_dir / "index.qmd")
         == markup
     )
+
+
+def test_rebase_page_bibliography_preserves_frontmatter_delimiters(tmp_path: Path) -> None:
+    """
+    Keep page metadata parseable after rebasing its bibliography
+    """
+    source = tmp_path / "user_guide/page.qmd"
+    source.parent.mkdir()
+    (tmp_path / "refs.bib").write_text("@book{example, title={Example}}\n")
+    docs = GreatDocs(project_path=str(tmp_path))
+    content = "---\ntitle: Page\nbibliography: ../refs.bib\n---\n\nText\n"
+
+    result = docs._rebase_page_bibliography(content, source, docs.build_dir / "user-guide/page.qmd")
+
+    assert result.startswith("---\ntitle: Page\n")
+    assert "../_shared/refs.bib" in result
+    assert "---\n\nText\n" in result
 
 
 # ---------------------------------------------------------------------------

@@ -39,6 +39,12 @@ def _diagnostic_notice(
     command = _migration_command(layout, destination)
     return (
         "\n"
+        + click.style(
+            "This project has documentation at the root level, which is deprecated.",
+            fg="yellow",
+            bold=True,
+        )
+        + "\n\n"
         + click.style("Migration check could not complete", fg="yellow", bold=True)
         + f": {error}\n"
         "Run this command to inspect the migration problem "

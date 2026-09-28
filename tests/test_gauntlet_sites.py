@@ -436,9 +436,9 @@ def test_build_site_deploys_the_citation_styles(tmp_path: Path):
     deployed theme.
     """
     built = build_site(tmp_path, "gdtest_docstring_references")
-    css = "\n".join(
-        f.read_text(encoding="utf-8") for f in sorted(built.glob("site_libs/bootstrap/*.css"))
-    )
+    css_files = sorted(built.rglob("bootstrap/*.css"))
+    assert css_files, "rendered site has no Bootstrap CSS"
+    css = "\n".join(f.read_text(encoding="utf-8") for f in css_files)
     assert "gd-linkback-letter" in css, "deployed theme has no citation backlink styles"
 
 

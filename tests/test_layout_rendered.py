@@ -229,10 +229,15 @@ def make_project(
     write_file(root, "src/layout_sample/__init__.py", PACKAGE)
     write_file(root, "README.md", "# Layout sample\n\nPackage README fallback sentinel.\n")
     write_file(root, "shared/picture.svg", IMAGE)
-    bibliography_path = "refs.bib" if migrate else "shared/references.bib"
+    if migrate:
+        bibliography_path = "refs.bib"
+    elif source == root:
+        bibliography_path = "shared/references.bib"
+    else:
+        bibliography_path = "../shared/references.bib"
     write_file(
         root,
-        bibliography_path,
+        "refs.bib" if migrate else "shared/references.bib",
         "@book{layoutref, title={Layout bibliography sentinel}, author={Example, Ada}, year={2020}}\n",
     )
     shared = "shared" if source == root else "../shared"

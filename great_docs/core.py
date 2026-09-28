@@ -855,7 +855,7 @@ class GreatDocs:
         if not changed:
             return content
         frontmatter["bibliography"] = rebased if is_list else rebased[0]
-        replacement = "\n" + format_yaml(frontmatter).rstrip() + "\n"
+        replacement = format_yaml(frontmatter).rstrip("\n")
         return content[: match.start(1)] + replacement + content[match.end(1) :]
 
     def _source_page_destination(self, source: Path) -> Path | None:
