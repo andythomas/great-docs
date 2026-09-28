@@ -11941,16 +11941,21 @@ anchor-sections: true
         """
         quarto_yml = self.build_dir / "_quarto.yml"
 
-        if not quarto_yml.exists():
+        config = {}
+        if quarto_yml.exists():
+            # Load existing configuration
+            with open(quarto_yml, "r") as f:
+                config = read_yaml(f) or {}
+        else:
             print("Warning: _quarto.yml not found. Creating minimal configuration...")
+
+        # A missing file and the header-only ownership marker written by
+        # `_prepare_build_directory` both start from the minimal website config
+        if not config:
             config = {
                 "project": {"type": "website", "post-render": "scripts/post-render.py"},
                 "format": {"html": {"theme": "flatly"}},
             }
-        else:
-            # Load existing configuration
-            with open(quarto_yml, "r") as f:
-                config = read_yaml(f) or {}
 
         # Ensure required structure exists
         if "project" not in config:
