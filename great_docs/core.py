@@ -13780,6 +13780,8 @@ anchor-sections: true
         with open(quarto_yml, "r") as f:
             config = read_yaml(f) or {}
 
+        from great_docs._apiref.resolve import _Resolver
+
         # Get API reference sections if they exist
         if "api-reference" not in config or "sections" not in config["api-reference"]:
             return
@@ -13802,7 +13804,10 @@ anchor-sections: true
                 else:
                     item_name = str(item)  # pragma: no cover
                 section_entry["contents"].append(
-                    {"text": item_name, "href": f"reference/{item_name}.qmd"}
+                    {
+                        "text": item_name,
+                        "href": f"reference/{_Resolver._clean_member_path(item_name)}.qmd",
+                    }
                 )
 
             sidebar_contents.append(section_entry)
@@ -13911,6 +13916,8 @@ anchor-sections: true
         - package title with description
         - API Reference section with links to each documented item
         """
+        from great_docs._apiref.resolve import _Resolver
+
         quarto_yml = self.build_dir / "_quarto.yml"
 
         if not quarto_yml.exists():
@@ -13994,11 +14001,13 @@ anchor-sections: true
                 if not item_desc:
                     item_desc = self._get_docstring_summary(package_name, item_name)
 
-                # Build the URL
+                # Build the URL (colons in `module:Item` names are sanitized
+                # to dots in the generated page paths)
+                page_name = _Resolver._clean_member_path(item_name)
                 if site_url:
-                    url = f"{site_url}reference/{item_name}.html"
+                    url = f"{site_url}reference/{page_name}.html"
                 else:
-                    url = f"reference/{item_name}.html"
+                    url = f"reference/{page_name}.html"
 
                 # Format the line
                 if item_desc:
