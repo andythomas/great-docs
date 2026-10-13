@@ -1682,11 +1682,9 @@ def _rewrite_quarto_yml_for_version(
             config.setdefault("website", {})["title"] = f"{title} ({entry.label})"
 
     # Older versions use a script to link to the latest version's matching page.
-    # Remove the render-time filter to avoid duplicate canonical links.
-    if entry.tag != latest_tag and not entry.latest:
-        canonical.unregister(config)
-
+    # Remove the render-time filter only when the script replaces it.
     if entry.tag != latest_tag and not entry.latest and site_url:
+        canonical.unregister(config)
         canonical_script = canonical.latest_version_script(site_url, version_url_segment(entry.tag))
         header_list = (
             config.setdefault("format", {})

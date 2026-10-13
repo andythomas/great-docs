@@ -1246,6 +1246,23 @@ class TestCanonicalUrlInjection:
         content = (dest / "_quarto.yml").read_text()
         assert "canonical" not in content
 
+    def test_no_site_url_keeps_render_time_canonical(self, tmp_path: Path):
+        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
+
+        dest = tmp_path / "v02"
+        dest.mkdir()
+        (dest / "_quarto.yml").write_text(
+            "project:\n  type: website\n  output-dir: _site\n"
+            "filters:\n  - canonical\ngd-canonical-base-url: https://example.org/pkg/\n"
+            "format:\n  html: {}\nwebsite:\n  title: Test\n",
+            encoding="utf-8",
+        )
+        _rewrite_quarto_yml_for_version(dest, _make_entry("0.2"), "0.3")
+
+        content = (dest / "_quarto.yml").read_text()
+        assert "- canonical" in content
+        assert "gd-canonical-base-url" in content
+
     def test_no_site_url_no_canonical(self, tmp_path: Path):
         from great_docs._versioned_build import _rewrite_quarto_yml_for_version
 
