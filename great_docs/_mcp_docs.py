@@ -602,6 +602,9 @@ def _generate_mcp_index_page(
     lines.append("sidebar: mcp-reference")
     lines.append("page-navigation: false")
     lines.append("html-table-processing: none")
+    # Disabling breadcrumbs lets Quarto use the page title in the narrow-screen
+    # navigation bar; CSS adds the prefix for the reference type.
+    lines.append("bread-crumbs: false")
     lines.append("---")
     lines.append("")
 

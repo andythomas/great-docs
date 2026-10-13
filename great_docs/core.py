@@ -28,6 +28,7 @@ from ._utils import (
     validate_layout_outputs,
     validate_tree_symlinks,
 )
+from ._website.navigation import label as nav_label
 from ._website.seo import canonical
 from .config import Config, create_default_config
 
@@ -4816,6 +4817,9 @@ class GreatDocs:
         lines.append("page-navigation: false")
         lines.append("html-table-processing: none")
         lines.append("shift-heading-level-by: 0")
+        # Disabling breadcrumbs lets Quarto use the page title in the narrow-screen
+        # navigation bar; CSS adds the prefix for the reference type.
+        lines.append("bread-crumbs: false")
         lines.append("---")
         lines.append("")
 
@@ -4983,6 +4987,9 @@ class GreatDocs:
         # Front matter provides the page's only `h1`; render body sections at
         # their written levels.
         lines.append("shift-heading-level-by: 0")
+        # Disabling breadcrumbs lets Quarto use the page title in the narrow-screen
+        # navigation bar; CSS adds the prefix for the reference type.
+        lines.append("bread-crumbs: false")
         lines.append("---")
         lines.append("")
 
@@ -13645,6 +13652,7 @@ anchor-sections: true
 
         # Compose each page's browser title during Quarto rendering.
         self._write_title_partial(config)
+        nav_label.register(config, self._config)
 
         # Add each page's canonical link during Quarto rendering.
         canonical.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)

@@ -534,7 +534,9 @@ $all_labels: (
 $class-like-labels: (class, dataclass, namedtuple, typeddict, protocol, abc, enum);
 $method-like-labels: (method, classmethod, staticmethod);
 
-.content span.doc-label::after {
+// Quarto copies the page title into the narrow-screen navigation bar;
+// object-kind badges need the same styling in both locations.
+:is(.content, .quarto-secondary-nav-title) span.doc-label::after {
   @extend .fw-normal;
   @extend .small;
   font-family: $font-family-monospace;
@@ -548,12 +550,12 @@ $method-like-labels: (method, classmethod, staticmethod);
 }
 
 @each $label in $all_labels {
-  .content span.doc-label-#{$label}::after {
+  :is(.content, .quarto-secondary-nav-title) span.doc-label-#{$label}::after {
     content: "#{$label}";
   }
 }
 
-.content {
+:is(.content, .quarto-secondary-nav-title) {
   @each $label in $class-like-labels {
     span.doc-label-#{$label}::after {
       color: $label-class-color;
@@ -563,7 +565,7 @@ $method-like-labels: (method, classmethod, staticmethod);
   }
 }
 
-.content {
+:is(.content, .quarto-secondary-nav-title) {
   @each $label in $method-like-labels {
     span.doc-label-#{$label}::after {
       color: $label-method-color;
@@ -573,38 +575,38 @@ $method-like-labels: (method, classmethod, staticmethod);
   }
 }
 
-.content span.doc-label-function::after,
-.content span.doc-label-async::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-function::after,
+:is(.content, .quarto-secondary-nav-title) span.doc-label-async::after {
   color: $label-function-color;
   border-color: $label-function-color;
   background-color: tint-color($label-function-color, 95%);
 }
 
-.content span.doc-label-property::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-property::after {
   color: $label-property-color;
   border-color: $label-property-color;
   background-color: tint-color($label-property-color, 95%);
 }
 
-.content span.doc-label-constant::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-constant::after {
   color: $label-constant-color;
   border-color: $label-constant-color;
   background-color: tint-color($label-constant-color, 95%);
 }
 
-.content span.doc-label-typealias::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-typealias::after {
   color: $label-typealias-color;
   border-color: $label-typealias-color;
   background-color: tint-color($label-typealias-color, 95%);
 }
 
-.content span.doc-label-cli::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-cli::after {
   color: $label-cli-color;
   border-color: $label-cli-color;
   background-color: tint-color($label-cli-color, 95%);
 }
 
-.content span.doc-label-cli-group::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-cli-group::after {
   content: "cli-group";
   color: $label-cli-group-color;
   border-color: $label-cli-group-color;
@@ -612,35 +614,35 @@ $method-like-labels: (method, classmethod, staticmethod);
 }
 
 // MCP label styles
-.content span.doc-label-mcp-tool::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-mcp-tool::after {
   content: "tool";
   color: $label-mcp-tool-color;
   border-color: $label-mcp-tool-color;
   background-color: tint-color($label-mcp-tool-color, 95%);
 }
 
-.content span.doc-label-mcp-resource::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-mcp-resource::after {
   content: "resource";
   color: $label-mcp-resource-color;
   border-color: $label-mcp-resource-color;
   background-color: tint-color($label-mcp-resource-color, 95%);
 }
 
-.content span.doc-label-mcp-resource-template::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-mcp-resource-template::after {
   content: "resource template";
   color: $label-mcp-resource-template-color;
   border-color: $label-mcp-resource-template-color;
   background-color: tint-color($label-mcp-resource-template-color, 95%);
 }
 
-.content span.doc-label-mcp-prompt::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-mcp-prompt::after {
   content: "prompt";
   color: $label-mcp-prompt-color;
   border-color: $label-mcp-prompt-color;
   background-color: tint-color($label-mcp-prompt-color, 95%);
 }
 
-.content span.doc-label-mcp::after {
+:is(.content, .quarto-secondary-nav-title) span.doc-label-mcp::after {
   content: "mcp";
   color: $label-mcp-color;
   border-color: $label-mcp-color;
@@ -2260,53 +2262,52 @@ div.sourceCode:hover > .gd-code-nav .gd-code-copy,
         padding-left: 0.5rem;
     }
 
-    /* Reference title bar: "API / ObjectName" or "CLI / cmd" */
-    .gd-ref-title {
-        display: flex;
-        align-items: center;
-        gap: 0;
-        padding-top: 0;
+    /* Quarto supplies the reference title when breadcrumbs are disabled.
+       Body classes select the reference type; `--gd-nav-prefix-*` properties
+       supply its prefix in the site's language. */
+    body.doc-api-page .quarto-secondary-nav-title,
+    body.doc-reference .quarto-secondary-nav-title {
         margin-top: 0 !important;
+        padding-top: 0;
         padding-left: 0.5rem;
-        color: #212529;
+        /* Allow the title to shrink within the flex row so long names truncate. */
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 1.1rem;
+        color: #495057;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .gd-ref-title-prefix {
-        font-weight: 600;
-        color: #495057;
-        flex-shrink: 0;
-    }
-
-    .gd-ref-title-sep {
-        margin: 0 0.4em;
-        color: #adb5bd;
-        flex-shrink: 0;
-    }
-
-    .gd-ref-title-name {
+    body.doc-api-page .quarto-secondary-nav-title {
         font-family: $font-family-monospace;
         font-size: 18px;
-        color: #495057;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        position: relative;
-        top: 2px;
+        font-weight: 400;
     }
 
-    body.quarto-dark .gd-ref-title {
-        color: #868e96;
+    body.doc-api-page .quarto-secondary-nav-title::before {
+        font-family: $font-family-sans-serif;
+        font-size: 1.1rem;
+        font-weight: 600;
+        padding-right: 0.4em;
     }
 
-    body.quarto-dark .gd-ref-title-prefix,
-    body.quarto-dark .gd-ref-title-name {
+    body.doc-py-api-page .quarto-secondary-nav-title::before {
+        content: var(--gd-nav-prefix-api, "API") " /";
+    }
+
+    body.doc-cli-api-page .quarto-secondary-nav-title::before {
+        content: var(--gd-nav-prefix-cli, "CLI") " /";
+    }
+
+    body.doc-mcp-api-page .quarto-secondary-nav-title::before {
+        content: var(--gd-nav-prefix-mcp, "MCP") " /";
+    }
+
+    body.quarto-dark.doc-api-page .quarto-secondary-nav-title,
+    body.quarto-dark.doc-reference .quarto-secondary-nav-title {
         color: #ced4da;
-    }
-
-    body.quarto-dark .gd-ref-title-sep {
-        color: #6c757d;
     }
 
     /* Style the sidebar toggle to match the top-nav icon buttons */

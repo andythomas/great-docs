@@ -104,6 +104,32 @@ def _load_html(html_path: Path) -> "BeautifulSoup":
     return BeautifulSoup(text, "html.parser")
 
 
+def _nav_title(soup: "BeautifulSoup") -> str | None:
+    """
+    Read the reference title from the narrow-screen navigation bar
+
+    CSS adds the `API /`, `CLI /` or `MCP /` prefix. The HTML contains only
+    the page title.
+
+    Parameters
+    ----------
+    soup
+        A rendered page.
+
+    Returns
+    -------
+    :
+        The navigation title, or `None` if it is absent.
+    """
+    title = soup.select_one(".quarto-secondary-nav h1.quarto-secondary-nav-title")
+    return None if title is None else title.get_text(strip=True)
+
+
+# The navigation bar repeats the page title in an `h1`. Quarto shows the bar only
+# below 992px and the page title from 992px, so only one `h1` is visible.
+_PAGE_H1 = "h1:not(.quarto-secondary-nav-title)"
+
+
 def _has_rendered_site(pkg_name: str) -> bool:
     """Check whether a package has a rendered _site/ directory."""
     return _site_dir(pkg_name).is_dir()
@@ -569,9 +595,9 @@ def test_reference_page_heading_levels(pkg_name: str):
     """
     Verify the reference object-page heading hierarchy
 
-    Each page has one `h1` title, `h2` docstring sections and member groups,
-    and `h3` individual members. The no-breadcrumb fixture also verifies that
-    Quarto's bare navigation `h1` is demoted to `h5`.
+    Each page has an `h1` title, `h2` docstring sections and member groups,
+    and `h3` individual members. The navigation bar contains a second copy
+    of the `h1` title.
     """
     ref = _ref_dir(pkg_name)
     if not ref.exists():
@@ -591,14 +617,13 @@ def test_reference_page_heading_levels(pkg_name: str):
             f"{page.name}: page title was shifted to h2.title"
         )
 
-        # Require one document-level `h1`: the page title. The navigation label
-        # must remain `h5`, even when breadcrumbs are disabled.
-        page_h1s = soup.select("h1")
+        page_h1s = soup.select(_PAGE_H1)
         assert len(page_h1s) == 1, (
-            f"{page.name}: expected exactly one h1 in the whole document, found {len(page_h1s)}"
+            f"{page.name}: expected exactly one content h1, found {len(page_h1s)}"
         )
-        nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
-        assert nav_title is not None, f"{page.name}: missing h5.gd-ref-title navigation label"
+        assert _nav_title(soup) == title.get_text(strip=True), (
+            f"{page.name}: navigation bar {_nav_title(soup)!r} does not match the page title"
+        )
 
         main = soup.select_one("main")
         assert main is not None, f"{page.name}: no <main> element"
@@ -687,12 +712,11 @@ def test_reference_index_heading_levels(pkg_name: str):
     title = soup.select_one("h1.title")
     assert title is not None, "reference index is missing its h1.title"
 
-    # Require one page title and an `h5` navigation label with or without
-    # breadcrumbs.
-    page_h1s = soup.select("h1")
-    assert len(page_h1s) == 1, f"reference index: expected exactly one h1, found {len(page_h1s)}"
-    nav_title = soup.select_one("h5.quarto-secondary-nav-title.gd-ref-title")
-    assert nav_title is not None, "reference index is missing its h5.gd-ref-title label"
+    page_h1s = soup.select(_PAGE_H1)
+    assert len(page_h1s) == 1, (
+        f"reference index: expected exactly one content h1, found {len(page_h1s)}"
+    )
+    assert _nav_title(soup) == title.get_text(strip=True)
 
     groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
     assert groups, "reference index contains no group headings"
@@ -2312,9 +2336,9 @@ def test_cli_command_page_heading_levels(pkg_name: str):
         title = soup.select_one("h1.title")
         assert title is not None, f"{page.name}: missing h1.title page title"
 
-        page_h1s = soup.select("h1")
+        page_h1s = soup.select(_PAGE_H1)
         assert len(page_h1s) == 1, (
-            f"{page.name}: expected exactly one h1 in the whole document, found {len(page_h1s)}"
+            f"{page.name}: expected exactly one content h1, found {len(page_h1s)}"
         )
 
         for section in soup.select("section.level2.doc-parameters"):
@@ -2341,8 +2365,8 @@ def test_cli_title_bar_label_matches_command_name(pkg_name: str, page_rel_path: 
     """
     Verify that CLI navigation labels use full command names
 
-    Compare the `h5` navigation label with the marked-up `h1` title on flat
-    and nested command pages.
+    Require the navigation label to match the `h1` title on flat and nested
+    command pages.
     """
     cli_dir = _ref_dir(pkg_name) / "cli"
     page = cli_dir / page_rel_path
@@ -2355,11 +2379,8 @@ def test_cli_title_bar_label_matches_command_name(pkg_name: str, page_rel_path: 
     assert title is not None, f"{page_rel_path}: missing h1.title page title"
     command_name = title.get_text(strip=True)
 
-    label = soup.select_one("h5.gd-ref-title .gd-ref-title-name")
-    assert label is not None, f"{page_rel_path}: navigation label is missing"
-
-    assert label.get_text(strip=True) == command_name, (
-        f"{page_rel_path}: title bar label {label.get_text(strip=True)!r} "
+    assert _nav_title(soup) == command_name, (
+        f"{page_rel_path}: navigation bar {_nav_title(soup)!r} "
         f"does not match the command name {command_name!r}"
     )
 
@@ -2378,9 +2399,9 @@ def test_cli_index_heading_levels():
     title = soup.select_one("h1.title")
     assert title is not None, "CLI reference index is missing its h1.title"
 
-    page_h1s = soup.select("h1")
+    page_h1s = soup.select(_PAGE_H1)
     assert len(page_h1s) == 1, (
-        f"CLI reference index: expected exactly one h1, found {len(page_h1s)}"
+        f"CLI reference index: expected exactly one content h1, found {len(page_h1s)}"
     )
 
     groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
@@ -2560,9 +2581,9 @@ def test_mcp_page_heading_levels():
         title = soup.select_one("h1.title")
         assert title is not None, f"{page.name}: missing h1.title page title"
 
-        page_h1s = soup.select("h1")
+        page_h1s = soup.select(_PAGE_H1)
         assert len(page_h1s) == 1, (
-            f"{page.name}: expected exactly one h1 in the whole document, found {len(page_h1s)}"
+            f"{page.name}: expected exactly one content h1, found {len(page_h1s)}"
         )
 
         for section in soup.select("section.level2.doc-parameters"):
@@ -2590,9 +2611,9 @@ def test_mcp_index_heading_levels():
     title = soup.select_one("h1.title")
     assert title is not None, "MCP reference index is missing its h1.title"
 
-    page_h1s = soup.select("h1")
+    page_h1s = soup.select(_PAGE_H1)
     assert len(page_h1s) == 1, (
-        f"MCP reference index: expected exactly one h1, found {len(page_h1s)}"
+        f"MCP reference index: expected exactly one content h1, found {len(page_h1s)}"
     )
 
     groups = soup.select("h1.doc-group, h2.doc-group, h3.doc-group, h4.doc-group")
