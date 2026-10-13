@@ -1214,183 +1214,43 @@ class TestGenerateRedirectFiles:
 
 
 class TestCanonicalUrlInjection:
-    def test_non_latest_gets_canonical(self, tmp_path: Path):
-        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-        dest = tmp_path / "v02"
-        dest.mkdir()
-        (dest / "_quarto.yml").write_text(
-            "project:\n  type: website\n  output-dir: _site\n"
-            "format:\n  html: {}\nwebsite:\n  title: Test\n",
-            encoding="utf-8",
-        )
-        entry = _make_entry("0.2")
-        _rewrite_quarto_yml_for_version(dest, entry, "0.3", site_url="https://example.com")
-
-        content = (dest / "_quarto.yml").read_text()
-        assert "canonical" in content
-
-    def test_latest_no_canonical(self, tmp_path: Path):
-        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-        dest = tmp_path / "root"
-        dest.mkdir()
-        (dest / "_quarto.yml").write_text(
-            "project:\n  type: website\n  output-dir: _site\n"
-            "format:\n  html: {}\nwebsite:\n  title: Test\n",
-            encoding="utf-8",
-        )
-        entry = _make_entry("0.3", latest=True)
-        _rewrite_quarto_yml_for_version(dest, entry, "0.3", site_url="https://example.com")
-
-        content = (dest / "_quarto.yml").read_text()
-        assert "canonical" not in content
-
-    def test_no_site_url_keeps_render_time_canonical(self, tmp_path: Path):
-        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-        dest = tmp_path / "v02"
-        dest.mkdir()
-        (dest / "_quarto.yml").write_text(
-            "project:\n  type: website\n  output-dir: _site\n"
-            "filters:\n  - canonical\ngd-canonical-base-url: https://example.org/pkg/\n"
-            "format:\n  html: {}\nwebsite:\n  title: Test\n",
-            encoding="utf-8",
-        )
-        _rewrite_quarto_yml_for_version(dest, _make_entry("0.2"), "0.3")
-
-        content = (dest / "_quarto.yml").read_text()
-        assert "- canonical" in content
-        assert "gd-canonical-base-url" in content
-
-    def test_no_site_url_no_canonical(self, tmp_path: Path):
-        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-        dest = tmp_path / "v02"
-        dest.mkdir()
-        (dest / "_quarto.yml").write_text(
-            "project:\n  type: website\n  output-dir: _site\n"
-            "format:\n  html: {}\nwebsite:\n  title: Test\n",
-            encoding="utf-8",
-        )
-        entry = _make_entry("0.2")
-        _rewrite_quarto_yml_for_version(dest, entry, "0.3")
-
-        content = (dest / "_quarto.yml").read_text()
-        assert "canonical" not in content
-
-
-def _canonical_href_from_script(tmp_path: Path, site_url: str, pathname: str) -> str:
     """
-    Run an older version's canonical script with a simulated page path
-    """
-    import json
-    import re
-    import shutil
-    import subprocess
-
-    from yaml12 import read_yaml
-
-    from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Node.js is not installed")
-
-    dest = tmp_path / "v01"
-    dest.mkdir()
-    (dest / "_quarto.yml").write_text(
-        "project:\n  type: website\n  output-dir: _site\n"
-        f"format:\n  html: {{}}\nwebsite:\n  title: Test\n  site-url: {site_url}\n",
-        encoding="utf-8",
-    )
-    _rewrite_quarto_yml_for_version(dest, _make_entry("0.1"), "0.2", site_url=site_url)
-
-    with open(dest / "_quarto.yml") as f:
-        header = read_yaml(f)["format"]["html"]["include-in-header"]
-    script = re.search(r"<script>(.*)</script>", header[0]["text"], re.S).group(1)
-
-    harness = (
-        "const links = [];"
-        "const document = {addEventListener: (_, run) => run(),"
-        " createElement: () => ({}), head: {appendChild: (el) => links.push(el)}};"
-        f"const window = {{location: {{pathname: {json.dumps(pathname)}}}}};"
-        f"{script};"
-        "console.log(JSON.stringify(links));"
-    )
-    result = subprocess.run([node, "-e", harness], capture_output=True, text=True, check=True)
-    (link,) = json.loads(result.stdout)
-    assert link["rel"] == "canonical"
-    return link["href"]
-
-
-class TestCanonicalScriptUrl:
-    """
-    Canonical links from older pages to matching pages in the latest version
+    Canonical configuration that links older pages to matching latest pages
     """
 
-    @pytest.mark.parametrize(
-        ("site_url", "pathname", "expected"),
-        [
-            (
-                "https://example.com",
-                "/v/0.1/guide/page.html",
-                "https://example.com/guide/page.html",
-            ),
-            ("https://example.com", "/v/0.1/guide/index.html", "https://example.com/guide/"),
-            ("https://example.com", "/v/0.1/", "https://example.com/"),
-            (
-                "https://example.com/pkg",
-                "/pkg/v/0.1/guide/page.html",
-                "https://example.com/pkg/guide/page.html",
-            ),
-            (
-                "https://example.com/pkg/",
-                "/pkg/v/0.1/guide/index.html",
-                "https://example.com/pkg/guide/",
-            ),
-            ("https://example.com/pkg", "/pkg/v/0.1/", "https://example.com/pkg/"),
-            (
-                "https://example.com/pkg",
-                "/pkg/v/0.1/reference/myindex.html",
-                "https://example.com/pkg/reference/myindex.html",
-            ),
-        ],
-    )
-    def test_links_to_matching_latest_page(
-        self, tmp_path: Path, site_url: str, pathname: str, expected: str
-    ):
-        assert _canonical_href_from_script(tmp_path, site_url, pathname) == expected
-
-    def test_only_latest_config_keeps_the_canonical_filter(self, tmp_path: Path):
+    @staticmethod
+    def _rewritten(tmp_path: Path, entry, latest_tag: str) -> dict:
         from yaml12 import read_yaml, write_yaml
 
         from great_docs._versioned_build import _rewrite_quarto_yml_for_version
 
-        def rewritten(entry, latest_tag: str) -> dict:
-            dest = tmp_path / entry.tag
-            dest.mkdir()
-            with open(dest / "_quarto.yml", "w") as f:
-                write_yaml(
-                    {
-                        "project": {"type": "website"},
-                        "filters": ["interlinks", "canonical"],
-                        "gd-canonical-base-url": "https://example.com/",
-                        "website": {"title": "Test"},
-                    },
-                    f,
-                )
-            _rewrite_quarto_yml_for_version(dest, entry, latest_tag, site_url="https://example.com")
-            with open(dest / "_quarto.yml") as f:
-                return read_yaml(f)
+        dest = tmp_path / entry.tag
+        dest.mkdir()
+        with open(dest / "_quarto.yml", "w") as f:
+            write_yaml(
+                {
+                    "project": {"type": "website"},
+                    "filters": ["interlinks", "canonical"],
+                    "gd-canonical-base-url": "https://example.com/pkg/",
+                    "website": {"title": "Test", "site-url": "https://example.com/pkg/"},
+                },
+                f,
+            )
+        _rewrite_quarto_yml_for_version(dest, entry, latest_tag)
+        with open(dest / "_quarto.yml") as f:
+            return read_yaml(f)
 
-        old = rewritten(_make_entry("0.1"), "0.2")
-        assert old["filters"] == ["interlinks"]
-        assert "gd-canonical-base-url" not in old
+    def test_older_version_keeps_the_latest_base_address(self, tmp_path: Path):
+        old = self._rewritten(tmp_path, _make_entry("0.1"), "0.2")
+        assert old["filters"] == ["interlinks", "canonical"]
+        assert old["gd-canonical-base-url"] == "https://example.com/pkg/"
+        assert old["website"]["site-url"] == "https://example.com/pkg/v/0.1/"
+        assert "include-in-header" not in old.get("format", {}).get("html", {})
 
-        latest = rewritten(_make_entry("0.2", latest=True), "0.2")
+    def test_latest_version_keeps_the_filter(self, tmp_path: Path):
+        latest = self._rewritten(tmp_path, _make_entry("0.2", latest=True), "0.2")
         assert latest["filters"] == ["interlinks", "canonical"]
-        assert latest["gd-canonical-base-url"] == "https://example.com/"
+        assert latest["gd-canonical-base-url"] == "https://example.com/pkg/"
 
 
 # ---------------------------------------------------------------------------
@@ -1412,9 +1272,7 @@ class TestSiteUrlVersionAdjustment:
             encoding="utf-8",
         )
         entry = _make_entry("0.2")
-        _rewrite_quarto_yml_for_version(
-            dest, entry, "0.3", site_url="http://myserver:3838/data-team/mypkg/"
-        )
+        _rewrite_quarto_yml_for_version(dest, entry, "0.3")
 
         from yaml12 import read_yaml
 
@@ -1436,9 +1294,7 @@ class TestSiteUrlVersionAdjustment:
             encoding="utf-8",
         )
         entry = _make_entry("0.3", latest=True)
-        _rewrite_quarto_yml_for_version(
-            dest, entry, "0.3", site_url="http://myserver:3838/data-team/mypkg/"
-        )
+        _rewrite_quarto_yml_for_version(dest, entry, "0.3")
 
         from yaml12 import read_yaml
 
@@ -3392,39 +3248,12 @@ class TestRewriteQuartoYmlEdge:
             write_yaml(config, f)
 
         entry = _make_entry("0.2")
-        _rewrite_quarto_yml_for_version(dest, entry, "0.3", site_url="https://x.com")
+        _rewrite_quarto_yml_for_version(dest, entry, "0.3")
 
         with open(dest / "_quarto.yml", "r") as f:
             result = read_yaml(f)
 
         assert "(0.2)" in result["website"]["title"]
-
-    def test_include_in_header_str_converted_to_list(self, tmp_path: Path):
-        """If include-in-header is a string, it's converted to a list."""
-        from yaml12 import read_yaml, write_yaml
-
-        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-        dest = tmp_path / "vdir"
-        dest.mkdir()
-        config = {
-            "project": {"type": "website", "output-dir": "_site"},
-            "format": {"html": {"include-in-header": "existing.html"}},
-            "website": {"title": "Docs"},
-        }
-        with open(dest / "_quarto.yml", "w") as f:
-            write_yaml(config, f)
-
-        entry = _make_entry("0.2")
-        _rewrite_quarto_yml_for_version(dest, entry, "0.3", site_url="https://x.com")
-
-        with open(dest / "_quarto.yml", "r") as f:
-            result = read_yaml(f)
-
-        header = result["format"]["html"]["include-in-header"]
-        assert isinstance(header, list)
-        assert header[0] == "existing.html"
-        assert any("canonical" in str(h) for h in header)
 
 
 # ---------------------------------------------------------------------------
@@ -4650,7 +4479,7 @@ class TestRewriteQuartoYmlKeepsHeader:
             encoding="utf-8",
         )
         entry = _make_entry("0.2")
-        _rewrite_quarto_yml_for_version(tmp_path, entry, "0.3", site_url="https://example.com")
+        _rewrite_quarto_yml_for_version(tmp_path, entry, "0.3")
 
         content = (tmp_path / "_quarto.yml").read_text(encoding="utf-8")
         assert content.startswith("# Generated by Great Docs")

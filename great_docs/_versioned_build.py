@@ -33,7 +33,6 @@ from great_docs._versioning import (
     process_version_fences,
     version_url_segment,
 )
-from great_docs._website.seo import canonical
 
 if TYPE_CHECKING:
     from great_docs._api_diff import ApiSnapshot
@@ -1646,14 +1645,13 @@ def _rewrite_quarto_yml_for_version(
     dest_dir: Path,
     entry: VersionEntry,
     latest_tag: str,
-    site_url: str | None = None,
 ) -> None:
     """
-    Adjust the _quarto.yml in a version build directory.
+    Adjust `_quarto.yml` for a documentation version
 
-    For non-latest versions, sets `site-url` with the version prefix so that relative paths and
-    canonical URLs resolve correctly. Also injects canonical URL `<link>` tags pointing to the
-    latest version so search engines prefer the latest docs.
+    For older versions, add the version prefix to `site-url` so root-relative
+    asset paths resolve within that version. Keep the latest version's canonical
+    base address so canonical links point to its matching pages.
     """
     from yaml12 import read_yaml, write_yaml
 
@@ -1680,21 +1678,6 @@ def _rewrite_quarto_yml_for_version(
         title = config.get("website", {}).get("title", "")
         if title and f"({entry.label})" not in title:
             config.setdefault("website", {})["title"] = f"{title} ({entry.label})"
-
-    # Older versions use a script to link to the latest version's matching page.
-    # Remove the render-time filter only when the script replaces it.
-    if entry.tag != latest_tag and not entry.latest and site_url:
-        canonical.unregister(config)
-        canonical_script = canonical.latest_version_script(site_url, version_url_segment(entry.tag))
-        header_list = (
-            config.setdefault("format", {})
-            .setdefault("html", {})
-            .setdefault("include-in-header", [])
-        )
-        if isinstance(header_list, str):
-            header_list = [header_list]
-            config["format"]["html"]["include-in-header"] = header_list
-        header_list.append({"text": canonical_script})
 
     with open(quarto_yml, "w") as f:
         f.write(QUARTO_YML_HEADER)
@@ -2112,7 +2095,6 @@ def run_versioned_build(  # pragma: no cover
     version_tags: list[str] | None = None,
     latest_only: bool = False,
     max_workers: int | None = None,
-    site_url: str | None = None,
     progress_callback: Callable[[int, int, int], None] | None = None,
     on_renders_done: Callable[[], None] | None = None,
     badge_expiry_raw: str | None = None,
@@ -2138,8 +2120,6 @@ def run_versioned_build(  # pragma: no cover
         Whether to build only the latest version.
     max_workers
         Maximum number of parallel Quarto renders.
-    site_url
-        Base site URL used for canonical links.
     progress_callback
         Callback that receives the render slot, current page, and total pages.
     on_renders_done
@@ -2231,7 +2211,7 @@ def run_versioned_build(  # pragma: no cover
             config=config,
         )
         _prune_missing_sidebar_pages(ver_dir)
-        _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag, site_url=site_url)
+        _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag)
         _sync_status_inline_script(ver_dir)
         pages_by_version[entry.tag] = pages
         dir_by_tag[entry.tag] = ver_dir

@@ -95,12 +95,6 @@ class TestRegister:
         assert "filters" not in quarto
         assert "gd-canonical-base-url" not in quarto
 
-    def test_unregister_reverses_register(self, tmp_path):
-        quarto: dict = {"filters": ["interlinks"]}
-        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
-        canonical.unregister(quarto)
-        assert quarto == {"filters": ["interlinks"]}
-
 
 class TestAddToRawPage:
     BASE = "https://docs.example.com/pkg/"

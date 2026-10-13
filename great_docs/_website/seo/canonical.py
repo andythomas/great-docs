@@ -3,8 +3,8 @@ Canonical links that point search engines at the preferred address of a page
 
 Rendered pages get their link from the `canonical` Quarto filter, which reads
 the base address from `_quarto.yml`. Raw custom pages skip Quarto and get theirs
-here. Older documentation versions point at the matching page of the latest
-version with a script, because their build never sees the latest address.
+here. Pages in older documentation versions link to the matching page in the
+latest version by retaining its canonical base address.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
 
 from . import head
 
@@ -140,21 +139,6 @@ def register(quarto_config: dict, config: Config, base_url: str | None, project_
     quarto_config[BASE_URL_KEY] = base_url
 
 
-def unregister(quarto_config: dict) -> None:
-    """
-    Remove the filter and its base address from a `_quarto.yml` mapping
-
-    Parameters
-    ----------
-    quarto_config
-        Contents of `_quarto.yml`, updated in place.
-    """
-    filters = quarto_config.get("filters")
-    if isinstance(filters, list):
-        quarto_config["filters"] = [name for name in filters if name != FILTER]
-    quarto_config.pop(BASE_URL_KEY, None)
-
-
 def add_to_raw_page(html: str, config: Config, base_url: str | None, page_path: str) -> str:
     """
     Add a canonical link to a raw custom page
@@ -182,42 +166,3 @@ def add_to_raw_page(html: str, config: Config, base_url: str | None, page_path: 
         return html
     tag = f'<link rel="canonical" href="{page_url(base_url, page_path)}">'
     return head.insert(html, tag, unless='rel="canonical"')
-
-
-def latest_version_script(site_url: str, version_segment: str) -> str:
-    """
-    Build the script that points a page of an older version at the latest one
-
-    The script runs in the browser, so it adds the link from the page's own
-    location: it replaces `<site path>/v/<version>/` with `<site path>/` and maps
-    a trailing `index.html` to its directory.
-
-    Parameters
-    ----------
-    site_url
-        The site address, with or without a path or trailing slash.
-    version_segment
-        The version's directory name under `v/`.
-
-    Returns
-    -------
-    :
-        A `<script>` element.
-    """
-    site = urlsplit(site_url)
-    origin = f"{site.scheme}://{site.netloc}"
-    root = site.path.rstrip("/")
-    return (
-        "<script>"
-        'document.addEventListener("DOMContentLoaded",function(){'
-        "var path=window.location.pathname;"
-        f'var prefix="{root}/v/{version_segment}/";'
-        f'if(path.startsWith(prefix)){{path="{root}/"+path.slice(prefix.length)}}'
-        'path=path.replace(/(^|\\/)index\\.html$/,"$1");'
-        'var link=document.createElement("link");'
-        'link.rel="canonical";'
-        f'link.href="{origin}"+path;'
-        "document.head.appendChild(link)"
-        "});"
-        "</script>"
-    )

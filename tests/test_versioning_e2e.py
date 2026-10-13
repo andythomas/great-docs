@@ -55,7 +55,6 @@ def test_layout_pipeline(tmp_path: Path, directory: str) -> None:
             tmp_path,
             ["2.0", "v1.5.0"],
             layout=layout,
-            site_url="https://example.com/docs",
         )
     assert result["success"]
     assert (layout.site_dir / "v/1.5.0/old.html").is_file()
@@ -63,9 +62,6 @@ def test_layout_pipeline(tmp_path: Path, directory: str) -> None:
     assert (layout.build_dir_for("v1.5.0", "2.0") / "_site/old.html").is_file()
     historical_config = (layout.build_dir_for("v1.5.0", "2.0") / "_quarto.yml").read_text()
     assert "https://example.com/docs/v/1.5.0/" in historical_config
-    parsed = read_yaml(layout.build_dir_for("v1.5.0", "2.0") / "_quarto.yml")
-    scripts = parsed["format"]["html"]["include-in-header"]
-    assert any('var prefix="/docs/v/1.5.0/"' in item["text"] for item in scripts)
     manifest = json.loads((layout.site_dir / "_version_map.json").read_text())
     assert manifest["versions"][1]["path_prefix"] == "v/1.5.0"
 
@@ -203,7 +199,6 @@ def run_mock_versioned_build(
     pages: dict[str, str],
     snapshots: dict[str, ApiSnapshot] | None = None,
     section_configs: list[dict] | None = None,
-    site_url: str | None = None,
     version_tags: list[str] | None = None,
     latest_only: bool = False,
 ) -> dict[str, Any]:
@@ -222,8 +217,6 @@ def run_mock_versioned_build(
         API snapshots keyed by version tag.
     section_configs
         Section configuration entries from `great-docs.yml`.
-    site_url
-        Base site URL used for canonical links.
     version_tags
         Version tags to build. Build every configured version when omitted.
     latest_only
@@ -2120,8 +2113,10 @@ class TestStaticAssets:
         assert "color: red" in css.read_text()
 
 
-class TestCanonicalUrlInjection:
-    """Edge case: site_url triggers _quarto.yml rewriting with canonical URLs."""
+class TestVersionTitleSuffix:
+    """
+    Site titles with version labels for older documentation
+    """
 
     @pytest.fixture()
     def site(self, tmp_path):
@@ -2145,9 +2140,7 @@ class TestCanonicalUrlInjection:
         for entry in versions:
             ver_dir = _version_build_dir(source_dir, entry, latest_tag)
             preprocess_version(source_dir, ver_dir, entry, versions, project_root=project_root)
-            _rewrite_quarto_yml_for_version(
-                ver_dir, entry, latest_tag, site_url="https://example.com/docs"
-            )
+            _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag)
 
         return {
             "source_dir": source_dir,
@@ -2164,15 +2157,6 @@ class TestCanonicalUrlInjection:
         title = config.get("website", {}).get("title", "")
         assert "(0.1)" in title
 
-    def test_old_version_has_canonical_injection(self, site):
-        from yaml12 import read_yaml
-
-        old_dir = _version_build_dir(site["source_dir"], site["versions"][1], site["latest_tag"])
-        with open(old_dir / "_quarto.yml") as f:
-            config = read_yaml(f)
-        headers = config.get("format", {}).get("html", {}).get("include-in-header", [])
-        assert any("canonical" in str(h) for h in headers)
-
     def test_latest_version_no_title_suffix(self, site):
         from yaml12 import read_yaml
 
@@ -2181,48 +2165,6 @@ class TestCanonicalUrlInjection:
             config = read_yaml(f)
         title = config.get("website", {}).get("title", "")
         assert "(0.2)" not in title
-
-
-class TestCanonicalUrlNone:
-    """Edge case: site_url=None should not inject any canonical tags."""
-
-    @pytest.fixture()
-    def site(self, tmp_path):
-        project_root = tmp_path / "project"
-        source_dir = project_root / "great-docs"
-        source_dir.mkdir(parents=True)
-
-        (source_dir / "index.qmd").write_text("---\ntitle: Home\n---\n\nHello.")
-        (source_dir / "_quarto.yml").write_text(
-            "project:\n  type: website\n  output-dir: _site\n"
-            "format:\n  html: {}\nwebsite:\n  title: My Docs\n"
-        )
-
-        versions = parse_versions_config(["0.2", "0.1"])
-        latest = get_latest_version(versions)
-        latest_tag = latest.tag
-
-        from great_docs._versioned_build import _rewrite_quarto_yml_for_version
-
-        for entry in versions:
-            ver_dir = _version_build_dir(source_dir, entry, latest_tag)
-            preprocess_version(source_dir, ver_dir, entry, versions, project_root=project_root)
-            _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag, site_url=None)
-
-        return {
-            "source_dir": source_dir,
-            "latest_tag": latest_tag,
-            "versions": versions,
-        }
-
-    def test_no_canonical_injection(self, site):
-        from yaml12 import read_yaml
-
-        old_dir = _version_build_dir(site["source_dir"], site["versions"][1], site["latest_tag"])
-        with open(old_dir / "_quarto.yml") as f:
-            config = read_yaml(f)
-        headers = config.get("format", {}).get("html", {}).get("include-in-header", [])
-        assert not any("canonical" in str(h) for h in headers)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
