@@ -576,18 +576,13 @@ def test_emitted_version_navigation(rendered: Rendered) -> None:
     assert manifest["pages"]["reference/latest_only.html"] == ["2.0.0"]
     script = (site / "version-selector.js").read_text()
     html = (site / "v/1.5.0/user-guide/frozen.html").read_text()
-    canonical = [
-        body
-        for body in re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
-        if 'link.rel="canonical"' in body
+    assert re.findall(r'<link rel="canonical" href="([^"]*)">', html) == [
+        "https://layout.example.test/user-guide/frozen.html"
     ]
-    assert len(canonical) == 1
-    # Run the real version-selector.js and the page's canonical-link script
-    # against the same stubbed browser, then compare their JSON results.
+    # Run the real version-selector.js against a stubbed browser.
     harness = r"""
 const fs = require("fs"), vm = require("vm");
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
-const links = [];
 const context = {
   window: {location: {pathname: "/v/1.5.0/user-guide/frozen.html"}},
   document: {readyState: "loading", addEventListener() {}}
@@ -604,19 +599,11 @@ const result = {
   historical: selector.buildVersionUrl(map, input.tag, "user-guide/frozen.html", base),
   absent: selector.buildVersionUrl(map, input.tag, "reference/latest_only.html", base)
 };
-context.document = {
-  addEventListener(event, callback) {callback()},
-  createElement() {return {}}, head: {appendChild(link) {links.push(link)}}
-};
-vm.runInNewContext(input.canonical, context);
-result.canonical = links;
 process.stdout.write(JSON.stringify(result));
 """
     result = subprocess.run(
         ["node", "-e", harness],
-        input=json.dumps(
-            {"script": script, "map": manifest, "tag": rendered.tag, "canonical": canonical[0]}
-        ),
+        input=json.dumps({"script": script, "map": manifest, "tag": rendered.tag}),
         text=True,
         capture_output=True,
         check=True,
@@ -628,9 +615,6 @@ process.stdout.write(JSON.stringify(result));
         "latest": "/user-guide/frozen.html",
         "historical": "/v/1.5.0/user-guide/frozen.html",
         "absent": "/v/1.5.0/index.html",
-        "canonical": [
-            {"rel": "canonical", "href": "https://layout.example.test/user-guide/frozen.html"}
-        ],
     }
     for alias in ("latest", "stable"):
         redirect = (site / "v" / alias / "index.html").read_text()
