@@ -9,6 +9,8 @@ version with a script, because their build never sees the latest address.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -19,6 +21,42 @@ if TYPE_CHECKING:
 
 FILTER = "canonical"
 BASE_URL_KEY = "gd-canonical-base-url"
+_CANONICAL_LINK = re.compile(r"""rel=["']?canonical""")
+
+
+def _header_has_canonical(quarto_config: dict, project_dir: Path) -> bool:
+    """
+    Check whether the site's header includes declare a canonical link
+
+    Parameters
+    ----------
+    quarto_config
+        Contents of `_quarto.yml`.
+    project_dir
+        Base directory for relative header file paths.
+
+    Returns
+    -------
+    :
+        `True` when an inline entry or a header file declares a canonical link.
+    """
+    includes = quarto_config.get("format", {}).get("html", {}).get("include-in-header", [])
+    if not isinstance(includes, list):
+        includes = [includes]
+    for item in includes:
+        if isinstance(item, dict):
+            text = item.get("text")
+            path = item.get("file")
+        else:
+            text, path = None, item
+        if text is None and path is not None:
+            try:
+                text = (project_dir / str(path)).read_text(encoding="utf-8")
+            except OSError:
+                continue
+        if text and _CANONICAL_LINK.search(text):
+            return True
+    return False
 
 
 def resolve_base_url(
@@ -74,11 +112,12 @@ def page_url(base_url: str, page_path: str) -> str:
     return base_url + page_path
 
 
-def register(quarto_config: dict, config: Config, base_url: str | None) -> None:
+def register(quarto_config: dict, config: Config, base_url: str | None, project_dir: Path) -> None:
     """
     Register the filter that adds a canonical link to each rendered page
 
-    Register nothing when canonical links are disabled or `base_url` is empty.
+    Register nothing when canonical links are disabled, `base_url` is empty, or
+    the site's header includes already declare a canonical link.
 
     Parameters
     ----------
@@ -88,8 +127,12 @@ def register(quarto_config: dict, config: Config, base_url: str | None) -> None:
         Project configuration.
     base_url
         The site address with a trailing slash.
+    project_dir
+        Base directory for relative header file paths.
     """
     if not config.canonical_enabled or not base_url:
+        return
+    if _header_has_canonical(quarto_config, project_dir):
         return
     filters = quarto_config.setdefault("filters", [])
     if FILTER not in filters:

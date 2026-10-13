@@ -62,29 +62,42 @@ class TestRegister:
 
     def test_adds_the_filter_and_base_url(self, tmp_path):
         quarto: dict = {"filters": ["interlinks"]}
-        canonical.register(quarto, _config(tmp_path), self.BASE)
+        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
         assert quarto["filters"] == ["interlinks", "canonical"]
         assert quarto["gd-canonical-base-url"] == self.BASE
 
     def test_registers_once(self, tmp_path):
         quarto: dict = {"filters": ["canonical"]}
-        canonical.register(quarto, _config(tmp_path), self.BASE)
+        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
         assert quarto["filters"] == ["canonical"]
 
     def test_disabled(self, tmp_path):
         config = _config(tmp_path, "seo:\n  canonical:\n    enabled: false\n")
         quarto: dict = {"filters": []}
-        canonical.register(quarto, config, self.BASE)
+        canonical.register(quarto, config, self.BASE, tmp_path)
         assert quarto == {"filters": []}
 
     def test_without_a_base_url(self, tmp_path):
         quarto: dict = {}
-        canonical.register(quarto, _config(tmp_path), None)
+        canonical.register(quarto, _config(tmp_path), None, tmp_path)
         assert quarto == {}
+
+    @pytest.mark.parametrize("as_file", [False, True])
+    def test_keeps_a_canonical_link_from_the_site_header(self, tmp_path, as_file):
+        link = '<link rel="canonical" href="https://example.org/custom">'
+        if as_file:
+            (tmp_path / "head.html").write_text(link, encoding="utf-8")
+            entry: str | dict = "head.html"
+        else:
+            entry = {"text": link}
+        quarto: dict = {"format": {"html": {"include-in-header": [entry]}}}
+        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        assert "filters" not in quarto
+        assert "gd-canonical-base-url" not in quarto
 
     def test_unregister_reverses_register(self, tmp_path):
         quarto: dict = {"filters": ["interlinks"]}
-        canonical.register(quarto, _config(tmp_path), self.BASE)
+        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
         canonical.unregister(quarto)
         assert quarto == {"filters": ["interlinks"]}
 

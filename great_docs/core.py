@@ -13639,7 +13639,7 @@ anchor-sections: true
         self._write_title_partial(config)
 
         # Add each page's canonical link during Quarto rendering.
-        canonical.register(config, self._config, self._get_canonical_base_url())
+        canonical.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)
 
         # Apply explicit navbar ordering from config (if set)
         self._reorder_navbar(config)
