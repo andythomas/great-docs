@@ -12417,6 +12417,8 @@ def test_generate_cli_command_page_subcommand():
         result = docs._generate_cli_command_page(cmd_info, is_main=False)
 
         assert "my-tool build" in result
+        # This body class selects the monospaced command-title style.
+        assert "body-classes: doc-api-page doc-cli-api-page" in result
         assert "## Options" in result
         assert "&#45;&#45;watch" in result
         assert "Watch for changes." in result

@@ -3336,9 +3336,9 @@ body.quarto-dark .sidebar-item.sidebar-filter-match .sidebar-link {
    Terminal-like appearance for CLI documentation
    ===================================================== */
 
-/* Style CLI page titles like API reference pages */
-/* Applied via post-render.py to CLI reference pages */
-h1.title.cli-title {
+/* Select command titles by body class so extra Quarto title classes do not
+   affect styling. The CLI index uses `doc-cli-reference` and keeps its default title. */
+body.doc-cli-api-page h1.title {
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     font-size: 1.25rem;
     font-weight: 600;
@@ -3405,7 +3405,7 @@ h1.title.cli-title {
         border-radius: 4px;
     }
 
-    h1.title.cli-title {
+    body.doc-cli-api-page h1.title {
         font-size: 1.1rem;
     }
 }
@@ -3421,7 +3421,7 @@ h1.title.cli-title {
         line-height: 1.5;
     }
 
-    h1.title.cli-title {
+    body.doc-cli-api-page h1.title {
         font-size: 1rem;
     }
 }
@@ -3437,7 +3437,7 @@ h1.title.cli-title {
         border-radius: 3px;
     }
 
-    h1.title.cli-title {
+    body.doc-cli-api-page h1.title {
         font-size: 0.95rem;
     }
 }

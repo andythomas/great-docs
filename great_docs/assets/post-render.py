@@ -1219,46 +1219,6 @@ inject_version_badge()
 print("##GD:PASS:Version badge injected", flush=True)
 
 
-# ============================================================================
-# Process CLI reference pages to style titles like API reference pages
-
-
-def process_cli_reference_pages():
-    """
-    Process CLI reference pages to add consistent styling.
-
-    This adds the 'cli-title' class to h1 elements in CLI reference pages so they match the
-    monospaced font style of API reference pages.
-    """
-    cli_html_files = glob.glob("_site/reference/cli/**/*.html", recursive=True)
-
-    if not cli_html_files:
-        return
-
-    print(f"Processing {len(cli_html_files)} CLI reference pages...")
-
-    for html_file in cli_html_files:
-        with open(html_file, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        cmd_name = os.path.basename(html_file).replace(".html", "")
-
-        # Add 'cli-title' class to h1.title elements so command-page titles match the monospaced
-        # API object-page style. The CLI index is a listing page (like the API reference index),
-        # so its plain "CLI Reference" title is left unstyled to match the API index title.
-        if cmd_name != "index":
-            content = content.replace('<h1 class="title">', '<h1 class="title cli-title">')
-
-        with open(html_file, "w", encoding="utf-8") as file:
-            file.write(content)
-
-    print(f"Styled {len(cli_html_files)} CLI reference page titles")
-
-
-process_cli_reference_pages()
-print("##GD:PASS:CLI reference styled", flush=True)
-
-
 def disable_sidebar_collapse():
     """
     Strip Bootstrap collapse attributes from sidebar section toggles and ensure all sidebar sections
