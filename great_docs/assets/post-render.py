@@ -936,28 +936,12 @@ else:
     print(f"Index file not found: {index_file}")
 
 
-# Update quarto-secondary-nav-title to display "User Guide" text
-# This improves the mobile navigation by making it clear what the sidebar toggle reveals
 all_html_files = glob.glob("_site/**/*.html", recursive=True)
-print(f"Found {len(all_html_files)} HTML files to check for secondary nav title")
-
-# Use translated label for secondary nav if i18n is configured
-_user_guide_label = (_gd_options.get("i18n") or {}).get("user_guide", "User Guide")
+print(f"Found {len(all_html_files)} HTML files to check for the search title")
 
 for html_file in all_html_files:
     with open(html_file, "r", encoding="utf-8") as file:
         content = file.read()
-
-    modified = False
-
-    # Replace empty h1.quarto-secondary-nav-title with h5 containing "User Guide"
-    original_pattern = r'<h1 class="quarto-secondary-nav-title"></h1>'
-    replacement = f'<h5 class="quarto-secondary-nav-title">{_user_guide_label}</h5>'
-
-    if original_pattern in content:
-        print(f"Updating secondary nav title in: {html_file}")
-        content = content.replace(original_pattern, replacement)
-        modified = True
 
     # Remove the title attribute from #quarto-search to prevent a duplicate
     # tooltip: Quarto sets title="<search-label>" on the parent div, but the
@@ -966,12 +950,8 @@ for html_file in all_html_files:
     _search_title_pat = r'(<div\s+id="quarto-search"\s+class="[^"]*")\s+title="[^"]*"'
     new_content = re.sub(_search_title_pat, r"\1", content)
     if new_content != content:
-        content = new_content
-        modified = True
-
-    if modified:
         with open(html_file, "w", encoding="utf-8") as file:
-            file.write(content)
+            file.write(new_content)
 
 print("Finished processing all files")
 print("##GD:PASS:Reference pages processed", flush=True)
