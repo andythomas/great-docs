@@ -2267,7 +2267,8 @@ div.sourceCode:hover > .gd-code-nav .gd-code-copy,
        supply its prefix in the site's language. */
     body.doc-api-page .quarto-secondary-nav-title,
     body.doc-reference .quarto-secondary-nav-title {
-        margin-top: 0 !important;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
         padding-top: 0;
         padding-left: 0.5rem;
         /* Allow the title to shrink within the flex row so long names truncate. */
