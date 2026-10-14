@@ -28,6 +28,32 @@ class ChildrenStyle(Enum):
     linked = "linked"
 
 
+def _validate_members(members: list[str] | None, owner: object) -> None:
+    """
+    Reject member names that contain a module separator
+
+    Parameters
+    ----------
+    members
+        Names relative to the documented object, or `None` for no explicit list.
+    owner
+        Name of the documented object, or `None` for shared options.
+
+    Raises
+    ------
+    ValueError
+        If a member name contains `:`. Module separators are only valid in
+        top-level entry names.
+    """
+    for member in members or ():
+        if ":" in member:
+            of_owner = f" of `{owner}`" if owner is not None else ""
+            raise ValueError(
+                f"Member `{member}`{of_owner} contains `:`. Member names must be "
+                "relative to their parent object and cannot include a module separator."
+            )
+
+
 @dataclass(init=False)
 class SpecOptions(Walkable):
     """Documentation options that apply to a `SpecObject` element and, optionally, its members"""
@@ -79,6 +105,7 @@ class SpecOptions(Walkable):
             # else: field has no default — it must be in kwargs or will error
         object.__setattr__(self, "_fields_specified", tuple(kwargs.keys()))
         _validate_dynamic(self.dynamic, allow_none=True)
+        _validate_members(self.members, kwargs.get("name"))
 
     def replace(self, **changes: object) -> Self:
         """Return a copy with the given fields replaced

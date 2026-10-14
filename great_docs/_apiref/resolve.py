@@ -203,12 +203,6 @@ class _Resolver:
                 f" Does an object with the path {path} exist?"
             )
 
-    @staticmethod
-    def _clean_member_path(new: str) -> str:
-        if ":" in new:
-            return new.replace(":", ".")
-        return new
-
     def resolve_sections(self, sections: list[SpecSection]) -> list[Section]:
         """
         Resolve the `spec` sections into `content.Section`s, dropping any left empty
@@ -333,10 +327,8 @@ class _Resolver:
 
         children: list[object] = []
         for entry in self._fetch_members(el, obj):
-            relative_path = self._clean_member_path(entry)
-
             member_spec = (
-                SpecObject(name=relative_path)
+                SpecObject(name=entry)
                 .with_defaults(el.member_options)
                 .with_defaults(member_defaults)
             )

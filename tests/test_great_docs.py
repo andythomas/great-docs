@@ -7416,6 +7416,14 @@ def test_spec_object_page_path_without_colon():
     assert SpecObject(name="simple").page_path == "simple"
 
 
+def test_spec_object_rejects_colon_in_members():
+    """
+    Reject module separators in names relative to the parent object
+    """
+    with pytest.raises(ValueError, match=r"`a:b`.*`C`"):
+        SpecObject(name="C", members=["a:b"])
+
+
 def test_resolver_get_object_or_raise_missing(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     (tmp_path / "gdmiss").mkdir()
