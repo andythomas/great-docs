@@ -934,44 +934,6 @@ if os.path.exists(index_file):
     with open(index_file, "r", encoding="utf-8") as file:
         content = file.read()
 
-    # Convert tables to dl/dt/dd format
-    def convert_table_to_dl(match):
-        table_content = match.group(1)
-
-        # Extract all table rows
-        row_pattern = r"<tr[^>]*>(.*?)</tr>"
-        rows = re.findall(row_pattern, table_content, re.DOTALL)
-
-        dl_items = []
-        for row in rows:
-            # Extract the two td elements
-            td_pattern = r"<td[^>]*>(.*?)</td>"
-            tds = re.findall(td_pattern, row, re.DOTALL)
-
-            if len(tds) == 2:
-                link_content = tds[0].strip()
-                description = tds[1].strip()
-
-                dt = f"<dt>{link_content}</dt>"
-                dd = f'<dd style="margin-top: -3px;">{description}</dd>'
-                dl_items.append(f"{dt}\n{dd}")
-
-        dl_content = "\n\n".join(dl_items)
-        return f'<div class="caption-top table" style="border-top-style: dashed; border-bottom-style: dashed;">\n<dl style="margin-top: 10px;">\n\n{dl_content}\n\n</dl>\n</div>'
-
-    # Replace all table structures with dl/dt/dd
-    table_pattern = r'<table class="caption-top table">\s*<tbody>(.*?)</tbody>\s*</table>'
-    content = re.sub(table_pattern, convert_table_to_dl, content, flags=re.DOTALL)
-
-    # Remove redundant "API Reference" top-level nav item
-    # Find the nav structure and flatten it by removing the top-level wrapper
-    nav_pattern = (
-        r'(<nav[^>]*>.*?<h2[^>]*>.*?</h2>\s*<ul>\s*)<li><a[^>]*href="[^"]*#api-reference"[^>]*>'
-        r"API Reference</a>\s*<ul[^>]*>(.*?)</ul></li>\s*(</ul>\s*</nav>)"
-    )
-    nav_replacement = r"\1\2\3"
-    content = re.sub(nav_pattern, nav_replacement, content, flags=re.DOTALL)
-
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
 
