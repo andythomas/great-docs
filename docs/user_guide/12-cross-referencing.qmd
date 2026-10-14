@@ -401,7 +401,7 @@ csl: nature.csl
 ### Localized headings
 
 If your site sets a [language](internationalization.qmd), the auto-generated references heading is
-localized automatically. So a French site (`site.language: fr`) renders **Les références**, with the
+localized automatically. So a French site (`site.lang: fr`) renders **Les références**, with the
 entries themselves formatted for that language too.
 
 ::: {.callout-note}

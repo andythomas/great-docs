@@ -2118,13 +2118,13 @@ class TestAddTagsToNavbar:
     def test_no_quarto_yml_returns_early(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         gd._add_tags_to_navbar()
 
     def test_no_navbar_returns_early(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         quarto = gd.build_dir / "_quarto.yml"
         quarto.write_text("website:\n  title: Test\n", encoding="utf-8")
         gd._add_tags_to_navbar()
@@ -2132,7 +2132,7 @@ class TestAddTagsToNavbar:
     def test_no_left_key_returns_early(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         quarto = gd.build_dir / "_quarto.yml"
         quarto.write_text(
             "website:\n  navbar:\n    right:\n      - icon: github\n", encoding="utf-8"
@@ -2142,7 +2142,7 @@ class TestAddTagsToNavbar:
     def test_already_present_skips(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         quarto = gd.build_dir / "_quarto.yml"
         quarto.write_text(
             "website:\n  navbar:\n    left:\n      - text: Site Tags\n        href: tags/index.qmd\n",
@@ -2155,7 +2155,7 @@ class TestAddTagsToNavbar:
     def test_adds_tags_link(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         quarto = gd.build_dir / "_quarto.yml"
         quarto.write_text(
             "website:\n  navbar:\n    left:\n      - text: Reference\n        href: reference/index.qmd\n",
@@ -2257,7 +2257,7 @@ class TestGenerateCliCommandPage:
     def test_nargs_minus1_gets_ellipsis(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         cli_info = self._make_cli_info(
             arguments=[{"name": "FILES", "name_display": "FILES", "required": True, "nargs": -1}]
         )
@@ -2267,7 +2267,7 @@ class TestGenerateCliCommandPage:
     def test_hidden_option_skipped(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         cli_info = self._make_cli_info(
             options=[
                 {"name": "--verbose", "name_display": "--verbose", "hidden": True, "help": "debug"},
@@ -2286,7 +2286,7 @@ class TestGenerateCliCommandPage:
     def test_option_with_type_and_default(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         cli_info = self._make_cli_info(
             options=[
                 {
@@ -2306,7 +2306,7 @@ class TestGenerateCliCommandPage:
     def test_required_option(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         cli_info = self._make_cli_info(
             options=[
                 {
@@ -2323,7 +2323,7 @@ class TestGenerateCliCommandPage:
     def test_envvar_option(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         cli_info = self._make_cli_info(
             options=[
                 {
@@ -2340,7 +2340,7 @@ class TestGenerateCliCommandPage:
     def test_envvar_list_joined(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         cli_info = self._make_cli_info(
             options=[
                 {
@@ -2463,7 +2463,7 @@ class TestGeneratePackageInfoPage:
         gd = _make_gd(tmp_path)
         _patch_cfg(monkeypatch, gd, "package_info_page", True)
         _patch_cfg(monkeypatch, gd, "is_python_project", True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         monkeypatch.setattr(
             gd,
             "_get_package_metadata",
@@ -2476,7 +2476,7 @@ class TestGeneratePackageInfoPage:
         gd.build_dir.mkdir(parents=True, exist_ok=True)
         _patch_cfg(monkeypatch, gd, "package_info_page", True)
         _patch_cfg(monkeypatch, gd, "is_python_project", True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         monkeypatch.setattr(
             gd,
             "_get_package_metadata",
@@ -2502,7 +2502,7 @@ class TestGeneratePackageInfoPage:
         gd.build_dir.mkdir(parents=True, exist_ok=True)
         _patch_cfg(monkeypatch, gd, "package_info_page", True)
         _patch_cfg(monkeypatch, gd, "is_python_project", True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         monkeypatch.setattr(
             gd,
             "_get_package_metadata",
@@ -3042,7 +3042,7 @@ class TestGenerateTagsJson:
     def _setup_gd(self, tmp_path, monkeypatch):
         gd = _make_gd(tmp_path)
         gd.build_dir.mkdir(parents=True, exist_ok=True)
-        _patch_cfg(monkeypatch, gd, "language", "en")
+        _patch_cfg(monkeypatch, gd, "lang", "en")
         _patch_cfg(monkeypatch, gd, "tags_shadow", {"internal"})
         _patch_cfg(monkeypatch, gd, "sections", [])
         _patch_cfg(monkeypatch, gd, "tags_icons", {})

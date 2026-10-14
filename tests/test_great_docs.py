@@ -17925,7 +17925,7 @@ def test_bibliography_does_not_set_reference_section_title():
         docs_dir.mkdir()
         (docs_dir / "references.bib").write_text("@book{k, title={T}}\n", encoding="utf-8")
         (root / "great-docs.yml").write_text(
-            "package: mypkg\nbibliography: docs/references.bib\nsite:\n  language: fr\n",
+            "package: mypkg\nbibliography: docs/references.bib\nsite:\n  lang: fr\n",
             encoding="utf-8",
         )
 
@@ -17940,7 +17940,8 @@ def test_bibliography_does_not_set_reference_section_title():
 
         # The bibliography is still wired up...
         assert config.get("bibliography") == "references.bib"
-        assert config.get("lang") == "fr"
+        assert config["format"]["html"]["lang"] == "fr"
+        assert "lang" not in config
 
         # ...but the references heading is left to Quarto (no explicit override).
         assert "reference-section-title" not in config
@@ -41664,7 +41665,7 @@ def test_derive_page_title_numeric_prefix():
 def test_translate_navbar_labels_en():
     """English language does not modify labels."""
     with tempfile.TemporaryDirectory() as tmp:
-        (Path(tmp) / "great-docs.yml").write_text("language: en\n")
+        (Path(tmp) / "great-docs.yml").write_text("site:\n  lang: en\n")
         gd = GreatDocs(project_path=tmp)
         config = {"website": {"navbar": {"left": [{"text": "User Guide", "href": "user-guide/"}]}}}
         gd._translate_navbar_labels(config)
@@ -41674,7 +41675,7 @@ def test_translate_navbar_labels_en():
 def test_translate_navbar_labels_non_en():
     """Non-English language translates known labels."""
     with tempfile.TemporaryDirectory() as tmp:
-        (Path(tmp) / "great-docs.yml").write_text("site:\n  language: de\n")
+        (Path(tmp) / "great-docs.yml").write_text("site:\n  lang: de\n")
         gd = GreatDocs(project_path=tmp)
         config = {
             "website": {

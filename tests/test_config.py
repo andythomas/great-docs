@@ -238,24 +238,45 @@ class TestScalarProperties:
         assert Config(tmp_project).funding is None
 
     def test_site_default(self, tmp_project: Path):
-        # `site` is now a pure Quarto passthrough; great-docs-owned keys
-        # (language, show_dates, ...) are top-level, not under `site`.
+        # `site` is a Quarto passthrough; great-docs-owned keys
+        # (show_dates, ...) are top-level, not under `site`.
         assert Config(tmp_project).site == {
             "theme": "flatly",
             "toc": True,
             "toc-depth": 2,
             "html-math-method": "katex",
+            "lang": "en",
         }
 
     def test_jupyter_default(self, tmp_project: Path):
         assert Config(tmp_project).jupyter == "python3"
 
-    def test_language_default(self, tmp_project: Path):
-        assert Config(tmp_project).language == "en"
+    def test_lang_default(self, tmp_project: Path):
+        assert Config(tmp_project).lang == "en"
 
-    def test_language_custom(self, tmp_project: Path):
+    def test_lang_custom(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "site:\n  lang: fr\n")
+        assert cfg.lang == "fr"
+        assert cfg.site["lang"] == "fr"
+
+    def test_site_language_reads_as_site_lang(self, tmp_project: Path):
         cfg = _make_config(tmp_project, "site:\n  language: fr\n")
-        assert cfg.language == "fr"
+        assert cfg.lang == "fr"
+        assert cfg.site["lang"] == "fr"
+        assert "language" not in cfg.site
+
+    def test_site_lang_wins_over_site_language(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "site:\n  lang: de\n  language: fr\n")
+        assert cfg.lang == "de"
+
+    def test_top_level_language_is_ignored(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "language: fr\n")
+        assert cfg.lang == "en"
+
+    def test_user_config_keeps_what_the_user_wrote(self, tmp_project: Path):
+        # Lint reports the deprecated spelling, so it must survive the load.
+        cfg = _make_config(tmp_project, "site:\n  language: fr\n")
+        assert cfg._user_config == {"site": {"language": "fr"}}
 
     def test_attribution_default(self, tmp_project: Path):
         assert Config(tmp_project).attribution is True
@@ -1336,11 +1357,9 @@ class TestShouldSplitMethods:
 
 
 def test_legacy_site_keys_lift_to_top_level(tmp_path: Path):
-    cfg = _make_config(tmp_path, "site:\n  show_dates: true\n  language: fr\n")
+    cfg = _make_config(tmp_path, "site:\n  show_dates: true\n")
     assert cfg.show_dates is True
-    assert cfg.language == "fr"
     assert "show_dates" not in cfg.site
-    assert "language" not in cfg.site
 
 
 def test_explicit_top_level_wins_over_legacy_site(tmp_path: Path):
@@ -1383,6 +1402,12 @@ def test_arbitrary_site_key_reaches_format_html(tmp_path: Path):
     assert html["grid"] == {"sidebar-width": "250px"}
     theme = html["theme"]
     assert (theme[0] if isinstance(theme, list) else theme) == "flatly"
+
+
+def test_site_language_reaches_format_html_as_lang(tmp_path: Path):
+    cfg = _quarto_config_for(tmp_path, "site:\n  language: fr\n")
+    assert cfg["format"]["html"]["lang"] == "fr"
+    assert "language" not in cfg["format"]["html"]
 
 
 def test_legacy_site_key_does_not_leak_into_format_html(tmp_path: Path):
@@ -1595,7 +1620,6 @@ class TestSingleSourceInvariant:
             "parser",
             "dynamic",
             "jupyter",
-            "language",
             "date_format",
             "github_style",
             "homepage",
@@ -1661,7 +1685,7 @@ def _make_config(tmp_path: Path, yaml_text: str) -> Config:
     return Config(tmp_path)
 
 
-# _lift_legacy_site_keys when site is not a dict
+# Legacy key normalisation when site is not a dict
 
 
 class TestLiftLegacySiteKeys:

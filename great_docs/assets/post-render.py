@@ -2492,7 +2492,7 @@ print("##GD:PASS:SEO enhancements applied", flush=True)
 
 _i18n_bundle = _gd_options.get("i18n")
 _i18n_rtl = _gd_options.get("rtl", False)
-_i18n_language = _gd_options.get("language", "en")
+_i18n_language = _gd_options.get("lang", "en")
 
 if _i18n_bundle and _i18n_language != "en":
     import html as _html_mod

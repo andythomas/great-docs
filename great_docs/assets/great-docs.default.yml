@@ -245,22 +245,21 @@ funding: null
 # basename separately), `code-copy` (disabled — great-docs supplies its own
 # copy-code widget), `html-table-processing` (disabled — required for GT
 # table styling), and `mermaid` (fixed to the light theme — dark mode is
-# handled via a CSS container). The great-docs page/UI settings that used to
-# live here (language, show_dates, date_format, show_author, show_security)
-# are top-level keys below; setting them under `site` still works and is
-# lifted automatically.
+# handled via a CSS container). The great-docs page settings that used to
+# live here (show_dates, date_format, show_author, show_security) are
+# top-level keys below; setting them under `site` still works and is lifted
+# automatically.
 site:
   theme: flatly # Quarto theme
   toc: true # Show table of contents
   toc-depth: 2 # TOC heading depth
   html-math-method: katex # HTML math renderer (e.g. mathjax)
+  # Site language (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans").
+  # Translates navbar labels, widget text, tooltips, and accessibility labels.
+  lang: en
 
 # Page Metadata
 # -------------
-# Language for UI text (BCP 47 code, e.g., "en", "fr", "de", "ja", "zh-Hans")
-# Translates navbar labels, widget text, tooltips, and accessibility labels
-language: en
-
 # Show page timestamps in footer
 show_dates: false
 

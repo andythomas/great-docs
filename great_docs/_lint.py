@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ._builtin.directives import DIRECTIVES
 from ._interlinks import AliasClaims, LoadedSources, build_index, load_sources
@@ -88,7 +88,8 @@ def run_lint(
         Path to the project root directory.
     checks
         Set of check names to run. If None, all checks are run.
-        Valid names: "docstrings", "cross-refs", "style", "directives".
+        Valid names: "config", "docstrings", "cross-refs", "style",
+        "directives", "stale-versions".
     quiet
         If True, suppress discovery/introspection print output.
     config_path
@@ -105,7 +106,7 @@ def run_lint(
     from .core import GreatDocs
 
     result = LintResult()
-    all_checks = {"docstrings", "cross-refs", "style", "directives", "stale-versions"}
+    all_checks = {"config", "docstrings", "cross-refs", "style", "directives", "stale-versions"}
 
     if checks is None:
         checks = all_checks
@@ -135,6 +136,17 @@ def run_lint(
         if quiet:
             sys.stdout = _saved_stdout
         raise
+
+    # Configuration problems are reported even if the package cannot be loaded.
+    if "config" in checks:
+        _check_config_keys(docs._config._user_config, result)
+
+    # The config check reads only great-docs.yml, so it also works on projects
+    # without a Python package.
+    if checks <= {"config"}:
+        if quiet:
+            sys.stdout = _saved_stdout
+        return result
 
     if not package_name:
         if quiet:
@@ -230,6 +242,42 @@ def run_lint(
         _check_stale_versions(project_root, result, docs.layout)
 
     return result
+
+
+def _check_config_keys(user_config: dict[str, Any], result: LintResult) -> None:
+    """
+    Report language keys that great-docs reads under another name or not at all
+
+    `site.language` still works but is spelled `site.lang`, Quarto's key. A
+    top-level `language` string is ignored. A top-level `language` mapping is
+    left alone, since that is the shape of Quarto's own `language` key.
+
+    Parameters
+    ----------
+    user_config
+        The configuration as written in `great-docs.yml`.
+    result
+        The lint result to append issues to.
+    """
+    site = user_config.get("site")
+    if isinstance(site, dict) and "language" in site:
+        result.issues.append(
+            LintIssue(
+                check="config-key",
+                severity="warning",
+                symbol="site.language",
+                message="Rename `site.language` to `site.lang`.",
+            )
+        )
+    if isinstance(user_config.get("language"), str):
+        result.issues.append(
+            LintIssue(
+                check="config-key",
+                severity="warning",
+                symbol="language",
+                message="The top-level `language` key is ignored. Set the site language with `site.lang`.",
+            )
+        )
 
 
 def _get_docstring(obj) -> str | None:

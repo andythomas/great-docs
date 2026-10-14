@@ -1976,18 +1976,18 @@ PACKAGE_DESCRIPTIONS: dict[str, str] = {
         "that the raw rendering handles complex multi-file skill structures."
     ),
     "gdtest_i18n_french": (
-        "i18n test with French (Latin script). Sets site.language: fr and enables "
+        "i18n test with French (Latin script). Sets site.lang: fr and enables "
         "announcement banner, GitHub widget, user guide, dark mode, back-to-top, "
         "copy code, page metadata, sidebar filter, and reference switcher. "
         "Verifies all UI strings render in French."
     ),
     "gdtest_i18n_japanese": (
-        "i18n test with Japanese (CJK script). Sets site.language: ja and enables "
+        "i18n test with Japanese (CJK script). Sets site.lang: ja and enables "
         "every translatable widget. Verifies CJK characters render correctly "
         "across navbar labels, tooltips, timestamps, and accessibility attributes."
     ),
     "gdtest_i18n_arabic": (
-        "i18n test with Arabic (RTL script). Sets site.language: ar and enables "
+        "i18n test with Arabic (RTL script). Sets site.lang: ar and enables "
         "every translatable widget. Verifies dir=rtl on the HTML element, "
         "right-to-left layout mirroring, flipped sidebar, repositioned buttons, "
         "and all UI strings in Arabic."

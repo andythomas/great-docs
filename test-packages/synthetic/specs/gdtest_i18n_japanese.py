@@ -2,7 +2,7 @@
 gdtest_i18n_japanese — Tests i18n with Japanese (CJK script).
 
 Dimensions: K51
-Focus: site.language: ja — all UI widgets render Japanese translations.
+Focus: site.lang: ja — all UI widgets render Japanese translations.
 All docstrings, user guide, and metadata are in Japanese.
 """
 
@@ -34,7 +34,7 @@ SPEC = {
     },
     "config": {
         "site": {
-            "language": "ja",
+            "lang": "ja",
         },
         "announcement": "\u3088\u3046\u3053\u305d\uff01\u65b0\u3057\u3044\u30af\u30a4\u30c3\u30af\u30b9\u30bf\u30fc\u30c8\u30ac\u30a4\u30c9\u3092\u3054\u89a7\u304f\u3060\u3055\u3044\u3002",
         "github_url": "https://github.com/test-org/gdtest-i18n-japanese",

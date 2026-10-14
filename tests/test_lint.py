@@ -10,6 +10,7 @@ from great_docs._interlinks.sphinx_inventory import Inventory, InventoryEntry
 from great_docs._lint import (
     LintIssue,
     LintResult,
+    _check_config_keys,
     _check_cross_references,
     _check_directive_consistency,
     _check_docstring_style,
@@ -834,6 +835,35 @@ class TestCheckDirectiveConsistency:
         assert len(result.issues) == 0
 
 
+class TestCheckConfigKeys:
+    def _issues(self, user_config: dict) -> list[LintIssue]:
+        result = LintResult()
+        _check_config_keys(user_config, result)
+        return result.issues
+
+    def test_site_language_names_site_lang(self):
+        [issue] = self._issues({"site": {"language": "fr"}})
+        assert (issue.check, issue.severity, issue.symbol) == (
+            "config-key",
+            "warning",
+            "site.language",
+        )
+        assert "site.lang" in issue.message
+
+    def test_top_level_language_is_reported_as_ignored(self):
+        [issue] = self._issues({"language": "fr"})
+        assert (issue.check, issue.severity, issue.symbol) == ("config-key", "warning", "language")
+        assert "ignored" in issue.message
+        assert "site.lang" in issue.message
+
+    def test_top_level_language_mapping_is_not_reported(self):
+        # A mapping is Quarto's `language` (string overrides), not a language tag.
+        assert self._issues({"language": {"fr": {"toc-title-document": "Sommaire"}}}) == []
+
+    def test_site_lang_is_not_reported(self):
+        assert self._issues({"site": {"lang": "fr"}}) == []
+
+
 class TestRunLint:
     def test_unknown_check_name(self, tmp_path):
         result = run_lint(tmp_path, checks={"bogus-check"})
@@ -1035,6 +1065,34 @@ class TestRunLint:
         result = run_lint(tmp_path, checks={"style"})
 
         assert any(i.check == "style-mismatch" for i in result.issues)
+
+    @patch("griffe.load")
+    @patch("great_docs.core.GreatDocs")
+    def test_config_check_runs_alone(self, mock_gd_cls, mock_griffe_load, tmp_path):
+        mock_gd = MagicMock()
+        mock_gd._detect_package_name.return_value = "mypkg"
+        mock_gd._normalize_package_name.return_value = "mypkg"
+        mock_gd._get_package_exports.return_value = ["func_a"]
+        mock_gd._config.__getitem__.return_value = "numpy"
+        mock_gd._config._user_config = {"site": {"language": "fr"}}
+        mock_gd_cls.return_value = mock_gd
+
+        # func_a has no docstring, so the docstrings check would report it.
+        mock_pkg = MagicMock()
+        mock_pkg.members = {"func_a": _make_griffe_obj(docstring=None)}
+        mock_griffe_load.return_value = mock_pkg
+
+        result = run_lint(tmp_path, checks={"config"})
+
+        assert [i.check for i in result.issues] == ["config-key"]
+
+    def test_config_check_needs_no_python_package(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/foo\n\ngo 1.22\n")
+        (tmp_path / "great-docs.yml").write_text("site:\n  lang: fr\n")
+
+        result = run_lint(tmp_path, checks={"config"})
+
+        assert result.issues == []
 
     @patch("griffe.load")
     @patch("great_docs.core.GreatDocs")

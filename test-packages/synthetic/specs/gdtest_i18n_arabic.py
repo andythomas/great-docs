@@ -2,7 +2,7 @@
 gdtest_i18n_arabic — Tests i18n with Arabic (RTL script).
 
 Dimensions: K52
-Focus: site.language: ar — all UI widgets render Arabic translations and the
+Focus: site.lang: ar — all UI widgets render Arabic translations and the
 page layout is mirrored for right-to-left reading.
 All docstrings, user guide, and metadata are in Arabic.
 """
@@ -38,7 +38,7 @@ SPEC = {
     },
     "config": {
         "site": {
-            "language": "ar",
+            "lang": "ar",
         },
         "announcement": "\u0645\u0631\u062d\u0628\u0627\u064b! \u0627\u0637\u0644\u0639 \u0639\u0644\u0649 \u062f\u0644\u064a\u0644 \u0627\u0644\u0628\u062f\u0621 \u0627\u0644\u0633\u0631\u064a\u0639 \u0627\u0644\u062c\u062f\u064a\u062f.",
         "github_url": "https://github.com/test-org/gdtest-i18n-arabic",

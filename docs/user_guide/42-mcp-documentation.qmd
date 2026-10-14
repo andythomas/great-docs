@@ -353,7 +353,7 @@ participate automatically. When you set a language in `great-docs.yml`:
 
 ```{.yaml filename="docs/great-docs.yml"}
 site:
-  language: ja
+  lang: ja
 ```
 
 All UI labels on MCP pages (section headings like "Parameters", "Arguments", badges like

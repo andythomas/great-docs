@@ -56,7 +56,6 @@ DEFAULT_CONFIG: dict[str, Any] = _load_default_config()
 # top-level keys now; any found under `site` at load are lifted out so `site`
 # stays a clean Quarto passthrough.
 _LEGACY_SITE_KEYS: tuple[str, ...] = (
-    "language",
     "show_dates",
     "date_format",
     "show_author",
@@ -130,44 +129,46 @@ class Config:
                 else:
                     self._user_config = cast("dict[str, Any]", user_config)
                     # Deep merge user config with defaults
-                    config = self._merge(config, self._user_config)
+                    config = self._merge(config, self._normalize_legacy_keys(self._user_config))
             except ValueError as e:
                 print(f"Warning: Error parsing great-docs.yml: {e}")
             except OSError as e:
                 print(f"Warning: Could not read great-docs.yml: {e}")
 
-        config = self._lift_legacy_site_keys(config)
         config = self._normalize_shorthands(config)
         return config
 
-    def _lift_legacy_site_keys(self, config: dict[str, Any]) -> dict[str, Any]:
-        """Move legacy great-docs keys out of `site` to the top level
+    @staticmethod
+    def _normalize_legacy_keys(user_config: dict[str, Any]) -> dict[str, Any]:
+        """
+        Rewrite legacy spellings in a user configuration to their current keys
 
-        Older configs placed language/date settings under `site`; those are
-        great-docs-owned, not Quarto `format.html` keys, so they now live at
-        the top level. Any that still appear under `site` are lifted out so
-        `site` stays a clean Quarto passthrough. An explicit top-level value
-        wins over a legacy `site` value on conflict.
+        `site.language` becomes `site.lang`, the key Quarto uses for the
+        language tag. The great-docs keys that older configs placed under
+        `site` (`_LEGACY_SITE_KEYS`) move to the top level, keeping `site` a
+        clean Quarto passthrough. On conflict, the current spelling wins.
 
         Parameters
         ----------
-        config
-            The merged configuration.
+        user_config
+            The configuration as read from `great-docs.yml`. It is not mutated.
 
         Returns
         -------
         dict
-            The configuration with the legacy keys normalized to the top level.
+            The configuration with legacy keys rewritten.
         """
-        site = config.get("site")
+        site = user_config.get("site")
         if not isinstance(site, dict):
-            return config
+            return user_config
 
+        config = dict(user_config)
+        site = config["site"] = dict(cast("dict[str, Any]", site))
+        if "language" in site:
+            site.setdefault("lang", site.pop("language"))
         for key in _LEGACY_SITE_KEYS:
             if key in site:
-                value = site.pop(key)
-                if key not in self._user_config:
-                    config[key] = value
+                config.setdefault(key, site.pop(key))
         return config
 
     # Options accepting a bool shorthand that collapses their dict subtree.
@@ -959,9 +960,9 @@ class Config:
         return bool(self["show_security"])
 
     @property
-    def language(self) -> str:
-        """Get the site UI language (BCP 47 code, default 'en')."""
-        return self["language"]
+    def lang(self) -> str:
+        """The site language as a BCP 47 tag, from `site.lang`"""
+        return self["site.lang"]
 
     @property
     def team_author(self) -> dict[str, Any] | None:
