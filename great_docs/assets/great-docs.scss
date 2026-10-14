@@ -2365,6 +2365,12 @@ div.sourceCode:hover > .gd-code-nav .gd-code-copy,
         flex-direction: column;
     }
 
+    /* Reference object pages have no margin content to reposition. Use block
+       layout so the page-action buttons can float beside the documentation. */
+    body.doc-api-page #quarto-document-content {
+        display: block;
+    }
+
     /* The column-margin content should appear after main content */
     .column-margin {
         order: 2;
@@ -5595,6 +5601,19 @@ html[data-bs-theme="dark"] a.gd-view-md-btn:hover {
     }
     .gd-copy-page-btn {
         padding: 4px 6px;
+    }
+    /* Reference pages show their title in the navigation bar. Float the
+       buttons beside the first line of documentation to avoid a separate row
+       below the title. */
+    body.doc-api-page .gd-copy-page {
+        float: right;
+        margin-left: 12px;
+        margin-bottom: 0;
+    }
+    /* An opening signature box would extend beneath the floating buttons.
+       `flow-root` keeps the box beside them without overlap. */
+    body.doc-api-page #title-block-header + .doc-signature {
+        display: flow-root;
     }
 }
 
