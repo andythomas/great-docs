@@ -12,7 +12,8 @@ import dataclasses
 from dataclasses import dataclass, field
 from dataclasses import fields as dc_fields
 from enum import Enum
-from typing import Any, Self, cast
+from functools import cached_property
+from typing import Any, Final, Self, cast
 
 from ._walkable import MISSING, MissingType, Walkable
 from .introspect import _validate_dynamic
@@ -120,7 +121,17 @@ class SpecObject(SpecOptions):
     """A Python object to be located and documented, specified by name"""
 
     kind: str = "object"
-    name: str = ""
+    name: Final[str] = ""
+
+    @cached_property
+    def page_path(self) -> str:
+        """
+        Return the entry's reference page path without a directory or suffix
+
+        Replace the module separator in `module:Item` with a dot to produce
+        `module.Item`. Keep the entry name unchanged for object lookup.
+        """
+        return self.name.replace(":", ".")
 
 
 @dataclass

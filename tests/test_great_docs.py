@@ -7402,14 +7402,18 @@ def test_enclosing_page_no_page():
             ctx_node.reset(token)
 
 
-def test_resolver_clean_member_path_with_colon():
-    result = _Resolver._clean_member_path("pkg.mod:MyClass.method")
-    assert result == "pkg.mod.MyClass.method"
+def test_spec_object_page_path_replaces_colon():
+    """
+    Replace the module separator with a dot in the page path
+    """
+    assert SpecObject(name="pkg.mod:MyClass").page_path == "pkg.mod.MyClass"
 
 
-def test_resolver_clean_member_path_no_colon():
-    result = _Resolver._clean_member_path("simple")
-    assert result == "simple"
+def test_spec_object_page_path_without_colon():
+    """
+    Preserve entry names without a module separator in page paths
+    """
+    assert SpecObject(name="simple").page_path == "simple"
 
 
 def test_resolver_get_object_or_raise_missing(tmp_path, monkeypatch):
