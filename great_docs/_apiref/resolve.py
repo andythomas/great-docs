@@ -203,12 +203,6 @@ class _Resolver:
                 f" Does an object with the path {path} exist?"
             )
 
-    @staticmethod
-    def _clean_member_path(new: str) -> str:
-        if ":" in new:
-            return new.replace(":", ".")
-        return new
-
     def resolve_sections(self, sections: list[SpecSection]) -> list[Section]:
         """
         Resolve the `spec` sections into `content.Section`s, dropping any left empty
@@ -274,7 +268,7 @@ class _Resolver:
             doc = self._resolve_object(el)
             if doc is None:
                 return None
-            return Page(contents=cast("list[Any]", [doc]), path=self._clean_member_path(doc.name))
+            return Page(contents=cast("list[Any]", [doc]), path=el.page_path)
         if isinstance(el, SpecText):
             return self._resolve_text(el)
         raise TypeError(f"Cannot resolve section entry of type: {type(el)}")
@@ -333,10 +327,8 @@ class _Resolver:
 
         children: list[object] = []
         for entry in self._fetch_members(el, obj):
-            relative_path = self._clean_member_path(entry)
-
             member_spec = (
-                SpecObject(name=relative_path)
+                SpecObject(name=entry)
                 .with_defaults(el.member_options)
                 .with_defaults(member_defaults)
             )

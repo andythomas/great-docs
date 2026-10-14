@@ -1050,6 +1050,33 @@ api-reference:
         assert "https://example.com/docs/reference/foo.html" in content
 
 
+def test_generate_llms_txt_sanitizes_colons():
+    """Colons in `module:Item` entry names must be sanitized in llms.txt URLs."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+
+        # Create great-docs directory and _quarto.yml with API reference config
+        great_docs_dir = Path(tmp_dir) / "great-docs"
+        great_docs_dir.mkdir()
+        quarto_yml = great_docs_dir / "_quarto.yml"
+        quarto_yml.write_text("""
+api-reference:
+  package: test_package
+  sections:
+    - title: Devices
+      contents:
+        - devices.keithley:Keithley2400
+""")
+
+        # Generate llms.txt
+        docs._generate_llms_txt()
+
+        content = (great_docs_dir / "llms.txt").read_text()
+        assert (
+            "- [devices.keithley:Keithley2400](reference/devices.keithley.Keithley2400.html)"
+        ) in content
+
+
 def test_get_github_repo_info():
     """Test GitHub repository info extraction from pyproject.toml."""
     # Test on great-docs's own pyproject.toml
@@ -7375,14 +7402,26 @@ def test_enclosing_page_no_page():
             ctx_node.reset(token)
 
 
-def test_resolver_clean_member_path_with_colon():
-    result = _Resolver._clean_member_path("pkg.mod:MyClass.method")
-    assert result == "pkg.mod.MyClass.method"
+def test_spec_object_page_path_replaces_colon():
+    """
+    Replace the module separator with a dot in the page path
+    """
+    assert SpecObject(name="pkg.mod:MyClass").page_path == "pkg.mod.MyClass"
 
 
-def test_resolver_clean_member_path_no_colon():
-    result = _Resolver._clean_member_path("simple")
-    assert result == "simple"
+def test_spec_object_page_path_without_colon():
+    """
+    Preserve entry names without a module separator in page paths
+    """
+    assert SpecObject(name="simple").page_path == "simple"
+
+
+def test_spec_object_rejects_colon_in_members():
+    """
+    Reject module separators in names relative to the parent object
+    """
+    with pytest.raises(ValueError, match=r"`a:b`.*`C`"):
+        SpecObject(name="C", members=["a:b"])
 
 
 def test_resolver_get_object_or_raise_missing(tmp_path, monkeypatch):
@@ -15948,6 +15987,45 @@ def test_update_sidebar_from_sections_dict_items():
 
         assert {"text": "BigClass", "href": "reference/BigClass.qmd"} in section["contents"]
         assert {"text": "simple_func", "href": "reference/simple_func.qmd"} in section["contents"]
+
+
+def test_update_sidebar_from_sections_sanitizes_colons():
+    """Colons in `module:Item` entry names must be sanitized in sidebar hrefs."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs = GreatDocs(project_path=tmp_dir)
+
+        quarto_yml = docs.build_dir / "_quarto.yml"
+        quarto_yml.parent.mkdir(parents=True, exist_ok=True)
+
+        config = {
+            "project": {"type": "website"},
+            "website": {"sidebar": []},
+            "api-reference": {
+                "package": "mypkg",
+                "sections": [
+                    {
+                        "title": "Devices",
+                        "desc": "",
+                        "contents": ["devices.keithley:Keithley2400"],
+                    },
+                ],
+            },
+        }
+
+        with open(quarto_yml, "w") as f:
+            write_yaml(config, f)
+
+        docs._update_sidebar_from_sections()
+
+        with open(quarto_yml, "r") as f:
+            result = read_yaml(f)
+
+        section = result["website"]["sidebar"][0]["contents"][1]
+        assert {
+            "text": "devices.keithley:Keithley2400",
+            "href": "reference/devices.keithley.Keithley2400.qmd",
+        } in section["contents"]
 
 
 def test_update_sidebar_no_api_reference():
