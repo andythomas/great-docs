@@ -2,6 +2,7 @@ import griffe as gf
 import pytest
 
 from great_docs._apiref import RenderDocFunction, content
+from great_docs._apiref._settings import Settings, active_settings
 from great_docs._builtin.directives import _callouts
 from great_docs._builtin.directives._callouts import add_callouts, convert_directives
 from great_docs._builtin.directives._rst_directives import convert_rst_directives
@@ -54,6 +55,32 @@ def test_version_directive_without_version_uses_generic_title():
     assert convert_directives("%versionadded") == (
         '::: {.callout-note title="Added in version"}\n\n:::'
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "lang", "title"),
+    [
+        ("versionadded", "fr", "Ajouté dans la version 2.0"),
+        ("versionchanged", "fr", "Modifié dans la version 2.0"),
+        ("deprecated", "fr", "Obsolète depuis la version 2.0"),
+        # Japanese places the version inside the label
+        ("versionadded", "ja", "バージョン 2.0 で追加"),
+        ("versionchanged", "ja", "バージョン 2.0 で変更"),
+        ("deprecated", "ja", "バージョン 2.0 で非推奨"),
+    ],
+)
+def test_version_titles_use_the_site_language(name: str, lang: str, title: str):
+    with active_settings(Settings(lang=lang)):
+        result = convert_directives(f"%{name} 2.0 Description.")
+
+    assert f'title="{title}"' in result
+
+
+def test_version_title_without_version_drops_the_placeholder():
+    with active_settings(Settings(lang="ja")):
+        result = convert_directives("%versionadded")
+
+    assert 'title="バージョン で追加"' in result
 
 
 def test_directive_stops_before_dedented_prose():

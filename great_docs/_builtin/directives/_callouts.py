@@ -7,6 +7,7 @@ from textwrap import dedent
 
 import griffe as gf
 
+from great_docs._apiref._globals import translate_versioned
 from great_docs._utils import fenced_lines
 from great_docs.hooks import on_object_resolved
 from great_docs.pandoc.blocks import Div
@@ -22,10 +23,11 @@ _CALLOUT_MAP: dict[str, str] = {
     "hint": "tip",
 }
 
+# Translate version callout titles by directive name.
 _VERSION_LABELS: dict[str, str] = {
-    "versionadded": "Added in version",
-    "versionchanged": "Changed in version",
-    "deprecated": "Deprecated since version",
+    "versionadded": "added_in_version",
+    "versionchanged": "changed_in_version",
+    "deprecated": "deprecated_since_version",
 }
 
 _VERSION_DIRECTIVES = frozenset(_VERSION_LABELS)
@@ -85,8 +87,7 @@ def render_callout(name: str, body: str, inline: str = "") -> str:
         parts = content.split(None, 1) if content else []
         version = parts[0] if parts else ""
         description = parts[1] if len(parts) > 1 else ""
-        label = _VERSION_LABELS[name]
-        title = f"{label} {version}" if version else label
+        title = translate_versioned(_VERSION_LABELS[name], version)
         callout = "warning" if name == "deprecated" else "note"
         attr = Attr(
             classes=[f"callout-{callout}"],

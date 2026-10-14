@@ -39,6 +39,21 @@ RTL_LANGUAGES: set[str] = {"ar", "he", "fa", "ur"}
 
 DEFAULT_LANGUAGE = "en"
 
+#: Languages needing callout title translations, recorded on 2026-10-14
+#: against Quarto 1.10.18. Arabic, Hindi and Romanian have no strings.
+#: Traditional Chinese (`zh-Hant`) receives Simplified Chinese (`zh`) strings;
+#: Quarto stores Traditional Chinese strings under `zh-TW`.
+QUARTO_UNTRANSLATED_CALLOUT_LANGUAGES: set[str] = {"ar", "hi", "ro", "zh-Hant"}
+
+#: Quarto callout title keys mapped to Great Docs translation keys.
+QUARTO_CALLOUT_TITLE_KEYS: dict[str, str] = {
+    "callout-note-title": "note_callout",
+    "callout-tip-title": "tip_callout",
+    "callout-warning-title": "warning_callout",
+    "callout-important-title": "important_callout",
+    "callout-caution-title": "caution_callout",
+}
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TRANSLATION DICTIONARY

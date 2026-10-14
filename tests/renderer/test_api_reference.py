@@ -106,6 +106,33 @@ def test_lang_is_not_a_key_of_the_api_reference_block():
     assert ref.settings.lang == "en"
 
 
+def test_resolution_sees_the_reference_lang(tmp_path, monkeypatch):
+    """
+    Use the reference language in hooks before the build starts
+
+    Listing documented objects resolves the reference before the build binds
+    its settings.
+    """
+    (tmp_path / "langpkg").mkdir()
+    (tmp_path / "langpkg" / "__init__.py").write_text(
+        'def grow():\n    """\n    Grow.\n\n    %versionadded 2.0\n    """\n',
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    ref = APIReference(
+        {
+            "api-reference": {"package": "langpkg", "sections": [{"contents": ["grow"]}]},
+            "format": {"html": {"lang": "fr"}},
+        }
+    )
+    (page,) = ref.resolved[0].contents
+    (doc,) = page.contents
+
+    assert 'title="Ajouté dans la version 2.0"' in doc.obj.docstring.value
+
+
 def test_settings_defaults():
     s = Settings()
     assert s.dir == "reference"
