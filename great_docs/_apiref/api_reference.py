@@ -8,7 +8,7 @@ import logging
 import sys
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from yaml12 import read_yaml
 
@@ -40,6 +40,8 @@ _REMOVED_KEYS = {"style", "renderer", "render_interlinks"}
 # settings.
 _DEFAULT_SITE_TOC_DEPTH = 2
 
+T = TypeVar("T")
+
 
 class APIReference:
     """A package's API reference: the sections to document plus the settings that govern how they are generated"""
@@ -58,7 +60,7 @@ class APIReference:
         block = self._select_block(cfg)
         block = {k: v for k, v in block.items() if k not in _REMOVED_KEYS}
 
-        self.settings = Settings.make(block)
+        self.settings = Settings.make(block, lang=self._read_lang(cfg))
         self.package = block["package"]
         self.title = block.get("title", "Function reference")
         self.desc = block.get("desc")
@@ -97,13 +99,42 @@ class APIReference:
         return cast("dict[str, Any]", loaded) if isinstance(loaded, dict) else {}
 
     @staticmethod
-    def _read_site_toc_depth(cfg: dict[str, Any]) -> int:
+    def _read_site_option(cfg: dict[str, Any], key: str, kind: type[T]) -> T | None:
         """
-        Read the configured table-of-contents depth
+        Read a site option from Quarto's HTML format or the great-docs `site` block
 
-        Use the integer at `format.html.toc-depth` when available, then the
-        integer at `site.toc-depth`. Return the built-in default when neither
-        setting is an integer.
+        Prefer `format.html.<key>` in generated Quarto configuration, then
+        `site.<key>` in source configuration. Accept only the requested type.
+
+        Parameters
+        ----------
+        cfg
+            Configuration mapping.
+        key
+            The option name, such as `toc-depth`.
+        kind
+            The required value type.
+
+        Returns
+        -------
+        The first value of the requested type, or `None`.
+        """
+        format_config = cfg.get("format")
+        html = (
+            cast("dict[str, Any]", format_config).get("html")
+            if isinstance(format_config, dict)
+            else None
+        )
+        for scope in (html, cfg.get("site")):
+            value = cast("dict[str, Any]", scope).get(key) if isinstance(scope, dict) else None
+            if isinstance(value, kind):
+                return value
+        return None
+
+    @classmethod
+    def _read_lang(cls, cfg: dict[str, Any]) -> str:
+        """
+        Read the site's language tag
 
         Parameters
         ----------
@@ -112,21 +143,27 @@ class APIReference:
 
         Returns
         -------
-        Configured depth or the built-in default.
+        The language from `format.html.lang` or `site.lang`, with `en` as the
+        fallback for missing or empty values.
         """
-        format_config = cfg.get("format")
-        html = (
-            cast("dict[str, Any]", format_config).get("html")
-            if isinstance(format_config, dict)
-            else None
-        )
-        depth = cast("dict[str, Any]", html).get("toc-depth") if isinstance(html, dict) else None
-        if isinstance(depth, int):
-            return depth
+        return cls._read_site_option(cfg, "lang", str) or "en"
 
-        site = cfg.get("site")
-        depth = cast("dict[str, Any]", site).get("toc-depth") if isinstance(site, dict) else None
-        return depth if isinstance(depth, int) else _DEFAULT_SITE_TOC_DEPTH
+    @classmethod
+    def _read_site_toc_depth(cls, cfg: dict[str, Any]) -> int:
+        """
+        Read the configured table-of-contents depth
+
+        Parameters
+        ----------
+        cfg
+            Configuration mapping.
+
+        Returns
+        -------
+        The configured `toc-depth`, or the built-in default.
+        """
+        depth = cls._read_site_option(cfg, "toc-depth", int)
+        return _DEFAULT_SITE_TOC_DEPTH if depth is None else depth
 
     @staticmethod
     def _select_block(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -159,8 +196,11 @@ class APIReference:
     @cached_property
     def resolved(self) -> list[Section]:
         """The resolved section tree, computed once per instance"""
-        secs = self.sections or _autogenerate_sections(self._resolver, self.package)
-        return self._resolver.resolve_sections(secs)
+        # Object hooks need the reference settings even when resolution runs
+        # before the build, such as when listing documented objects.
+        with active_settings(self.settings):
+            secs = self.sections or _autogenerate_sections(self._resolver, self.package)
+            return self._resolver.resolve_sections(secs)
 
     @cached_property
     def documented_symbols(self) -> list[str]:
