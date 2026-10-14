@@ -912,15 +912,6 @@ for html_file in html_files:
                     )
                 break
 
-    content_str = "".join(content)
-
-    # Place a horizontal rule at the end of each reference page
-    main_end_pattern = r"</main>"
-    main_end_replacement = '</main>\n<hr style="padding: 0; margin: 0;">\n'
-    content_str = re.sub(main_end_pattern, main_end_replacement, content_str)
-
-    content = content_str.splitlines(keepends=True)
-
     with open(html_file, "w", encoding="utf-8") as file:
         file.writelines(content)
 
