@@ -69,9 +69,18 @@ flag inconsistencies that are worth investigating but won't break anything.
 
 ## Checks Performed
 
-The linter runs four categories of checks, each targeting a different class of documentation
-problem. All four run by default, and each can be run individually using `--check` (described
+The linter runs several categories of checks, each targeting a different class of documentation
+problem. All of them run by default, and each can be run individually using `--check` (described
 below).
+
+### Configuration Keys
+
+Finds keys in `great-docs.yml` that are spelled the old way or no longer read.
+
+| Finding | Severity | Description |
+|---------|----------|-------------|
+| `config-key` | Warning | `site.language` is set; it still works, but the key is `site.lang` |
+| `config-key` | Warning | A top-level `language` is set; it is ignored, so use `site.lang` |
 
 ### Missing Docstrings
 
@@ -201,12 +210,13 @@ Available check names:
 
 | Name | What it checks |
 |------|----------------|
+| `config` | Outdated keys in `great-docs.yml` |
 | `docstrings` | Missing docstrings on public exports and methods |
 | `cross-refs` | Broken `%seealso` references and ambiguous interlinks |
 | `style` | Docstring style consistency with configured parser |
 | `directives` | Unknown or malformed `%` directives |
 
-When no `--check` flags are given, all four categories run.
+When no `--check` flags are given, every category runs.
 
 ## JSON Output
 
