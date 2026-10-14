@@ -13780,35 +13780,25 @@ anchor-sections: true
         with open(quarto_yml, "r") as f:
             config = read_yaml(f) or {}
 
-        from great_docs._apiref.resolve import _Resolver
+        from great_docs._apiref import APIReference, SpecObject
 
         # Get API reference sections if they exist
         if "api-reference" not in config or "sections" not in config["api-reference"]:
             return
 
-        sections = config["api-reference"]["sections"]
         sidebar_contents = []
 
         # Build sidebar structure from sections
-        for section in sections:
-            heading = section.get("title") or section.get("subtitle") or ""
+        for section in APIReference(config).sections:
+            heading = section.title or section.subtitle or ""
             section_entry = {"section": heading, "contents": []}
 
             # Add each item in the section
-            for item in section.get("contents", []):
-                # Handle both string and dict formats
-                if isinstance(item, str):
-                    item_name = item
-                elif isinstance(item, dict):
-                    item_name = item.get("name", str(item))
-                else:
-                    item_name = str(item)  # pragma: no cover
-                section_entry["contents"].append(
-                    {
-                        "text": item_name,
-                        "href": f"reference/{_Resolver._clean_member_path(item_name)}.qmd",
-                    }
-                )
+            for entry in section.contents:
+                if isinstance(entry, SpecObject):
+                    section_entry["contents"].append(
+                        {"text": entry.name, "href": f"reference/{entry.page_path}.qmd"}
+                    )
 
             sidebar_contents.append(section_entry)
 
@@ -13916,7 +13906,7 @@ anchor-sections: true
         - package title with description
         - API Reference section with links to each documented item
         """
-        from great_docs._apiref.resolve import _Resolver
+        from great_docs._apiref import APIReference, SpecObject
 
         quarto_yml = self.build_dir / "_quarto.yml"
 
@@ -13974,9 +13964,9 @@ anchor-sections: true
         lines.append("")
 
         # Process each section
-        for section in sections:
-            section_title = section.get("title") or section.get("subtitle") or ""
-            section_desc = section.get("desc", "")
+        for section in APIReference(config).sections:
+            section_title = section.title or section.subtitle or ""
+            section_desc = section.desc or ""
 
             # Add section header as a comment or sub-heading if there are multiple sections
             if len(sections) > 1 and section_title:
@@ -13986,28 +13976,18 @@ anchor-sections: true
                 lines.append("")
 
             # Add each item in the section
-            for item in section.get("contents", []):
-                # Handle both string and dict formats
-                if isinstance(item, str):
-                    item_name = item
-                    item_desc = ""
-                elif isinstance(item, dict):
-                    item_name = item.get("name", str(item))
-                    item_desc = ""
-                else:
+            for entry in section.contents:
+                if not isinstance(entry, SpecObject):
                     continue  # pragma: no cover
+                item_name = entry.name
 
                 # Get description from docstring if available
-                if not item_desc:
-                    item_desc = self._get_docstring_summary(package_name, item_name)
+                item_desc = self._get_docstring_summary(package_name, item_name)
 
-                # Build the URL (colons in `module:Item` names are sanitized
-                # to dots in the generated page paths)
-                page_name = _Resolver._clean_member_path(item_name)
                 if site_url:
-                    url = f"{site_url}reference/{page_name}.html"
+                    url = f"{site_url}reference/{entry.page_path}.html"
                 else:
-                    url = f"reference/{page_name}.html"
+                    url = f"reference/{entry.page_path}.html"
 
                 # Format the line
                 if item_desc:
