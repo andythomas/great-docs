@@ -47,7 +47,7 @@ class Settings:
     typing_module_paths: list[str] = field(default_factory=list[str])
     version: str | None = None
     lang: str = "en"
-    """The site language as a BCP 47 tag"""
+    """The reference language as a BCP 47 tag"""
 
     @classmethod
     def make(cls, block: dict[str, Any], lang: str = "en") -> Settings:
@@ -59,7 +59,7 @@ class Settings:
         block
             The `api-reference:` block.
         lang
-            The site language as a BCP 47 tag.
+            The reference language as a BCP 47 tag.
 
         Returns
         -------

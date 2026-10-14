@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from great_docs._apiref import spec
 from great_docs._apiref.api_reference import APIReference, Settings
@@ -85,19 +88,23 @@ def test_toc_depth_reads_source_config():
     assert ref.site_toc_depth == 5
 
 
-def test_lang_reads_generated_quarto_config():
+def test_lang_reads_the_quarto_html_format():
     """Use the Quarto HTML language for the reference"""
     ref = APIReference({"api-reference": {"package": "pkg"}, "format": {"html": {"lang": "fr"}}})
     assert ref.settings.lang == "fr"
 
 
-def test_lang_reads_source_config():
-    ref = APIReference({"api-reference": {"package": "pkg"}, "site": {"lang": "fr"}})
-    assert ref.settings.lang == "fr"
-
-
 def test_lang_defaults_to_english_like_quarto():
     ref = APIReference({"api-reference": {"package": "pkg"}})
+    assert ref.settings.lang == "en"
+
+
+@pytest.mark.parametrize(
+    "format_config",
+    ["html", {"html": "default"}, None, {"html": None}, {}, {"html": {}}],
+)
+def test_lang_defaults_to_english_without_html_settings(format_config: Any) -> None:
+    ref = APIReference({"api-reference": {"package": "pkg"}, "format": format_config})
     assert ref.settings.lang == "en"
 
 

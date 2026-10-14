@@ -8,7 +8,7 @@ import logging
 import sys
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from yaml12 import read_yaml
 
@@ -39,8 +39,6 @@ _REMOVED_KEYS = {"style", "renderer", "render_interlinks"}
 # Use the default site depth when a bare API reference config supplies no site
 # settings.
 _DEFAULT_SITE_TOC_DEPTH = 2
-
-T = TypeVar("T")
 
 
 class APIReference:
@@ -99,25 +97,18 @@ class APIReference:
         return cast("dict[str, Any]", loaded) if isinstance(loaded, dict) else {}
 
     @staticmethod
-    def _read_site_option(cfg: dict[str, Any], key: str, kind: type[T]) -> T | None:
+    def _read_lang(cfg: dict[str, Any]) -> str:
         """
-        Read a site option from Quarto's HTML format or the great-docs `site` block
-
-        Prefer `format.html.<key>` in generated Quarto configuration, then
-        `site.<key>` in source configuration. Accept only the requested type.
+        Read the reference language from the Quarto HTML settings
 
         Parameters
         ----------
         cfg
             Configuration mapping.
-        key
-            The option name, such as `toc-depth`.
-        kind
-            The required value type.
 
         Returns
         -------
-        The first value of the requested type, or `None`.
+        The language at `format.html.lang`, with `en` as the default when absent.
         """
         format_config = cfg.get("format")
         html = (
@@ -125,34 +116,17 @@ class APIReference:
             if isinstance(format_config, dict)
             else None
         )
-        for scope in (html, cfg.get("site")):
-            value = cast("dict[str, Any]", scope).get(key) if isinstance(scope, dict) else None
-            if isinstance(value, kind):
-                return value
-        return None
+        return cast("dict[str, Any]", html).get("lang", "en") if isinstance(html, dict) else "en"
 
-    @classmethod
-    def _read_lang(cls, cfg: dict[str, Any]) -> str:
-        """
-        Read the site's language tag
-
-        Parameters
-        ----------
-        cfg
-            Configuration mapping.
-
-        Returns
-        -------
-        The language from `format.html.lang` or `site.lang`, with `en` as the
-        fallback for missing or empty values.
-        """
-        return cls._read_site_option(cfg, "lang", str) or "en"
-
-    @classmethod
-    def _read_site_toc_depth(cls, cfg: dict[str, Any]) -> int:
+    @staticmethod
+    def _read_site_toc_depth(cfg: dict[str, Any]) -> int:
         """
         Read the configured table-of-contents depth
 
+        Use the integer at `format.html.toc-depth` when available, then the
+        integer at `site.toc-depth`. Return the built-in default when neither
+        setting is an integer.
+
         Parameters
         ----------
         cfg
@@ -160,10 +134,21 @@ class APIReference:
 
         Returns
         -------
-        The configured `toc-depth`, or the built-in default.
+        Configured depth or the built-in default.
         """
-        depth = cls._read_site_option(cfg, "toc-depth", int)
-        return _DEFAULT_SITE_TOC_DEPTH if depth is None else depth
+        format_config = cfg.get("format")
+        html = (
+            cast("dict[str, Any]", format_config).get("html")
+            if isinstance(format_config, dict)
+            else None
+        )
+        depth = cast("dict[str, Any]", html).get("toc-depth") if isinstance(html, dict) else None
+        if isinstance(depth, int):
+            return depth
+
+        site = cfg.get("site")
+        depth = cast("dict[str, Any]", site).get("toc-depth") if isinstance(site, dict) else None
+        return depth if isinstance(depth, int) else _DEFAULT_SITE_TOC_DEPTH
 
     @staticmethod
     def _select_block(cfg: dict[str, Any]) -> dict[str, Any]:
