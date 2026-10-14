@@ -869,6 +869,15 @@ html.theme-loading body {
     font-size: 1.25rem;
 }
 
+/* Keep the end rule in the reference content column. Stretching its grid item
+   to the full row height preserves the gap above the footer. */
+.doc-py-api-page #quarto-content::after {
+    content: "";
+    grid-column: body-content-start / body-content-end;
+    border-top: 1px solid;
+    opacity: 0.25;
+}
+
 .table a {
     text-underline-offset: 4px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
