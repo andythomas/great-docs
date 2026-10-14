@@ -646,40 +646,6 @@ def highlight_signature_with_pygments(html_content):
     return cb1_pattern.sub(replace_signature, html_content)
 
 
-_BREADCRUMB_NAV_RE = re.compile(
-    r'<nav class="quarto-page-breadcrumbs[^"]*"[^>]*>.*?</nav>', re.DOTALL
-)
-_NO_BREADCRUMBS_NAV_TITLE_RE = re.compile(
-    r'<h1 class="quarto-secondary-nav-title no-breadcrumbs[^"]*">.*?</h1>', re.DOTALL
-)
-
-
-def replace_secondary_nav_title(html_content: str, label_html: str) -> str:
-    """
-    Replace Quarto's secondary navigation title
-
-    Quarto uses a breadcrumb `nav` when breadcrumbs are enabled and a bare
-    `h1` when they are disabled. Replace either form with the supplied `h5`
-    navigation label and remove any duplicate breadcrumb in the title block.
-
-    Parameters
-    ----------
-    html_content
-        Complete page HTML.
-    label_html
-        Navigation label markup.
-
-    Returns
-    -------
-    HTML with the secondary navigation title replaced.
-    """
-    new_content, replaced = _BREADCRUMB_NAV_RE.subn(label_html, html_content, count=1)
-    if not replaced:
-        new_content, replaced = _NO_BREADCRUMBS_NAV_TITLE_RE.subn(label_html, html_content, count=1)
-    # Remove a second breadcrumb that Quarto may place in the title block.
-    return _BREADCRUMB_NAV_RE.sub("", new_content)
-
-
 def translate_renderer_headings(html_content):
     """
     Translate section headings and labels produced by the renderer.
@@ -953,22 +919,6 @@ for html_file in html_files:
     main_end_replacement = '</main>\n<hr style="padding: 0; margin: 0;">\n'
     content_str = re.sub(main_end_pattern, main_end_replacement, content_str)
 
-    # Replace breadcrumb with a "API / object_name" title bar label.
-    # Extract the display name from the doc-object-name span (includes parens
-    # for callables like methods/functions).
-    _api_label = _t("api", "API")
-    _obj_name_match = re.search(r'<span class="doc-object-name[^"]*">([^<]+)</span>', content_str)
-    _display_name = _obj_name_match.group(1) if _obj_name_match else item_name_from_file
-    # Use `h5` because this label is navigation; the page content owns `h1`.
-    _ref_title_html = (
-        f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
-        f'<span class="gd-ref-title-prefix">{_api_label}</span>'
-        f'<span class="gd-ref-title-sep">/</span>'
-        f'<span class="gd-ref-title-name">{html.escape(_display_name)}</span>'
-        f"</h5>"
-    )
-    content_str = replace_secondary_nav_title(content_str, _ref_title_html)
-
     content = content_str.splitlines(keepends=True)
 
     with open(html_file, "w", encoding="utf-8") as file:
@@ -1025,87 +975,12 @@ if os.path.exists(index_file):
     # Translate renderer-rendered headings, TOC, and sidebar on the index page
     content = translate_renderer_headings(content)
 
-    # Replace breadcrumb with an "API / Index" title bar label
-    # Keep the navigation label below the page's `h1` title.
-    _ref_idx_title = (
-        '<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
-        '<span class="gd-ref-title-prefix">API</span>'
-        '<span class="gd-ref-title-sep">/</span>'
-        '<span class="gd-ref-title-name">Index</span>'
-        "</h5>"
-    )
-    content = replace_secondary_nav_title(content, _ref_idx_title)
-
     with open(index_file, "w", encoding="utf-8") as file:
         file.write(content)
 
     print("Index file processing complete")
 else:
     print(f"Index file not found: {index_file}")
-
-
-# Modify the MCP index page to replace breadcrumbs with a styled title
-mcp_index_file = "_site/reference/mcp/index.html"
-if os.path.exists(mcp_index_file):
-    print(f"Processing MCP index file: {mcp_index_file}")
-    with open(mcp_index_file, "r", encoding="utf-8") as file:
-        content = file.read()
-
-    # Keep the navigation label below the page's `h1` title.
-    _mcp_idx_title = (
-        '<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
-        '<span class="gd-ref-title-prefix">MCP</span>'
-        '<span class="gd-ref-title-sep">/</span>'
-        '<span class="gd-ref-title-name">Index</span>'
-        "</h5>"
-    )
-    content = replace_secondary_nav_title(content, _mcp_idx_title)
-
-    with open(mcp_index_file, "w", encoding="utf-8") as file:
-        file.write(content)
-
-    print("MCP index file processing complete")
-else:
-    print(f"MCP index file not found: {mcp_index_file}")
-
-
-# Process individual MCP reference pages (tools, resources, prompts) to add
-# "MCP / object_name" title bar in the secondary nav
-mcp_html_files = [
-    f for f in glob.glob("_site/reference/mcp/*.html") if os.path.basename(f) != "index.html"
-]
-
-if mcp_html_files:
-    print(f"Processing {len(mcp_html_files)} MCP reference pages...")
-
-    for html_file in mcp_html_files:
-        with open(html_file, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        # Extract the display name from the doc-object-name span
-        _obj_name_match = re.search(r'<span class="doc-object-name[^"]*">([^<]+)</span>', content)
-        _mcp_name = (
-            _obj_name_match.group(1)
-            if _obj_name_match
-            else os.path.basename(html_file).replace(".html", "")
-        )
-
-        # Keep the navigation label below the page's `h1` title.
-        _mcp_title_html = (
-            f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
-            f'<span class="gd-ref-title-prefix">MCP</span>'
-            f'<span class="gd-ref-title-sep">/</span>'
-            f'<span class="gd-ref-title-name">{html.escape(_mcp_name)}</span>'
-            f"</h5>"
-        )
-
-        # MCP pages disable breadcrumbs, so replace Quarto's bare `h1` form.
-        content = replace_secondary_nav_title(content, _mcp_title_html)
-
-        with open(html_file, "w", encoding="utf-8") as file:
-            file.write(content)
-
-    print(f"Styled {len(mcp_html_files)} MCP reference page titles")
 
 
 # Update quarto-secondary-nav-title to display "User Guide" text
@@ -1342,75 +1217,6 @@ def inject_version_badge():
 
 inject_version_badge()
 print("##GD:PASS:Version badge injected", flush=True)
-
-
-# ============================================================================
-# Process CLI reference pages to style titles like API reference pages
-
-
-def process_cli_reference_pages():
-    """
-    Process CLI reference pages to add consistent styling.
-
-    This adds the 'cli-title' class to h1 elements in CLI reference pages so they match the
-    monospaced font style of API reference pages.
-    """
-    cli_html_files = glob.glob("_site/reference/cli/**/*.html", recursive=True)
-
-    if not cli_html_files:
-        return
-
-    print(f"Processing {len(cli_html_files)} CLI reference pages...")
-
-    for html_file in cli_html_files:
-        with open(html_file, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        cmd_name = os.path.basename(html_file).replace(".html", "")
-
-        # Add 'cli-title' class to h1.title elements so command-page titles match the monospaced
-        # API object-page style. The CLI index is a listing page (like the API reference index),
-        # so its plain "CLI Reference" title is left unstyled to match the API index title.
-        if cmd_name != "index":
-            content = content.replace('<h1 class="title">', '<h1 class="title cli-title">')
-
-        # Replace breadcrumb with a "CLI / great-docs cmd" title bar label
-        _cli_label = _t("cli", "CLI")
-        # Keep the navigation label below the page's `h1` title.
-        if cmd_name != "index":
-            # Read all text inside the title because the command name may be
-            # nested in a `span`.
-            _title_match = re.search(r'<h1 class="title[^"]*">(.*?)</h1>', content, re.DOTALL)
-            if _title_match:
-                _full_cmd = html.unescape(re.sub(r"<[^>]+>", "", _title_match.group(1))).strip()
-            else:
-                _full_cmd = f"great-docs {cmd_name}"
-            _cli_title_html = (
-                f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
-                f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
-                f'<span class="gd-ref-title-sep">/</span>'
-                f'<span class="gd-ref-title-name">{html.escape(_full_cmd)}</span>'
-                f"</h5>"
-            )
-        else:
-            # CLI index: show "CLI / Index" to mirror the API reference index ("API / Index").
-            _cli_title_html = (
-                f'<h5 class="quarto-secondary-nav-title no-breadcrumbs gd-ref-title">'
-                f'<span class="gd-ref-title-prefix">{_cli_label}</span>'
-                f'<span class="gd-ref-title-sep">/</span>'
-                f'<span class="gd-ref-title-name">Index</span>'
-                f"</h5>"
-            )
-        content = replace_secondary_nav_title(content, _cli_title_html)
-
-        with open(html_file, "w", encoding="utf-8") as file:
-            file.write(content)
-
-    print(f"Styled {len(cli_html_files)} CLI reference page titles")
-
-
-process_cli_reference_pages()
-print("##GD:PASS:CLI reference styled", flush=True)
 
 
 def disable_sidebar_collapse():

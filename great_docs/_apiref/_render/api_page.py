@@ -86,6 +86,9 @@ class __RenderAPIPage(RenderPageMixin, RenderBase):
             "title": f"{title}",
             "body-classes": "doc-api-page doc-py-api-page",
             "shift-heading-level-by": 0,
+            # Disabling breadcrumbs lets Quarto use the page title in the narrow-screen
+            # navigation bar; CSS adds the prefix for the reference type.
+            "bread-crumbs": False,
         }
         # Add a page override only when the site depth excludes members.
         if self.toc_depth < _MIN_MEMBER_TOC_DEPTH:

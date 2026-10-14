@@ -63,6 +63,9 @@ class __RenderReferencePage(RenderPageMixin, RenderBase):
             "page-navigation": False,
             "html-table-processing": "none",
             "shift-heading-level-by": 0,
+            # Disabling breadcrumbs lets Quarto use the page title in the narrow-screen
+            # navigation bar; CSS adds the prefix for the reference type.
+            "bread-crumbs": False,
         }
         # Subtitle headings render at `h3`; preserve any deeper site setting.
         if self.api_ref.site_toc_depth < 3:
