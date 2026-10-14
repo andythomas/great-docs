@@ -55,7 +55,7 @@ def register(quarto_config: dict, config: Config) -> None:
     if not isinstance(html_config, dict):
         return
 
-    bundle = get_translations_bundle(config.language)
+    bundle = get_translations_bundle(config.lang)
     # MCP is a protocol name, so it is not translated.
     prefixes = {"api": bundle["api"], "cli": bundle["cli"], "mcp": "MCP"}
     declarations = "".join(

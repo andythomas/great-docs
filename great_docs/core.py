@@ -649,13 +649,13 @@ class GreatDocs:
             "team_author": self._prepare_author_image(self._config.team_author),
             "authors": [self._prepare_author_image(author) for author in self._config.authors],
             "build_timestamp": datetime.now().isoformat(),
-            "language": self._config.language,
+            "lang": self._config.lang,
         }
         # Add i18n translations bundle
         from ._translations import get_translations_bundle, is_rtl
 
-        gd_options["i18n"] = get_translations_bundle(self._config.language)
-        gd_options["rtl"] = is_rtl(self._config.language)
+        gd_options["i18n"] = get_translations_bundle(self._config.lang)
+        gd_options["rtl"] = is_rtl(self._config.lang)
         # Add SEO options
         gd_options.update(self._get_seo_options())
         gd_options_path = self.build_dir / "_gd_options.json"
@@ -2605,7 +2605,7 @@ class GreatDocs:
         """
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
         tags_title = get_translation("site_tags", lang)
         tag_icons = self._config.tags_icons
 
@@ -2690,7 +2690,7 @@ class GreatDocs:
             # For segmented pills, icon goes on the parent (LHS)
             if parent_label:
                 parent_icon = self._get_tag_icon_html(parent_label, tag_icons)
-                tooltip = self._tag_tooltip(node_pages, lang=self._config.language)
+                tooltip = self._tag_tooltip(node_pages, lang=self._config.lang)
                 pill_html = self._tag_heading_pill(
                     node_name,
                     "",
@@ -2699,7 +2699,7 @@ class GreatDocs:
                     tooltip=tooltip,
                 )
             else:
-                tooltip = self._tag_tooltip(node_pages, lang=self._config.language)
+                tooltip = self._tag_tooltip(node_pages, lang=self._config.lang)
                 pill_html = self._tag_heading_pill(node_name, icon_html, tooltip=tooltip)
             lines.append(f'<div class="gd-tag-heading{indent_class}">{pill_html}</div>')
             lines.append("")
@@ -2796,7 +2796,7 @@ class GreatDocs:
         # Resolve tooltip templates for client-side JS
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
         tooltip_templates = {
             "one": get_translation("tags_page_count_one", lang),
             "other": get_translation("tags_page_count_other", lang),
@@ -2834,7 +2834,7 @@ class GreatDocs:
         """Add a *Tags* link to the navbar (idempotent)."""
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
         tags_label = get_translation("site_tags", lang)
 
         quarto_yml = self.build_dir / "_quarto.yml"
@@ -3078,7 +3078,7 @@ class GreatDocs:
         from ._icons import get_icon_svg
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
         builtin_statuses = {"new", "updated", "beta", "deprecated", "experimental", "upcoming"}
 
         definitions = self._config.page_status_definitions
@@ -4746,7 +4746,7 @@ class GreatDocs:
         # from the enclosing "CLI Reference" sidebar section title.
         from ._translations import get_translation
 
-        cli_index_label = get_translation("cli_index", self._config.language)
+        cli_index_label = get_translation("cli_index", self._config.lang)
         generated_files.append({"text": cli_index_label, "href": "reference/cli/index.qmd"})
         generated_paths.append(str(index_path.relative_to(self.build_dir)))
 
@@ -4804,7 +4804,7 @@ class GreatDocs:
         """
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
         title = self._config.cli_title or get_translation("cli_reference", lang)
 
         lines: list[str] = []
@@ -5293,7 +5293,7 @@ class GreatDocs:
             from ._translations import get_translation
 
             cli_section_title = self._config.cli_title or get_translation(
-                "cli_reference", self._config.language
+                "cli_reference", self._config.lang
             )
             # Add CLI section
             cli_section = {
@@ -5318,7 +5318,7 @@ class GreatDocs:
                     # Add API link at the top
                     from ._translations import get_translation
 
-                    api_index_label = get_translation("api_index", self._config.language)
+                    api_index_label = get_translation("api_index", self._config.lang)
                     section["contents"] = [
                         {"text": api_index_label, "href": "reference/index.qmd"},
                     ] + contents
@@ -8847,7 +8847,7 @@ class GreatDocs:
         # i18n helper for section titles/descriptions
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
 
         def _t(key: str, fallback: str) -> str:
             return get_translation(key, lang) if lang != "en" else fallback
@@ -10453,7 +10453,7 @@ class GreatDocs:
 
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
 
         # ── 1. Links ─────────────────────────────────────────────────────
         links_items: list[str] = []
@@ -10926,7 +10926,7 @@ title: "Security Policy"
             if license_id:
                 license_info = get_license_info(license_id)  # pragma: no cover
                 if license_info is not None:  # pragma: no cover
-                    _lang = self._config.language  # pragma: no cover
+                    _lang = self._config.lang  # pragma: no cover
                     features_label = get_translation("license_features", _lang)  # pragma: no cover
                     # Build translated tooltips for each badge
                     _tooltips = {  # pragma: no cover
@@ -11410,7 +11410,7 @@ body-classes: "gd-homepage"
         from ._translations import get_translation
 
         metadata = self._get_package_metadata()
-        lang = self._config.language
+        lang = self._config.lang
 
         runtime_deps: list[dict] = metadata.get("dependencies", [])
         opt_deps_full: dict[str, list[dict]] = metadata.get("optional_dependencies_full", {})
@@ -11647,11 +11647,11 @@ anchor-sections: true
         ref_desc = self._config.reference_desc
 
         # Translate default titles for i18n
-        if not self._config.reference_title and self._config.language != "en":
+        if not self._config.reference_title and self._config.lang != "en":
             from ._translations import get_translation  # pragma: no cover
 
-            ref_title = get_translation("api_reference", self._config.language)  # pragma: no cover
-            nav_title = get_translation("reference", self._config.language)  # pragma: no cover
+            ref_title = get_translation("api_reference", self._config.lang)  # pragma: no cover
+            nav_title = get_translation("reference", self._config.lang)  # pragma: no cover
 
         # Configure the API reference
         api_ref_config = {
@@ -11865,7 +11865,7 @@ anchor-sections: true
         """
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
         if lang == "en":
             return  # No translation needed
 
@@ -12151,7 +12151,7 @@ anchor-sections: true
             from ._translations import get_translation
 
             config["format"]["html"]["toc-title"] = get_translation(
-                "on_this_page", self._config.language
+                "on_this_page", self._config.lang
             )
 
         # Disable Quarto's native code-copy — we supply our own via copy-code.js
@@ -12169,17 +12169,13 @@ anchor-sections: true
             config["bibliography"] = bib_names[0] if len(bib_names) == 1 else bib_names
             print(f"Using bibliography: {', '.join(bib_names)}")
             # Note: the auto-generated references heading is localized by Quarto
-            # itself from the document `lang` (set below), e.g. "Les références"
+            # itself from `format.html.lang` (`site.lang`), e.g. "Les références"
             # for French. We deliberately do not set `reference-section-title`:
             # under our `shift-heading-level-by: -1` it would be demoted to a
             # stray <p> and duplicated alongside Quarto's appendix heading.
         csl_path = self._config.csl
         if csl_path:
             config["csl"] = Path(csl_path).name
-
-        # Set document language for Quarto built-in i18n (search widget, etc.)
-        if self._config.language and self._config.language != "en":
-            config["lang"] = self._config.language  # pragma: no cover
 
         # Disable Quarto's HTML table processing so that GT tables (and other
         # pre-styled HTML tables) are not affected by Bootstrap striping/styles
@@ -13154,7 +13150,7 @@ anchor-sections: true
 
                 from ._translations import get_translation
 
-                lang = self._config.language
+                lang = self._config.lang
                 _dev_by = get_translation("developed_by", lang)
                 _and = get_translation("and", lang)
 
@@ -13208,7 +13204,7 @@ anchor-sections: true
                         funder_label = f"<strong>{funder_display}</strong>"
                     from ._translations import get_translation
 
-                    lang = self._config.language
+                    lang = self._config.lang
                     _sup_by = get_translation("supported_by", lang)
                     config["website"]["page-footer"] = {"center": f"{_sup_by} {funder_label}."}
 
@@ -13249,7 +13245,7 @@ anchor-sections: true
 
             from ._translations import get_translation
 
-            _site_created = get_translation("site_created_with", self._config.language)
+            _site_created = get_translation("site_created_with", self._config.lang)
             attribution = f"{_site_created} <strong>Great&nbsp;Docs</strong>{gd_version_label}."
 
             if "page-footer" in config["website"]:
@@ -13826,7 +13822,7 @@ anchor-sections: true
         # followed by the sectioned contents
         from ._translations import get_translation
 
-        api_index_label = get_translation("api_index", self._config.language)
+        api_index_label = get_translation("api_index", self._config.lang)
         full_contents = [
             {"text": api_index_label, "href": "reference/index.qmd"},
         ] + sidebar_contents
@@ -14501,7 +14497,7 @@ anchor-sections: true
 
         from ._translations import get_translation
 
-        lang = self._config.language
+        lang = self._config.lang
 
         def _t(key: str, fallback: str) -> str:
             return get_translation(key, lang) if lang != "en" else fallback
@@ -17498,9 +17494,8 @@ anchor-sections: true
 
         # Page metadata dates need git log for first-commit detection.
         # `show_dates` lives at the top level; `site.show_dates` is kept as a
-        # legacy fallback since this raw-YAML inspection runs before any
-        # `Config`-level normalization (Config._lift_legacy_site_keys never
-        # sees this clone).
+        # legacy fallback since this raw-YAML inspection never goes through
+        # `Config`, which normalizes legacy keys at load.
         show_dates = cfg.get("show_dates")
         if show_dates is None:
             site = cfg.get("site")

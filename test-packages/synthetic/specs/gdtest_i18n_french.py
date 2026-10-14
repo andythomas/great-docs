@@ -2,7 +2,7 @@
 gdtest_i18n_french — Tests i18n with French (Latin script).
 
 Dimensions: K50
-Focus: site.language: fr — all UI widgets render French translations.
+Focus: site.lang: fr — all UI widgets render French translations.
 All docstrings, user guide, and metadata are in French.
 """
 
@@ -34,7 +34,7 @@ SPEC = {
     },
     "config": {
         "site": {
-            "language": "fr",
+            "lang": "fr",
         },
         "announcement": "Bienvenue ! Consultez notre nouveau guide de d\u00e9marrage rapide.",
         "github_url": "https://github.com/test-org/gdtest-i18n-french",

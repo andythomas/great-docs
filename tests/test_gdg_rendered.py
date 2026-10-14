@@ -11408,9 +11408,9 @@ def test_DED_bibliography_auto_generated_heading():
 def test_DED_i18n_french_references_heading_localized():
     """gdtest_i18n_french: the auto-generated references heading is French.
 
-    With site.language: fr and a project-level bibliography, Great Docs sets
-    reference-section-title to the French translation, so Quarto renders
-    'Références' rather than the English 'References'.
+    With site.lang: fr and a project-level bibliography, Quarto localizes the
+    heading from the document language and renders 'Références' rather than
+    the English 'References'.
     """
     pkg = "gdtest_i18n_french"
     if not _has_rendered_site(pkg):
