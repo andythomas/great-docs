@@ -41091,6 +41091,210 @@ def test_back_to_top_js_not_copied_when_disabled():
         assert not js_file.exists()
 
 
+# ---------------------------------------------------------------------------
+# Wide layout toggle tests
+# ---------------------------------------------------------------------------
+
+
+def _wide_entries(result):
+    html_fmt = result["format"]["html"]
+    header = [str(h) for h in html_fmt.get("include-in-header", [])]
+    after_body = [str(a) for a in html_fmt.get("include-after-body", [])]
+    return header, after_body
+
+
+def test_wide_layout_enabled_by_default():
+    """wide-layout.js is a resource, loaded after the body, with its meta tag in the header."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(tmp_dir)
+
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        assert "wide-layout.js" in result["project"].get("resources", [])
+        header, after_body = _wide_entries(result)
+        assert sum("wide-layout.js" in a for a in after_body) == 1
+        metas = [h for h in header if "gd-wide-layout" in h]
+        assert len(metas) == 1
+        assert 'data-default="normal"' in metas[0]
+        assert 'data-min-viewport="1600"' in metas[0]
+        assert "--gd-wide-content-scale:1.5;" in metas[0]
+        assert "--gd-wide-sidebar-scale:1.2;" in metas[0]
+        # No prose cap unless configured
+        assert "--gd-wide-prose-max" not in metas[0]
+
+
+def test_wide_layout_meta_precedes_theme_init():
+    """theme-init.js reads the meta tag, so the tag must come first in the header."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(tmp_dir)
+
+        docs._update_quarto_config()
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        header, after_body = _wide_entries(result)
+        meta_index = next(i for i, h in enumerate(header) if "gd-wide-layout" in h)
+        theme_index = next(i for i, h in enumerate(header) if "theme-init" in h)
+        assert meta_index < theme_index
+        assert sum("gd-wide-layout" in h for h in header) == 1
+        assert sum("wide-layout.js" in a for a in after_body) == 1
+
+
+def test_wide_layout_custom_settings():
+    """Configured settings flow into the meta tag and CSS custom properties."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(
+            tmp_dir,
+            gd_yml_content=(
+                "wide_layout:\n"
+                "  default: wide\n"
+                "  content_scale: 1.75\n"
+                "  sidebar_scale: 1.0\n"
+                "  min_viewport: 1800\n"
+                "  prose_max_width: 110ch\n"
+            ),
+        )
+
+        docs._update_quarto_config()
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        header, _ = _wide_entries(result)
+        meta = next(h for h in header if "gd-wide-layout" in h)
+        assert 'data-default="wide"' in meta
+        assert 'data-min-viewport="1800"' in meta
+        assert "--gd-wide-content-scale:1.75;" in meta
+        assert "--gd-wide-sidebar-scale:1;" in meta
+        assert "--gd-wide-prose-max:110ch;" in meta
+
+
+def test_wide_layout_disabled_via_config():
+    """With wide_layout: false nothing is added, and the JS is not copied."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, quarto_yml = _make_uqc_docs(tmp_dir, gd_yml_content="wide_layout: false\n")
+
+        docs._update_quarto_config()
+        docs._prepare_build_directory()
+
+        with open(quarto_yml) as f:
+            result = read_yaml(f)
+
+        assert "wide-layout.js" not in result["project"].get("resources", [])
+        header, after_body = _wide_entries(result)
+        assert not any("gd-wide-layout" in h for h in header)
+        assert not any("wide-layout.js" in a for a in after_body)
+        assert not (docs.build_dir / "wide-layout.js").exists()
+
+
+def test_wide_layout_disabling_removes_stale_entries():
+    """Entries left from an earlier enabled build are removed when disabled."""
+
+    config = {"format": {"html": {}}}
+    settings = {
+        "default": "normal",
+        "content_scale": 1.5,
+        "sidebar_scale": 1.2,
+        "min_viewport": 1600,
+        "prose_max_width": None,
+    }
+    GreatDocs._configure_wide_layout(config, settings)
+    GreatDocs._configure_wide_layout(config, settings)
+    header, after_body = _wide_entries(config)
+    assert len(header) == 1 and len(after_body) == 1
+
+    GreatDocs._configure_wide_layout(config, None)
+    assert config["format"]["html"]["include-in-header"] == []
+    assert config["format"]["html"]["include-after-body"] == []
+
+
+def test_wide_layout_handles_string_includes():
+    """String include values are converted to lists and preserved."""
+
+    config = {
+        "format": {"html": {"include-in-header": "head.html", "include-after-body": "x.html"}}
+    }
+    GreatDocs._configure_wide_layout(
+        config,
+        {
+            "default": "normal",
+            "content_scale": 1.5,
+            "sidebar_scale": 1.2,
+            "min_viewport": 1600,
+            "prose_max_width": None,
+        },
+    )
+    header, after_body = _wide_entries(config)
+    assert header[0] == "head.html"
+    assert after_body[0] == "x.html"
+    assert len(header) == 2 and len(after_body) == 2
+
+
+def test_wide_layout_js_copied_to_project():
+    """wide-layout.js is copied into the build directory by default."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, _ = _make_uqc_docs(tmp_dir)
+        docs._prepare_build_directory()
+
+        assert (docs.build_dir / "wide-layout.js").exists()
+
+
+def test_wide_layout_metadata():
+    """_get_package_metadata carries the validated wide layout settings."""
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, _ = _make_uqc_docs(tmp_dir)
+        assert docs._get_package_metadata()["wide_layout"]["content_scale"] == 1.5
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        docs, _ = _make_uqc_docs(tmp_dir, gd_yml_content="wide_layout: false\n")
+        assert docs._get_package_metadata()["wide_layout"] is None
+
+
+def test_wide_layout_assets_have_expected_content():
+    """The JS, theme-init, keyboard-nav, and SCSS assets carry the wide layout hooks."""
+
+    assets = Path(__file__).parent.parent / "great_docs" / "assets"
+
+    js = (assets / "wide-layout.js").read_text()
+    assert "(function()" in js and "})();" in js
+    assert "gd-wide-toggle" in js
+    assert "great-docs-width" in js
+    assert "aria-pressed" in js
+
+    theme_init = (assets / "theme-init.js").read_text()
+    assert 'meta[name="gd-wide-layout"]' in theme_init
+    assert "gd-wide-capable" in theme_init
+    assert "great-docs-width" in theme_init
+
+    assert "kb_toggle_wide" in (assets / "keyboard-nav.js").read_text()
+
+    scss = (assets / "great-docs.scss").read_text()
+    assert "@property --gd-wide-t" in scss
+    assert 'html.gd-wide-capable[data-gd-width="wide"]' in scss
+    assert ".gd-wide-toggle" in scss
+
+
+def test_wide_layout_translations_cover_all_languages():
+    """The wide layout labels cover every language the back-to-top label does."""
+    from great_docs._translations import SUPPORTED_LANGUAGES, UI_TRANSLATIONS
+
+    for key in ("wide_layout_widen", "wide_layout_restore", "kb_toggle_wide"):
+        languages = set(UI_TRANSLATIONS[key])
+        assert languages >= set(SUPPORTED_LANGUAGES), key
+        assert languages == set(UI_TRANSLATIONS["back_to_top"]), key
+
+
 def test_back_to_top_js_file_has_expected_content():
     """The back-to-top.js asset exists and contains the IIFE pattern."""
 

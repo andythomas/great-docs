@@ -83,7 +83,7 @@ display_name: "Great Docs"
 This name appears in the navbar title, the hero section (if enabled), the page `<title>` tag, and
 anywhere else the package name is shown to visitors.
 
-## GitHub Link Style
+## Back-to-Top Button
 
 A floating button appears in the bottom-right corner of the page after the visitor scrolls down,
 providing a one-click way to return to the top. The button uses smooth scrolling and automatically
@@ -106,6 +106,95 @@ viewports (below 768 px). This round floating button sits directly above the bac
 and opens a compact table-of-contents panel. Tapping a heading scrolls to that section and
 dismisses the panel whereas tapping outside the panel dismisses it without navigating. The button is
 hidden on tablet and desktop widths where the sidebar TOC is already visible.
+
+## Wide Layout Toggle [version-badge new dev] {#wide-layout-toggle}
+
+The main content column is capped at roughly 750 px wide, which keeps lines of prose short enough to
+read comfortably. On a large monitor, though, that leaves a lot of empty space on either side, while
+code blocks, wide tables, and long API signatures get squeezed or scroll sideways.
+
+On wide screens (1600 px and up by default), a second round button sits directly above the
+back-to-top button. Clicking it widens the content column and both sidebars; clicking it again
+restores the default width. Both the navigation sidebar and the **On this page** table of contents
+stay visible. Visitors can also press `w` to toggle it. The toggle is enabled by default.
+
+### How It Behaves
+
+- **Proportional widening.** In wide mode the content column can grow to 1.5× its usual maximum
+  and the sidebars to 1.2×. Each column is always at least as wide as it is in the default layout,
+  so the toggle never makes anything narrower.
+- **Capped on very wide screens.** Once the wide layout reaches its maximum, any extra space goes to
+  the outer margins and the page stays centered. It never stretches across the whole display, since
+  lines spanning an ultrawide monitor are very hard to read.
+- **Only where it helps.** The button appears only on pages with a navigation sidebar (User Guide
+  pages, the API reference, custom sections) and only at or above the configured viewport width.
+  Pages without a sidebar don't show it: the homepage and the automatically generated pages such as
+  the changelog, license, citation, contributing guide, code of conduct, security policy, and tag
+  index. Below the viewport threshold every page uses the default layout, even if the visitor
+  chose wide mode earlier.
+- **Remembered.** The choice is stored in local storage and applied on every page before it's
+  drawn, so there's no flash of the narrow layout while navigating.
+- **Smooth.** The columns animate to their new widths, and the page scrolls along with the change so
+  the visitor keeps their place in the text. Visitors who prefer reduced motion get an instant
+  switch instead.
+
+The default scale factors give these content widths on typical screens:
+
+| Viewport width | Default layout | Wide layout |
+|----------------|----------------|-------------|
+| Below 1600 px  | ~750 px        | (no toggle) |
+| 1600 px        | ~750 px        | ~900 px     |
+| 1920 px        | ~750 px        | ~1125 px    |
+| 2560 px        | ~750 px        | ~1125 px (centered) |
+
+### Configuration
+
+All settings live under `wide_layout`. These are the defaults:
+
+```{.yaml filename="docs/great-docs.yml"}
+wide_layout:
+  enabled: true         # Show the toggle on wide screens
+  default: normal       # "normal" or "wide": layout used before a visitor picks one
+  content_scale: 1.5    # Maximum content width multiplier in wide mode
+  sidebar_scale: 1.2    # Maximum sidebar/TOC width multiplier in wide mode
+  min_viewport: 1600    # Viewport width (px) at and above which the toggle appears
+  prose_max_width: null # Optional cap on prose line length in wide mode
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Show the wide layout toggle. Set to `false` to remove it entirely. |
+| `default` | `normal` | Layout used for visitors who haven't chosen one yet. Use `wide` to start every visitor in wide mode; they can still switch back. |
+| `content_scale` | `1.5` | How far the content column's maximum width can grow. Must be at least `1`. |
+| `sidebar_scale` | `1.2` | How far the navigation sidebar and table of contents can grow. Must be at least `1`; `1` keeps them at their usual size. |
+| `min_viewport` | `1600` | The narrowest viewport, in pixels, that shows the toggle. |
+| `prose_max_width` | `null` | A CSS length such as `"110ch"` or `"70rem"` (a bare number is read as `ch`). When set, paragraphs, lists, block quotes, and definition lists are capped at this width in wide mode, while code blocks, tables, and figures still use the full column. |
+
+Invalid values (for example a scale below `1`) fall back to the defaults.
+
+To turn the toggle off:
+
+```{.yaml filename="docs/great-docs.yml"}
+wide_layout:
+  enabled: false
+```
+
+To start visitors in wide mode, with a wider maximum and prose kept to a readable measure:
+
+```{.yaml filename="docs/great-docs.yml"}
+wide_layout:
+  default: wide
+  content_scale: 1.75
+  prose_max_width: 110ch
+```
+
+::: {.callout-tip}
+## Long lines and `prose_max_width`
+
+At the default 1.5× scale, a full-width paragraph runs to roughly 130–140 characters per line.
+That's fine for reference pages heavy on code and tables, but prose-heavy guides may read better
+with `prose_max_width` set somewhere around `100ch` to `120ch`.
+:::
 
 ## Keyboard Navigation [version-badge new 0.5]
 
@@ -142,6 +231,7 @@ Control how the page looks and capture its content.
 |-----|--------|
 | `d` | Toggle dark mode |
 | `c` | Copy the current page as Markdown (when available) |
+| `w` | Toggle the [wide layout](#wide-layout-toggle) (on wide screens) |
 
 #### General
 

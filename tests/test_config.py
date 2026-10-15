@@ -212,6 +212,71 @@ class TestScalarProperties:
         cfg = _make_config(tmp_project, "back_to_top: false\n")
         assert cfg.back_to_top is False
 
+    def test_wide_layout_defaults(self, tmp_project: Path):
+        cfg = Config(tmp_project)
+        assert cfg.wide_layout_enabled is True
+        assert cfg.wide_layout == {
+            "default": "normal",
+            "content_scale": 1.5,
+            "sidebar_scale": 1.2,
+            "min_viewport": 1600,
+            "prose_max_width": None,
+        }
+
+    def test_wide_layout_bool_shorthand(self, tmp_project: Path):
+        cfg = _make_config(tmp_project, "wide_layout: false\n")
+        assert cfg.wide_layout_enabled is False
+        assert cfg.wide_layout is None
+
+        cfg = _make_config(tmp_project, "wide_layout: true\n")
+        assert cfg.wide_layout is not None
+        assert cfg.wide_layout["content_scale"] == 1.5
+
+    def test_wide_layout_custom_values(self, tmp_project: Path):
+        cfg = _make_config(
+            tmp_project,
+            "wide_layout:\n  default: wide\n  content_scale: 1.75\n"
+            "  sidebar_scale: 1\n  min_viewport: 1800\n",
+        )
+        assert cfg.wide_layout == {
+            "default": "wide",
+            "content_scale": 1.75,
+            "sidebar_scale": 1.0,
+            "min_viewport": 1800,
+            "prose_max_width": None,
+        }
+
+    def test_wide_layout_invalid_values_fall_back(self, tmp_project: Path):
+        cfg = _make_config(
+            tmp_project,
+            "wide_layout:\n  default: huge\n  content_scale: 0.5\n"
+            "  sidebar_scale: lots\n  min_viewport: -5\n",
+        )
+        settings = cfg.wide_layout
+        assert settings is not None
+        assert settings["default"] == "normal"
+        assert settings["content_scale"] == 1.5
+        assert settings["sidebar_scale"] == 1.2
+        assert settings["min_viewport"] == 1600
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("110ch", "110ch"),
+            ("72rem", "72rem"),
+            ("110", "110ch"),
+            (110, "110ch"),
+            (0, None),
+            ("wide; color: red", None),
+            ("null", None),
+        ],
+    )
+    def test_wide_layout_prose_max_width(self, tmp_project: Path, raw, expected):
+        value = raw if not isinstance(raw, str) or raw == "null" else f'"{raw}"'
+        cfg = _make_config(tmp_project, f"wide_layout:\n  prose_max_width: {value}\n")
+        assert cfg.wide_layout is not None
+        assert cfg.wide_layout["prose_max_width"] == expected
+
     def test_keyboard_nav_default(self, tmp_project: Path):
         assert Config(tmp_project).keyboard_nav is True
 

@@ -181,6 +181,7 @@ class Config:
         "markdown_pages",
         "mcp",
         "marimo",
+        "wide_layout",
     )
 
     def _normalize_shorthands(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -721,6 +722,55 @@ class Config:
     def back_to_top(self) -> bool:
         """Check if back-to-top button is enabled."""
         return self["back_to_top"]
+
+    @property
+    def wide_layout_enabled(self) -> bool:
+        """Check if the wide layout toggle is enabled."""
+        return bool(self["wide_layout.enabled"])
+
+    @property
+    def wide_layout(self) -> dict[str, Any] | None:
+        """The validated wide layout settings, or None when the toggle is disabled
+
+        Invalid values fall back to the packaged defaults: scales below 1 or
+        non-numeric, a non-positive viewport, or an unknown `default`. The
+        `prose_max_width` value is passed through as a CSS length; a bare
+        number is taken as a `ch` count.
+        """
+        if not self.wide_layout_enabled:
+            return None
+        defaults = DEFAULT_CONFIG["wide_layout"]
+
+        def _number(key: str, minimum: float) -> float:
+            raw = self[f"wide_layout.{key}"]
+            if isinstance(raw, bool):
+                return float(defaults[key])
+            try:
+                val = float(raw)
+            except (TypeError, ValueError):
+                return float(defaults[key])
+            return val if val >= minimum else float(defaults[key])
+
+        default = self["wide_layout.default"]
+        if default not in ("normal", "wide"):
+            default = "normal"
+
+        prose = self["wide_layout.prose_max_width"]
+        prose_css: str | None = None
+        if isinstance(prose, (int, float)) and not isinstance(prose, bool) and prose > 0:
+            prose_css = f"{prose:g}ch"
+        elif isinstance(prose, str) and re.fullmatch(r"\s*\d+(\.\d+)?[a-z%]*\s*", prose):
+            prose_css = prose.strip()
+            if re.fullmatch(r"\d+(\.\d+)?", prose_css):
+                prose_css += "ch"
+
+        return {
+            "default": default,
+            "content_scale": _number("content_scale", 1.0),
+            "sidebar_scale": _number("sidebar_scale", 1.0),
+            "min_viewport": int(_number("min_viewport", 1.0)),
+            "prose_max_width": prose_css,
+        }
 
     @property
     def markdown_pages(self) -> bool:
