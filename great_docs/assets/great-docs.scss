@@ -1082,6 +1082,108 @@ body.quarto-dark #quarto-appendix.default {
     color: #212529;
 }
 
+/* ── Wide layout toggle: animatable desktop grid ──
+   The floating-sidebar grid templates below restate Quarto's own templates,
+   but every non-flex track is interpolated by --gd-wide-t (0 = default
+   layout, 1 = wide layout).  At 0 each track resolves to exactly Quarto's
+   value; at 1 each track's minimum becomes the default maximum (so nothing
+   gets narrower) and its maximum is scaled by the configured factor.
+   Registering --gd-wide-t as a <number> lets the whole grid animate with a
+   single transition.  theme-init.js adds .gd-wide-capable to <html> only at
+   or above the configured viewport width (wide_layout.min_viewport). */
+@property --gd-wide-t {
+    syntax: '<number>';
+    inherits: true;
+    initial-value: 0;
+}
+
+:root {
+    --gd-wide-content-scale: 1.5;
+    --gd-wide-sidebar-scale: 1.2;
+}
+
+html {
+    transition: --gd-wide-t 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html.gd-wide-capable[data-gd-width="wide"] {
+    --gd-wide-t: 1;
+}
+
+/* No animation for the stored preference on page load, or for readers who
+   prefer reduced motion */
+html.gd-wide-instant {
+    transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        transition: none;
+    }
+}
+
+// Track size that moves from $from (default layout) to $to (wide layout)
+@function gd-wide-lerp($from, $to) {
+    @return calc(#{$from} + (#{$to} - #{$from}) * var(--gd-wide-t));
+}
+
+// Track maximum that grows from $max to $max × the scale in --#{$scale}
+@function gd-wide-grow($max, $scale) {
+    @return calc(#{$max} * (1 + (var(--gd-wide-#{$scale}-scale) - 1) * var(--gd-wide-t)));
+}
+
+// minmax() for a track whose default is minmax($min, $max)
+@function gd-wide-track($min, $max, $scale) {
+    @return minmax(gd-wide-lerp($min, $max), gd-wide-grow($max, $scale));
+}
+
+// Quarto's floating-sidebar grid with interpolated tracks.  $side-min is the
+// minimum of the 50px side tracks (Quarto uses 25px, or a fixed 50px for
+// slimcontent); $content-min/$content-max bound the body column.
+@mixin gd-floating-grid($side-min, $content-min, $content-max, $important: false) {
+    $side: gd-wide-track($side-min, 50px, sidebar);
+    $inset: gd-wide-track(50px, 150px, sidebar);
+    $columns:
+        [screen-start] 1.5em
+        [screen-start-inset] 5fr
+        [page-start] $side
+        [page-start-inset] $inset
+        [body-start-outset] $side
+        [body-start] 1.5em
+        [body-content-start] gd-wide-track($content-min, $content-max, content)
+        [body-content-end] 1.5em
+        [body-end] $side
+        [body-end-outset] $inset
+        [page-end-inset] $side
+        [page-end] 5fr
+        [screen-end-inset] 1.5em
+        [screen-end];
+    @if $important {
+        grid-template-columns: $columns !important;
+    } @else {
+        grid-template-columns: $columns;
+    }
+}
+
+@media (min-width: 992px) {
+    body.floating .page-columns,
+    body.floating.listing .page-columns {
+        @include gd-floating-grid(25px, 500px, calc(800px - 3em));
+    }
+
+    body.floating.slimcontent .page-columns {
+        @include gd-floating-grid(50px, 450px, calc(750px - 3em));
+    }
+}
+
+/* Optional prose cap in wide mode (wide_layout.prose_max_width).  Without
+   the custom property the cap is `none`, so nothing changes. */
+html.gd-wide-capable[data-gd-width="wide"] #quarto-document-content {
+    :is(p, ul, ol, blockquote, dl) {
+        max-width: var(--gd-wide-prose-max, none);
+    }
+}
+
 /* ── Blended-homepage metadata sidebar ──
    In blended mode the first UG page becomes the site index page.  Project
    metadata (links, license, community, …) is placed in a panel that mirrors
@@ -1102,21 +1204,7 @@ body.quarto-dark #quarto-appendix.default {
     /* Fix outer grid: match the default floating (no-modifier) template so the
        left sidebar and content area align with regular UG pages. */
     body.nav-sidebar.floating.fullcontent .page-columns {
-        grid-template-columns:
-            [screen-start] 1.5em
-            [screen-start-inset] 5fr
-            [page-start] minmax(25px, 50px)
-            [page-start-inset] minmax(50px, 150px)
-            [body-start-outset] minmax(25px, 50px)
-            [body-start] 1.5em
-            [body-content-start] minmax(500px, calc(800px - 3em))
-            [body-content-end] 1.5em
-            [body-end] minmax(25px, 50px)
-            [body-end-outset] minmax(50px, 150px)
-            [page-end-inset] minmax(25px, 50px)
-            [page-end] 5fr
-            [screen-end-inset] 1.5em
-            [screen-end] !important;
+        @include gd-floating-grid(25px, 500px, calc(800px - 3em), $important: true);
     }
     main.content:has(.gd-meta-sidebar) {
         position: relative;
@@ -1426,11 +1514,11 @@ div.sidebar-item-container {
             [screen-start] 1.5em
             [screen-start-inset] 4.65fr
             [page-start page-start-inset body-start-outset body-start] 1.5em
-            [body-content-start] minmax(500px, calc(1050px - 3em))
+            [body-content-start] gd-wide-track(500px, calc(1050px - 3em), content)
             [body-content-end] 1.5em
-            [body-end] 35px
-            [body-end-outset] minmax(75px, 145px)
-            [page-end-inset] 35px
+            [body-end] gd-wide-track(35px, 35px, sidebar)
+            [body-end-outset] gd-wide-track(75px, 145px, sidebar)
+            [page-end-inset] gd-wide-track(35px, 35px, sidebar)
             [page-end] 5fr
             [screen-end-inset] 1.5em
             [screen-end] !important;
@@ -7792,6 +7880,87 @@ body.gd-menu-open {
         right: 1.25rem;
         width: 36px;
         height: 36px;
+    }
+}
+
+
+/* ---- Wide Layout Toggle ---- */
+
+/* Shares the back-to-top look; sits directly above it.  Only shown when
+   theme-init.js marks the viewport as wide enough (.gd-wide-capable).
+   wide-layout.js sets `bottom` to stay clear of back-to-top and the
+   prev/next page navigation. */
+.gd-wide-toggle {
+    position: fixed;
+    bottom: calc(2rem + 52px);
+    right: 2rem;
+    z-index: 1040;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.92);
+    color: #495057;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    transition: bottom 0.25s ease, background-color 0.15s ease, color 0.15s ease,
+                box-shadow 0.15s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 1);
+        color: #212529;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    }
+
+    &:focus-visible {
+        outline: 2px solid $primary;
+        outline-offset: 2px;
+    }
+
+    svg {
+        display: block;
+    }
+
+    /* Show the icon for the action the button will perform */
+    .gd-wide-icon-narrow {
+        display: none;
+    }
+
+    &[aria-pressed="true"] {
+        .gd-wide-icon-widen {
+            display: none;
+        }
+
+        .gd-wide-icon-narrow {
+            display: block;
+        }
+    }
+}
+
+html.gd-wide-capable .gd-wide-toggle {
+    display: flex;
+}
+
+[data-bs-theme="dark"] .gd-wide-toggle {
+    background: rgba(52, 58, 64, 0.92);
+    color: #dee2e6;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+    &:hover {
+        background: rgba(73, 80, 87, 1);
+        color: #f8f9fa;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gd-wide-toggle {
+        transition: none;
     }
 }
 
