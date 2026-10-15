@@ -2629,6 +2629,26 @@ class TestCanonicalIntegration:
             '<link rel="canonical" href="https://docs.example.com/pkg/custom/widget.html">' in page
         )
 
+    def test_raw_custom_page_gets_the_translation_bundle(self, tmp_path):
+        (tmp_path / "great-docs.yml").write_text(
+            "module: mypkg\nsite:\n  lang: fr\n", encoding="utf-8"
+        )
+        gd = GreatDocs(project_path=str(tmp_path))
+        gd.build_dir.mkdir(parents=True, exist_ok=True)
+        (gd.build_dir / "_quarto.yml").write_text(
+            "website:\n  sidebar: []\n  navbar:\n    left: []\n", encoding="utf-8"
+        )
+        custom = tmp_path / "custom"
+        custom.mkdir()
+        (custom / "widget.html").write_text(
+            "---\nlayout: raw\n---\n<html><head></head></html>", encoding="utf-8"
+        )
+
+        gd._process_custom_pages()
+
+        page = (gd.build_dir / "custom" / "widget.html").read_text(encoding="utf-8")
+        assert page.count('<meta name="gd-i18n"') == 1
+
 
 # ---------------------------------------------------------------------------
 # _inject_version_selector – full function coverage
