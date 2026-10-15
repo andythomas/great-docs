@@ -582,6 +582,18 @@ package_info_page: true
 # Back-to-top floating button.
 back_to_top: true
 
+# Wide layout toggle: a floating button (above back-to-top) that lets readers
+# widen the content column and both sidebars on wide desktop screens. The
+# default layout is unchanged; the reader's choice persists across pages.
+# : type(map) - (default) set the fields explicitly, as below
+wide_layout:
+  enabled: true # Show the toggle on wide screens
+  default: normal # "normal" or "wide": layout used before the reader picks one
+  content_scale: 1.5 # Max content width multiplier in wide mode (>= 1)
+  sidebar_scale: 1.2 # Max sidebar/TOC width multiplier in wide mode (>= 1)
+  min_viewport: 1600 # Viewport width (px) at and above which the toggle appears
+  prose_max_width: null # Cap for prose line length in wide mode, e.g. "110ch" (null = no cap)
+
 # Footer attribution ("Site created with Great Docs").
 attribution: true
 
