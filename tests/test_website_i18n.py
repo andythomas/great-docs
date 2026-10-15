@@ -58,3 +58,22 @@ class TestAddToRawPage:
 
     def test_english_page_unchanged(self, tmp_path):
         assert i18n.add_to_raw_page(PAGE, _config(tmp_path, "en")) == PAGE
+
+    def test_rtl_language_sets_direction(self, tmp_path):
+        page = i18n.add_to_raw_page('<html lang="ar"><head></head></html>', _config(tmp_path, "ar"))
+        assert page.startswith('<html lang="ar" dir="rtl">')
+
+    def test_site_direction_wins(self, tmp_path):
+        (tmp_path / "great-docs.yml").write_text(
+            "site:\n  lang: ar\n  dir: ltr\n", encoding="utf-8"
+        )
+        page = i18n.add_to_raw_page(PAGE, Config(tmp_path))
+        assert page.startswith('<html dir="ltr">')
+
+    def test_page_direction_is_kept(self, tmp_path):
+        page = i18n.add_to_raw_page('<html dir="ltr"><head></head></html>', _config(tmp_path, "ar"))
+        assert page.startswith('<html dir="ltr">')
+        assert page.count("dir=") == 1
+
+    def test_ltr_language_leaves_direction_unset(self, tmp_path):
+        assert "dir=" not in i18n.add_to_raw_page(PAGE, _config(tmp_path, "fr"))
