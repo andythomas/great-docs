@@ -602,6 +602,8 @@ class GreatDocs:
         if self._config.back_to_top:
             js_files.append("back-to-top.js")
             js_files.append("on-this-page.js")
+        if self._config.wide_layout_enabled:
+            js_files.append("wide-layout.js")
         if self._config.keyboard_nav:
             js_files.append("keyboard-nav.js")
         if self._config.tags_show_on_pages:
@@ -1998,6 +2000,9 @@ class GreatDocs:
 
         # Back-to-top button
         metadata["back_to_top_enabled"] = self._config.back_to_top
+
+        # Wide layout toggle (None when disabled)
+        metadata["wide_layout"] = self._config.wide_layout
 
         # Keyboard navigation
         metadata["keyboard_nav_enabled"] = self._config.keyboard_nav
@@ -11956,6 +11961,71 @@ anchor-sections: true
         if not has_nav_icons:  # pragma: no cover
             config["format"]["html"]["include-after-body"].append(entry)  # pragma: no cover
 
+    @staticmethod
+    def _configure_wide_layout(config: dict[str, Any], wide_layout: dict[str, Any] | None) -> None:
+        """
+        Add or remove the wide layout toggle in a Quarto config
+
+        When enabled, a `gd-wide-layout` meta tag (read by `theme-init.js` before first paint) and
+        a style block with the scale factors go in the header, ahead of `theme-init.js`, and a
+        loader for `wide-layout.js` goes after the body. When disabled, any of these entries left
+        over from a previous build are removed.
+
+        Parameters
+        ----------
+        config
+            The Quarto config dict, modified in place.
+        wide_layout
+            The validated settings from `Config.wide_layout`, or `None` when disabled.
+        """
+        html_fmt = config.setdefault("format", {}).setdefault("html", {})
+        for key in ("include-in-header", "include-after-body"):
+            if key not in html_fmt:
+                html_fmt[key] = []
+            elif isinstance(html_fmt[key], str):
+                html_fmt[key] = [html_fmt[key]]
+
+        header: list[Any] = html_fmt["include-in-header"]
+        after_body: list[Any] = html_fmt["include-after-body"]
+        header[:] = [h for h in header if "gd-wide-layout" not in str(h)]
+        after_body[:] = [a for a in after_body if "wide-layout.js" not in str(a)]
+
+        if not wide_layout:
+            return
+
+        css_vars = (
+            f"--gd-wide-content-scale:{wide_layout['content_scale']:g};"
+            f"--gd-wide-sidebar-scale:{wide_layout['sidebar_scale']:g};"
+        )
+        if wide_layout.get("prose_max_width"):
+            css_vars += f"--gd-wide-prose-max:{wide_layout['prose_max_width']};"
+        header_entry = {
+            "text": (
+                f'<meta name="gd-wide-layout" data-default="{wide_layout["default"]}" '
+                f'data-min-viewport="{wide_layout["min_viewport"]}">\n'
+                f'<style id="gd-wide-layout-vars">:root{{{css_vars}}}</style>'
+            )
+        }
+        # theme-init.js reads the meta tag, so it must come first
+        theme_index = next(
+            (i for i, h in enumerate(header) if "theme-init" in str(h)),
+            len(header),
+        )
+        header.insert(theme_index, header_entry)
+
+        # Inline loader: resolves the site root from quarto:offset, since Quarto doesn't always
+        # rewrite bare src paths in text entries for newly-added files
+        after_body.append(
+            {
+                "text": (
+                    "<script>(function(){var s=document.createElement('script');"
+                    "var m=document.querySelector('meta[name=\"quarto:offset\"]');"
+                    "s.src=(m?m.content:'')+'wide-layout.js';"
+                    "document.body.appendChild(s);})();</script>"
+                )
+            }
+        )
+
     def _update_quarto_config(self) -> None:  # pragma: no cover
         """
         Merge Great Docs settings into the build directory's _quarto.yml
@@ -12036,6 +12106,8 @@ anchor-sections: true
         if self._config.back_to_top:
             js_resource_files.append("back-to-top.js")
             js_resource_files.append("on-this-page.js")
+        if self._config.wide_layout_enabled:
+            js_resource_files.append("wide-layout.js")
         if self._config.keyboard_nav:
             js_resource_files.append("keyboard-nav.js")
         if self._config.tags_show_on_pages:
@@ -12787,6 +12859,9 @@ anchor-sections: true
             )
             if not has_on_this_page:
                 config["format"]["html"]["include-after-body"].append(on_this_page_entry)
+
+        # Add (or remove) the wide layout toggle
+        self._configure_wide_layout(config, metadata.get("wide_layout"))
 
         # Add keyboard navigation script (if enabled)
         if metadata.get("keyboard_nav_enabled", True):
