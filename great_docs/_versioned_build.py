@@ -33,6 +33,7 @@ from great_docs._versioning import (
     process_version_fences,
     version_url_segment,
 )
+from great_docs._website.seo import description as seo_description
 
 if TYPE_CHECKING:
     from great_docs._api_diff import ApiSnapshot
@@ -532,6 +533,7 @@ def preprocess_version(
     section_configs: list[dict] | None = None,
     badge_expiry: "BadgeExpiry | None" = None,
     config: Config | None = None,
+    default_description: str | None = None,
 ) -> list[str]:
     """
     Prepare the documentation source for one version
@@ -546,6 +548,8 @@ def preprocess_version(
        the inventory and interlinks index to match them.
     6. Generate API reference pages from a configured Git tag, and rebuild
        the inventory and interlinks index to match them.
+    7. Write a search description into each page that lacks one, when SEO is
+       enabled.
 
     Parameters
     ----------
@@ -568,6 +572,8 @@ def preprocess_version(
         Project configuration, forwarded to steps 5 and 6 for rebuilding the
         inventory and interlinks index. Skipped for a version that keeps the
         live inventory when omitted.
+    default_description
+        The site's default search description as plain text.
 
     Returns
     -------
@@ -667,7 +673,15 @@ def preprocess_version(
         if updated != content:
             qmd_file.write_text(updated, encoding="utf-8")
 
-    # 7. Update _page_status.json with upcoming pages for this version
+    # 7. Describe pages from this version's content, now that fences are resolved
+    if config is not None and config.seo_enabled:
+        from yaml12 import read_yaml
+
+        quarto_yml = dest_dir / "_quarto.yml"
+        quarto_config = read_yaml(quarto_yml) if quarto_yml.exists() else {}
+        seo_description.write_to_pages(dest_dir, quarto_config or {}, default_description)
+
+    # 8. Update _page_status.json with upcoming pages for this version
     if upcoming_pages:
         _update_page_status_json(dest_dir, upcoming_pages)
 
@@ -2100,6 +2114,7 @@ def run_versioned_build(  # pragma: no cover
     badge_expiry_raw: str | None = None,
     config: Config | None = None,
     layout: Layout | None = None,
+    default_description: str | None = None,
 ) -> dict[str, Any]:
     """
     Build and assemble the configured documentation versions
@@ -2130,6 +2145,10 @@ def run_versioned_build(  # pragma: no cover
         Project configuration. A historical version built from a snapshot or
         git tag uses it to rebuild its own inventory and interlinks index;
         omitting it leaves such a version publishing the live checkout's.
+    layout
+        Resolved project paths.
+    default_description
+        The site's default search description as plain text.
 
     Returns
     -------
@@ -2209,6 +2228,7 @@ def run_versioned_build(  # pragma: no cover
             project_root=project_root,
             badge_expiry=badge_expiry,
             config=config,
+            default_description=default_description,
         )
         _prune_missing_sidebar_pages(ver_dir)
         _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag)

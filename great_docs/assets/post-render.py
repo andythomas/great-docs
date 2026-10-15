@@ -82,73 +82,6 @@ def _t(key: str, fallback: str | None = None) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def inject_meta_description(html_content: str, page_path: str) -> str:
-    """
-    Inject or update meta description tag in the HTML head.
-
-    Extracts description from:
-    1. Existing description meta tag (if present)
-    2. First paragraph of content
-    3. Default description from config
-
-    Parameters
-    ----------
-    html_content
-        The HTML content to modify.
-    page_path
-        The page path relative to the site root.
-
-    Returns
-    -------
-    str
-        The modified HTML with meta description.
-    """
-    if not _gd_options.get("seo_enabled", False):
-        return html_content
-
-    # Check if description meta already exists
-    if re.search(r'<meta\s+name="description"', html_content):
-        return html_content
-
-    # Try to extract a description from the page content
-    description = None
-
-    # Look for the first paragraph in main content
-    main_match = re.search(r"<main[^>]*>(.*?)</main>", html_content, re.DOTALL)
-    if main_match:
-        main_content = main_match.group(1)
-        # Find the first paragraph that has actual text (not just whitespace or code)
-        p_match = re.search(r"<p[^>]*>([^<]+(?:<(?!/?p)[^>]*>[^<]*)*)</p>", main_content)
-        if p_match:
-            desc_text = re.sub(r"<[^>]+>", "", p_match.group(1)).strip()
-            if len(desc_text) > 30:  # Only use if meaningful
-                # Truncate to ~155 chars for optimal SEO
-                if len(desc_text) > 155:
-                    desc_text = desc_text[:152].rsplit(" ", 1)[0] + "..."
-                description = desc_text
-
-    # Fall back to default description
-    if not description:
-        description = _gd_options.get("default_description", "")
-
-    if not description:
-        return html_content
-
-    # Escape HTML entities in description
-    description = (
-        description.replace("&", "&amp;")
-        .replace('"', "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-
-    # Inject meta description before </head>
-    meta_tag = f'<meta name="description" content="{description}">'
-    html_content = html_content.replace("</head>", f"  {meta_tag}\n</head>", 1)
-
-    return html_content
-
-
 # Mapping of common license identifiers to their canonical URLs
 # Uses SPDX identifiers (https://spdx.org/licenses/) as keys
 LICENSE_URL_MAP = {
@@ -477,7 +410,6 @@ def apply_seo_processing(html_content: str, page_path: str) -> str:
     str
         The modified HTML with all SEO enhancements.
     """
-    html_content = inject_meta_description(html_content, page_path)
     html_content = inject_json_ld(html_content, page_path)
     html_content = inject_noindex_meta(html_content, page_path)
     html_content = inject_social_cards(html_content, page_path)
@@ -2237,8 +2169,8 @@ print("##GD:PASS:Markdown alternate links injected", flush=True)
 # ══════════════════════════════════════════════════════════════════════════════
 # SEO PROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
-# Update HTML pages with meta descriptions, JSON-LD structured data, and title
-# templates. Mark internal pages with noindex.
+# Add JSON-LD structured data and social cards to HTML pages. Mark internal
+# pages with noindex.
 
 if _gd_options.get("seo_enabled", False):
     print("\n🔍 Applying SEO enhancements to HTML files...")

@@ -4742,6 +4742,51 @@ def test_index_qmd_frontmatter_title_yaml_safe():
         assert fm["title"] == tricky_title
 
 
+def _homepage_from(source_name: str, source: str, tmp_dir: str) -> dict:
+    """Build the homepage from one index source and return its frontmatter."""
+    project_path = Path(tmp_dir)
+    (project_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "1.0"\n')
+    (project_path / "great-docs.yml").write_text("")
+    (project_path / source_name).write_text(source)
+    pkg_dir = project_path / "test"
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("")
+
+    docs = GreatDocs(project_path=tmp_dir)
+    docs.build_dir.mkdir(parents=True, exist_ok=True)
+    docs._create_index_from_readme(force_rebuild=True)
+    return _homepage_frontmatter((docs.build_dir / "index.qmd").read_text())
+
+
+@pytest.mark.parametrize("key", ["description", "description-meta"])
+def test_index_qmd_keeps_source_description(key):
+    """An authored description on the index source survives into index.qmd."""
+    source = f"---\ntitle: Pkg\n{key}: Authored\n---\n\nA first paragraph that is long enough.\n"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fm = _homepage_from("index.qmd", source, tmp_dir)
+
+    assert fm[key] == "Authored"
+    assert set(fm) & {"description", "description-meta"} == {key}
+
+
+def test_index_qmd_describes_itself_with_readme_first_paragraph():
+    """The homepage takes its description from the README, not from the wrapper markup."""
+    source = "# test\n\nThe `test` package adds numbers *quickly*.\n\n## Usage\n"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fm = _homepage_from("README.md", source, tmp_dir)
+
+    assert fm["description-meta"] == "The test package adds numbers quickly."
+
+
+def test_index_qmd_without_opening_paragraph_has_no_description():
+    """A README that opens with code leaves the homepage description to the site default."""
+    source = "# test\n\n```python\nimport test\n```\n\nA paragraph after the code block.\n"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fm = _homepage_from("README.md", source, tmp_dir)
+
+    assert "description-meta" not in fm
+
+
 def test_convert_rst_to_markdown_real_pandoc():
     """Test RST to Markdown conversion via pandoc."""
 
@@ -24799,6 +24844,7 @@ def test_build_prepare_and_render_flow():
 
             docs._has_api_reference = True
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -24847,6 +24893,7 @@ def test_build_no_api_reference():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -24905,6 +24952,7 @@ def test_build_dynamic_fallback_to_static():
 
             docs._has_api_reference = True
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -24970,6 +25018,7 @@ def test_build_dynamic_fallback_preserves_the_quarto_yml_header():
 
             docs._has_api_reference = True
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -25020,6 +25069,7 @@ def test_build_static_mode_failure_exits():
         ):
             docs._has_api_reference = True
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.changelog_enabled = False
             docs._config.sections = None
@@ -25067,6 +25117,7 @@ def test_build_non_dynamic_failure_exits():
         ):
             docs._has_api_reference = True
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.changelog_enabled = False
             docs._config.sections = None
@@ -25118,6 +25169,7 @@ def test_build_with_changelog():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = True
@@ -25167,6 +25219,7 @@ def test_build_changelog_error_handled():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = True
@@ -25219,6 +25272,7 @@ def test_build_with_cli_documentation():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -25264,6 +25318,7 @@ def test_build_with_sections():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -25307,6 +25362,7 @@ def test_build_with_assets_triggers_config_update():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -25342,6 +25398,7 @@ def test_build_watch_mode():
         ):
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -25389,6 +25446,7 @@ def test_build_quarto_render_failure():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -25435,6 +25493,7 @@ def test_build_cli_error_handled():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -27314,6 +27373,7 @@ def test_build_hero_section_disabled():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.hero_explicitly_disabled = True
 
         html, cleaned = docs._build_hero_section()
@@ -27327,6 +27387,7 @@ def test_build_hero_section_auto_badges():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.hero_explicitly_disabled = False
         docs._config.hero_badges = "auto"
         docs._config.hero_enabled = True
@@ -27363,6 +27424,7 @@ def test_build_hero_section_no_content():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.hero_explicitly_disabled = False
         docs._config.hero_badges = "auto"
         docs._config.hero_enabled = False
@@ -27391,6 +27453,8 @@ def test_build_hero_section_with_logo_dict():
         docs.build_dir.mkdir()
 
         docs._config = MagicMock()
+
+        docs._config.seo_default_description = None
         docs._config.hero_explicitly_disabled = False
         docs._config.hero_badges = []
         docs._config.hero_enabled = True
@@ -27421,6 +27485,7 @@ def test_add_api_reference_config_disabled():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.reference_enabled = False
 
         docs._add_api_reference_config()
@@ -27434,6 +27499,7 @@ def test_add_api_reference_config_already_exists():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.reference_enabled = True
 
         docs.build_dir.mkdir(parents=True, exist_ok=True)
@@ -27452,6 +27518,7 @@ def test_add_api_reference_config_no_package():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.reference_enabled = True
 
         docs.build_dir.mkdir(parents=True, exist_ok=True)
@@ -27472,6 +27539,7 @@ def test_add_api_reference_config_no_exports():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.reference_enabled = True
 
         docs.build_dir.mkdir(parents=True, exist_ok=True)
@@ -27494,6 +27562,7 @@ def test_add_api_reference_config_success():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.reference_enabled = True
         docs._config.reference_title = "API Reference"
         docs._config.reference_desc = None
@@ -27525,6 +27594,7 @@ def test_add_api_reference_config_eof_error():
     with tempfile.TemporaryDirectory() as tmp_dir:
         docs = GreatDocs(project_path=tmp_dir)
         docs._config = MagicMock()
+        docs._config.seo_default_description = None
         docs._config.reference_enabled = True
 
         docs.build_dir.mkdir(parents=True, exist_ok=True)
@@ -27575,6 +27645,8 @@ def test_refresh_api_reference_config_fallback_to_explicit():
         (docs.build_dir / "_quarto.yml").write_text(format_yaml(config), encoding="utf-8")
 
         docs._config = MagicMock()
+
+        docs._config.seo_default_description = None
         docs._config.parser = "numpy"
         docs._config.dynamic = True
         docs._config.reference_title = None
@@ -28224,6 +28296,7 @@ def test_build_section_error_handled():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -28265,6 +28338,7 @@ def test_build_user_guide_error_handled():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -28306,6 +28380,7 @@ def test_build_copy_assets_error_handled():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = False
@@ -28353,6 +28428,7 @@ def test_build_changelog_no_releases():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = True
@@ -28394,6 +28470,7 @@ def test_build_changelog_no_repo():
 
             docs._has_api_reference = False
             docs._config = MagicMock()
+            docs._config.seo_default_description = None
             docs._config.versions = None
             docs._config.has_versions = False
             docs._config.changelog_enabled = True

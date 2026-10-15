@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
+from yaml12 import parse_yaml
 
 from great_docs._api_diff import ApiSnapshot, ParameterInfo, SymbolInfo
 from great_docs._utils import QUARTO_YML_HEADER, is_great_docs_build_dir
@@ -35,6 +38,9 @@ from great_docs._versioned_build import (
     write_version_map,
 )
 from great_docs._versioning import VersionEntry, parse_versions_config
+
+if TYPE_CHECKING:
+    from great_docs.config import Config
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -258,6 +264,37 @@ class TestPreprocessVersion:
         content2 = (dest2 / "page.qmd").read_text()
         assert "New in 0.3!" not in content2
         assert "Old content." in content2
+
+    def test_describes_pages_after_resolving_version_fences(self, tmp_path: Path):
+        source = tmp_path / "source"
+        _make_source_tree(
+            source,
+            {
+                "page.qmd": (
+                    "---\ntitle: Page\n---\n\n"
+                    '::: {.version-only versions="0.3"}\n'
+                    "This paragraph only describes the newest release.\n"
+                    ":::\n\n"
+                    '::: {.version-except versions="0.3"}\n'
+                    "This paragraph describes every older release.\n"
+                    ":::\n"
+                ),
+            },
+        )
+        config = cast("Config", SimpleNamespace(seo_enabled=True))
+        versions = self._setup_versions()
+
+        descriptions = []
+        for i, entry in enumerate(versions[:2]):
+            dest = tmp_path / f"build{i}"
+            preprocess_version(source, dest, entry, versions, config=config)
+            front_matter = (dest / "page.qmd").read_text().split("---")[1]
+            descriptions.append(parse_yaml(front_matter)["description-meta"])
+
+        assert descriptions == [
+            "This paragraph only describes the newest release.",
+            "This paragraph describes every older release.",
+        ]
 
     def test_skips_underscore_prefixed_files(self, tmp_path: Path):
         source = tmp_path / "source"
