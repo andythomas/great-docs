@@ -15,6 +15,7 @@ from ._utils import fenced_lines, is_in_great_docs_build_dir, parse_seealso
 if TYPE_CHECKING:
     from ._apiref.inventory import InventoryItem
     from ._interlinks import Index
+    from .core import GreatDocs
 
 
 @dataclass
@@ -89,7 +90,7 @@ def run_lint(
     checks
         Set of check names to run. If None, all checks are run.
         Valid names: "config", "docstrings", "cross-refs", "style",
-        "directives", "stale-versions".
+        "directives", "stale-versions", "descriptions".
     quiet
         If True, suppress discovery/introspection print output.
     config_path
@@ -106,7 +107,15 @@ def run_lint(
     from .core import GreatDocs
 
     result = LintResult()
-    all_checks = {"config", "docstrings", "cross-refs", "style", "directives", "stale-versions"}
+    all_checks = {
+        "config",
+        "docstrings",
+        "cross-refs",
+        "style",
+        "directives",
+        "stale-versions",
+        "descriptions",
+    }
 
     if checks is None:
         checks = all_checks
@@ -240,6 +249,9 @@ def run_lint(
 
     if "stale-versions" in checks:
         _check_stale_versions(project_root, result, docs.layout)
+
+    if "descriptions" in checks:
+        _check_page_descriptions(docs, project_root, result)
 
     return result
 
@@ -1099,3 +1111,99 @@ def _extract_frontmatter_upcoming(content: str) -> str | None:
     if not m:
         return None
     return m.group(1).strip().strip('"').strip("'")
+
+
+def _site_page_sources(docs: GreatDocs) -> list[Path]:
+    """
+    List the Markdown pages an author writes for the site
+
+    Parameters
+    ----------
+    docs
+        The project being checked.
+
+    Returns
+    -------
+    :
+        The homepage source, then the pages of the user guide, the sections
+        and the custom page directories. Paths with a part starting with `_`
+        or `.` are left out, because Quarto does not render them.
+    """
+    source_dir = docs.layout.source_dir
+    directories: list[Path] = []
+    if (user_guide := docs._find_user_guide_dir()) is not None:
+        directories.append(user_guide)
+    for section in docs._config.sections or []:
+        if isinstance(section, dict) and section.get("dir"):
+            directories.append(source_dir / str(section["dir"]))
+    directories.extend(Path(entry["source_dir"]) for entry in docs._get_custom_page_sources())
+
+    homepage, _ = docs._find_index_source_file()
+    pages = [homepage] if homepage is not None and homepage.suffix in (".md", ".qmd") else []
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        for path in sorted([*directory.rglob("*.qmd"), *directory.rglob("*.md")]):
+            if not any(part.startswith(("_", ".")) for part in path.relative_to(directory).parts):
+                pages.append(path)
+    return pages
+
+
+def _check_page_descriptions(docs: GreatDocs, project_root: Path, result: LintResult) -> None:
+    """
+    Flag pages whose search description falls back to the site default
+
+    A page is described by its own `description`, else by its opening
+    paragraph. A page that opens with anything else, such as code or a
+    callout, gets the default description, or none when the site has no
+    default. Generated pages are not checked, because their authors cannot
+    change them.
+
+    Parameters
+    ----------
+    docs
+        The project being checked.
+    project_root
+        Root of the project, against which page paths are reported.
+    result
+        Aggregated results to append to.
+    """
+    from ._website.seo import description
+
+    if not docs._config.seo_enabled:
+        return
+
+    homepage, _ = docs._find_index_source_file()
+    has_default = docs._default_description() is not None
+    for path in _site_page_sources(docs):
+        front_matter, body = description.split_front_matter(path.read_text(encoding="utf-8"))
+        if front_matter is not None and any(key in front_matter for key in description.PAGE_KEYS):
+            continue
+        if path == homepage:
+            # The homepage is described after badges and hero elements are removed
+            _, cleaned = docs._build_hero_section(body)
+            body = cleaned if cleaned is not None else body
+        fallback = description.first_paragraph(body).fallback
+        if fallback is None:
+            continue
+
+        try:
+            symbol = str(path.relative_to(project_root.resolve()))
+        except ValueError:
+            symbol = str(path)
+        if has_default:
+            outcome, remedy = "uses the default description", ""
+        else:
+            outcome = "has no description, as the site has no default"
+            remedy = ", or set `seo.default_description`"
+        result.issues.append(
+            LintIssue(
+                check="default-description",
+                severity="info" if has_default else "warning",
+                symbol=symbol,
+                message=(
+                    f"The page {fallback}, so it {outcome}. Open it with "
+                    f"a sentence or add `description` to its front matter{remedy}."
+                ),
+            )
+        )

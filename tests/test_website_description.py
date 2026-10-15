@@ -97,9 +97,9 @@ def test_first_paragraph_joins_lines():
         (f"{{{{< include _intro.qmd >}}}}\n\n{LONG}", "starts with a shortcode"),
         (f"> quoted\n\n{LONG}", "starts with a block quote"),
         (f"$$\nx\n$$\n\n{LONG}", "starts with display math"),
-        (f"Too short.\n\n{LONG}", "first paragraph is too short"),
-        ("# Only a title\n", "page has no content"),
-        ("", "page has no content"),
+        (f"Too short.\n\n{LONG}", "opens with a paragraph of 30 characters or fewer"),
+        ("# Only a title\n", "has no content"),
+        ("", "has no content"),
     ],
 )
 def test_first_paragraph_falls_back(body: str, fallback: str):

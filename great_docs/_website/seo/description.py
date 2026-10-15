@@ -67,7 +67,7 @@ class FirstParagraph:
     """The paragraph as plain text, truncated to `MAX_LENGTH` characters"""
 
     fallback: str | None = None
-    """Why the page falls back to the default description"""
+    """Why the page falls back to the default description, worded to follow `The page`"""
 
 
 def plain_text(markdown: str) -> str | None:
@@ -225,10 +225,10 @@ def first_paragraph(body: str) -> FirstParagraph:
             return FirstParagraph(fallback=f"starts with {reason}")
         text = plain_text(" ".join(block))
         if text is None or len(text) <= SHORT_PARAGRAPH:
-            return FirstParagraph(fallback="first paragraph is too short")
+            return FirstParagraph(fallback="opens with a paragraph of 30 characters or fewer")
         return FirstParagraph(text=text)
 
-    return FirstParagraph(fallback="page has no content")
+    return FirstParagraph(fallback="has no content")
 
 
 def _non_paragraph(line: str) -> str | None:

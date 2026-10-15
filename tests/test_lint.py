@@ -880,6 +880,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_no_package_detected(self, mock_gd_cls, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = None
         mock_gd_cls.return_value = mock_gd
 
@@ -891,6 +892,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_griffe_import_error(self, mock_gd_cls, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._detect_module_name.return_value = None
         mock_gd._normalize_package_name.return_value = "mypkg"
@@ -917,6 +919,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_successful_lint_run(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._resolve_importable_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a", "func_b"]
@@ -947,6 +950,7 @@ class TestRunLint:
     ):
         """A `members:` config narrowing NetCache must not make `flush` look ambiguous."""
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._resolve_importable_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["StoreCache", "NetCache"]
@@ -991,6 +995,7 @@ class TestRunLint:
         network, so a run over a project whose reference resolves nothing
         must never call it."""
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._resolve_importable_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a"]
@@ -1016,6 +1021,7 @@ class TestRunLint:
         """Regression: run_lint loads griffe by the importable module name, not the
         dash-normalized PyPI project name, when the two diverge."""
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "my-dist"
         mock_gd._resolve_importable_name.return_value = "actual_module"
         mock_gd._get_package_exports.return_value = ["func_a"]
@@ -1040,6 +1046,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_selective_checks(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._detect_module_name.return_value = None
         mock_gd._normalize_package_name.return_value = "mypkg"
@@ -1070,6 +1077,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_config_check_runs_alone(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a"]
@@ -1098,6 +1106,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_no_exports(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = None
@@ -1118,6 +1127,7 @@ class TestRunLint:
     @patch("great_docs.core.GreatDocs")
     def test_griffe_load_failure(self, mock_gd_cls, mock_griffe_load, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd_cls.return_value = mock_gd
@@ -1157,6 +1167,7 @@ class TestRunLintQuiet:
     @patch("great_docs.core.GreatDocs")
     def test_quiet_suppresses_output(self, mock_gd_cls, mock_griffe_load, tmp_path, capsys):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd._get_package_exports.return_value = ["func_a"]
@@ -1176,6 +1187,7 @@ class TestRunLintQuiet:
     @patch("great_docs.core.GreatDocs")
     def test_quiet_no_package_restores_stdout(self, mock_gd_cls, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = None
         mock_gd_cls.return_value = mock_gd
 
@@ -1191,6 +1203,7 @@ class TestRunLintQuiet:
     @patch("great_docs.core.GreatDocs")
     def test_quiet_griffe_import_error_restores_stdout(self, mock_gd_cls, tmp_path):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd_cls.return_value = mock_gd
@@ -1220,6 +1233,7 @@ class TestRunLintQuiet:
         self, mock_gd_cls, mock_griffe_load, tmp_path
     ):
         mock_gd = MagicMock()
+        mock_gd._config.seo_enabled = False
         mock_gd._detect_package_name.return_value = "mypkg"
         mock_gd._normalize_package_name.return_value = "mypkg"
         mock_gd_cls.return_value = mock_gd
@@ -2168,3 +2182,56 @@ class TestExtractFrontmatterUpcoming:
         content = '---\ntitle: My Page\nupcoming: "0.9"\n---\n\nContent here.'
         result = _extract_frontmatter_upcoming(content)
         assert result == "0.9"
+
+
+class TestCheckPageDescriptions:
+    """Pages an author writes are flagged when they fall back to the default description."""
+
+    LONG = "This page explains how the package adds numbers together."
+
+    def _project(self, tmp_path: Path, *, description: str = "Adds numbers", seo: bool = True):
+        from great_docs.core import GreatDocs
+
+        (tmp_path / "pyproject.toml").write_text(
+            f'[project]\nname = "pkg"\nversion = "1.0"\ndescription = "{description}"\n'
+        )
+        (tmp_path / "great-docs.yml").write_text(f"seo:\n  enabled: {str(seo).lower()}\n")
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / "__init__.py").write_text("")
+        guide = tmp_path / "user_guide"
+        guide.mkdir()
+        (guide / "01-prose.qmd").write_text(f"---\ntitle: Prose\n---\n\n{self.LONG}\n")
+        (guide / "02-code.qmd").write_text("---\ntitle: Code\n---\n\n```python\nx = 1\n```\n")
+        (guide / "03-own.qmd").write_text("---\ndescription: Own\n---\n\n```python\nx\n```\n")
+        (guide / "_partial.qmd").write_text("```python\nx = 1\n```\n")
+        (tmp_path / "README.md").write_text("# pkg\n\n- a list\n")
+        return GreatDocs(project_path=str(tmp_path))
+
+    def _issues(self, tmp_path: Path, **kwargs) -> list[LintIssue]:
+        from great_docs._lint import _check_page_descriptions
+
+        result = LintResult()
+        _check_page_descriptions(self._project(tmp_path, **kwargs), tmp_path, result)
+        return result.issues
+
+    def test_flags_each_fallback_with_its_reason(self, tmp_path: Path):
+        issues = self._issues(tmp_path)
+
+        assert {i.symbol: i.severity for i in issues} == {
+            "README.md": "info",
+            "user_guide/02-code.qmd": "info",
+        }
+        code = next(i for i in issues if i.symbol == "user_guide/02-code.qmd")
+        assert code.check == "default-description"
+        assert code.message.startswith(
+            "The page starts with a code block, so it uses the default description."
+        )
+
+    def test_warns_when_there_is_no_default(self, tmp_path: Path):
+        issues = self._issues(tmp_path, description="")
+
+        assert {i.severity for i in issues} == {"warning"}
+        assert all("seo.default_description" in i.message for i in issues)
+
+    def test_nothing_is_flagged_when_seo_is_disabled(self, tmp_path: Path):
+        assert self._issues(tmp_path, seo=False) == []

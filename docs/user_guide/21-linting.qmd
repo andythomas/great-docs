@@ -190,6 +190,21 @@ reStructuredText directives and inline cross-reference roles such as
 Any other `%`-prefixed token, such as `%internal`, is flagged as unknown. If you see a false
 positive, check for typos in the directive name.
 
+### Search Descriptions
+
+Each page's search description comes from its `description` front matter, or else from the
+paragraph the page opens with. A page that opens with anything else, such as code, a callout, an
+image or a list, gets the site's default description (see [SEO](seo.qmd#meta-descriptions)). This
+check lists those pages, so that you can give each one a description of its own.
+
+| Finding | Severity | Description |
+|---------|----------|-------------|
+| `default-description` | Info | The page gets the site's default description |
+| `default-description` | Warning | The page gets no description, because the site has no default |
+
+The check covers the homepage source, the user guide, sections and custom pages. It skips
+generated pages such as the API reference, and runs only when SEO is enabled.
+
 ## Running Specific Checks
 
 When diagnosing a particular class of issue, you can run a subset of checks instead of the full
@@ -215,6 +230,7 @@ Available check names:
 | `cross-refs` | Broken `%seealso` references and ambiguous interlinks |
 | `style` | Docstring style consistency with configured parser |
 | `directives` | Unknown or malformed `%` directives |
+| `descriptions` | Pages that fall back to the default search description |
 
 When no `--check` flags are given, every category runs.
 
