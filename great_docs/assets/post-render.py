@@ -2273,60 +2273,6 @@ print("##GD:PASS:SEO enhancements applied", flush=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# I18N — INJECT TRANSLATION BUNDLE
-# ══════════════════════════════════════════════════════════════════════════════
-# Inject a <meta name="gd-i18n"> tag containing the JSON translations bundle
-# and, for RTL languages, set dir="rtl" on the <html> element.
-
-_i18n_bundle = _gd_options.get("i18n")
-_i18n_rtl = _gd_options.get("rtl", False)
-_i18n_language = _gd_options.get("lang", "en")
-
-if _i18n_bundle and _i18n_language != "en":
-    import html as _html_mod
-
-    _i18n_json = json.dumps(_i18n_bundle, ensure_ascii=False, separators=(",", ":"))
-    # Escape for safe embedding in an HTML attribute
-    _i18n_escaped = _html_mod.escape(_i18n_json, quote=True)
-    _i18n_meta = f'<meta name="gd-i18n" content="{_i18n_escaped}">'
-    if _i18n_rtl:
-        _i18n_meta += '\n<meta name="gd-rtl" content="true">'
-
-    print(f"\n🌐 Injecting i18n translations (language={_i18n_language}, rtl={_i18n_rtl})...")
-    _i18n_count = 0
-    for html_file in glob.glob("_site/**/*.html", recursive=True):
-        try:
-            with open(html_file, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            modified = content.replace("<head>", f"<head>\n{_i18n_meta}", 1)
-
-            # Set dir="rtl" on <html> element for RTL languages
-            if _i18n_rtl:
-                modified = re.sub(
-                    r"<html\b([^>]*)>",
-                    r'<html\1 dir="rtl">',
-                    modified,
-                    count=1,
-                )
-
-            if modified != content:
-                with open(html_file, "w", encoding="utf-8") as f:
-                    f.write(modified)
-                _i18n_count += 1
-        except (OSError, ValueError) as e:
-            print(f"  i18n error for {html_file}: {e}")
-
-    print(f"   Injected i18n meta in {_i18n_count} page(s)")
-else:
-    if _i18n_language != "en":
-        print(f"\n🌐 i18n: language={_i18n_language} but no translation bundle found")
-    else:
-        print("\n🌐 i18n: using default language (en)")
-print("##GD:PASS:I18n translations injected", flush=True)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # PAGE-LEVEL SCALE-TO-FIT META TAG INJECTION
 # ══════════════════════════════════════════════════════════════════════════════
 # When a .qmd page has `scale-to-fit: [".selector"]` in its frontmatter,

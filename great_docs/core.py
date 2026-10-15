@@ -28,6 +28,7 @@ from ._utils import (
     validate_layout_outputs,
     validate_tree_symlinks,
 )
+from ._website import i18n
 from ._website.navigation import label as nav_label
 from ._website.seo import canonical
 from .config import Config, create_default_config
@@ -651,13 +652,11 @@ class GreatDocs:
             "team_author": self._prepare_author_image(self._config.team_author),
             "authors": [self._prepare_author_image(author) for author in self._config.authors],
             "build_timestamp": datetime.now().isoformat(),
-            "lang": self._config.lang,
         }
         # Add i18n translations bundle
-        from ._translations import get_translations_bundle, is_rtl
+        from ._translations import get_translations_bundle
 
         gd_options["i18n"] = get_translations_bundle(self._config.lang)
-        gd_options["rtl"] = is_rtl(self._config.lang)
         # Add SEO options
         gd_options.update(self._get_seo_options())
         gd_options_path = self.build_dir / "_gd_options.json"
@@ -4204,6 +4203,7 @@ class GreatDocs:
                     body = canonical.add_to_raw_page(
                         body, self._config, canonical_base_url, output_rel_path.as_posix()
                     )
+                    body = i18n.add_to_raw_page(body, self._config)
                     dest_path.write_text(body, encoding="utf-8")
                     raw_resource = output_rel_path.as_posix()
                     resources_to_add.append(raw_resource)
@@ -13740,9 +13740,10 @@ anchor-sections: true
         if INVENTORY_FILENAME not in resources:
             resources.append(INVENTORY_FILENAME)
 
-        # Compose each page's browser title during Quarto rendering.
-        self._write_title_partial(config)
+        # Quarto renders page titles and translation metadata from this partial.
+        self._write_metadata_partial(config)
         nav_label.register(config, self._config)
+        i18n.register(config, self._config)
 
         # Add each page's canonical link during Quarto rendering.
         canonical.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)
@@ -15504,48 +15505,52 @@ anchor-sections: true
         titled = template.replace(page_key, "$pagetitle$").replace(site_key, "$title-prefix$")
         return f"<title>$if(title-prefix)${titled}$else$$pagetitle$$endif$</title>"
 
-    def _write_title_partial(self, config: dict) -> None:
+    def _write_metadata_partial(self, config: dict) -> None:
         """
-        Write a Quarto metadata partial with the configured page title
+        Write a Quarto metadata partial with the page title and translations
 
-        Replace the bundled partial's `<title>` element and preserve its other
-        tags. The bundled copy keeps the metadata independent of the installed
-        Quarto version. Leave Quarto's default title unchanged when SEO is
-        disabled, when the template is unsupported, or when the HTML
-        configuration is unavailable.
+        Use the bundled partial to keep metadata independent of the installed
+        Quarto version. Apply a supported title template when SEO is enabled,
+        and add the translation bundle for languages other than English.
+        Register the partial only if its contents change and the configuration
+        has an HTML mapping.
 
         Parameters
         ----------
         config
-            Contents of `_quarto.yml`. The method registers the partial in this
-            mapping.
+            Contents of `_quarto.yml`, updated in place to register the partial.
 
         Returns
         -------
         :
             Nothing.
         """
-        if not self._config.seo_enabled:
-            return
-
-        title_line = self._build_title_template_line(self._config.seo_title_template)
-        if title_line is None:
-            print(
-                "Warning: seo.title_template must be a string containing "
-                "{page_title} but no '$'. Using Quarto's default page titles."
-            )
-            return
-
         html_config = config.get("format", {}).get("html")
         if not isinstance(html_config, dict):
             return
 
-        # Use a callable replacement so backslashes and `$` remain literal.
-        partial = re.sub(
-            r"<title>.*</title>",
-            lambda _match: title_line,
-            (self.assets_path / "metadata.html").read_text(encoding="utf-8"),
-        )
+        bundled = (self.assets_path / "metadata.html").read_text(encoding="utf-8")
+        partial = bundled
+
+        if self._config.seo_enabled:
+            title_line = self._build_title_template_line(self._config.seo_title_template)
+            if title_line is None:
+                print(
+                    "Warning: seo.title_template must be a string containing "
+                    "{page_title} but no '$'. Using Quarto's default page titles."
+                )
+            else:
+                # Use a callable replacement so backslashes and `$` remain literal.
+                partial = re.sub(r"<title>.*</title>", lambda _match: title_line, partial)
+
+        meta_tag = i18n.meta_tag(self._config)
+        if meta_tag is not None:
+            # Pandoc templates require `$$` to render a literal `$`.
+            partial = partial.rstrip("\n") + "\n" + meta_tag.replace("$", "$$") + "\n"
+
+        if partial == bundled:
+            return
+
         (self.build_dir / "metadata.html").write_text(partial, encoding="utf-8")
 
         partials = html_config.get("template-partials", [])

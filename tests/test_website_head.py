@@ -2,7 +2,7 @@
 Insertion of tags into the `<head>` of raw pages
 """
 
-from great_docs._website.seo import head
+from great_docs._website import head
 
 
 def test_inserts_before_the_closing_head():

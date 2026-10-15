@@ -1,4 +1,4 @@
-"""Tests for the bundled Quarto metadata partial used for page titles"""
+"""Tests for the bundled Quarto metadata partial used for page titles and translations"""
 
 import shutil
 import subprocess
@@ -130,3 +130,57 @@ def test_title_line_rejects_non_string_templates(template: object):
     value as unsupported so the build keeps Quarto's titles.
     """
     assert GreatDocs._build_title_template_line(None, template) is None  # type: ignore[arg-type]
+
+
+def _write_partial(tmp_path: Path, yaml: str) -> tuple[GreatDocs, dict]:
+    """
+    Write the metadata partial for a project configured by `yaml`
+
+    Parameters
+    ----------
+    tmp_path
+        Project directory.
+    yaml
+        Contents of `great-docs.yml`.
+
+    Returns
+    -------
+    :
+        The project and its Quarto configuration, including any registered partial.
+    """
+    (tmp_path / "great-docs.yml").write_text(yaml, encoding="utf-8")
+    docs = GreatDocs(project_path=str(tmp_path))
+    docs.build_dir.mkdir(parents=True, exist_ok=True)
+    config: dict = {"format": {"html": {}}}
+    docs._write_metadata_partial(config)
+    return docs, config
+
+
+def test_partial_carries_translations_without_seo(tmp_path: Path):
+    """Include translations when SEO is disabled"""
+    docs, config = _write_partial(tmp_path, "site:\n  lang: fr\nseo:\n  enabled: false\n")
+
+    partial = (docs.build_dir / "metadata.html").read_text(encoding="utf-8")
+    assert config["format"]["html"]["template-partials"] == ["metadata.html"]
+    assert '<meta name="gd-i18n" content="' in partial
+    assert _without_title(partial)[:-1] == _without_title(VENDORED.read_text(encoding="utf-8"))
+    assert "<title>$pagetitle$" in partial
+
+
+def test_english_without_seo_registers_no_partial(tmp_path: Path):
+    """Keep Quarto's default partial for English sites with SEO disabled"""
+    docs, config = _write_partial(tmp_path, "seo:\n  enabled: false\n")
+
+    assert not (docs.build_dir / "metadata.html").exists()
+    assert "template-partials" not in config["format"]["html"]
+
+
+def test_partial_carries_title_and_translations(tmp_path: Path):
+    """Combine the title template with the translation bundle"""
+    docs, _ = _write_partial(
+        tmp_path, "site:\n  lang: fr\nseo:\n  title_template: '{site_name} - {page_title}'\n"
+    )
+
+    partial = (docs.build_dir / "metadata.html").read_text(encoding="utf-8")
+    assert "$title-prefix$ - $pagetitle$" in partial
+    assert '<meta name="gd-i18n" content="' in partial

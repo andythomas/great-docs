@@ -1,0 +1,126 @@
+"""
+Translations and text direction for sites in languages other than English
+
+Quarto renders the translation bundle from a metadata partial and sets text
+direction through its `dir` option. Raw custom pages bypass Quarto, so their
+translation bundle and text direction are added directly.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+import re
+from typing import TYPE_CHECKING
+
+from .._translations import get_translations_bundle, is_rtl
+from . import head
+
+if TYPE_CHECKING:
+    from ..config import Config
+
+_META_NAME = 'name="gd-i18n"'
+_HTML_TAG = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
+_DIR_ATTRIBUTE = re.compile(r"\sdir\s*=", re.IGNORECASE)
+
+
+def register(quarto_config: dict, config: Config) -> None:
+    """
+    Default to right-to-left text for RTL languages
+
+    Preserve an explicit `dir` setting in `site`. Leave the configuration
+    unchanged if it has no HTML mapping.
+
+    Parameters
+    ----------
+    quarto_config
+        Contents of `_quarto.yml`, updated in place.
+    config
+        Project configuration.
+    """
+    html_config = quarto_config.get("format", {}).get("html")
+    if isinstance(html_config, dict) and is_rtl(config.lang):
+        html_config.setdefault("dir", "rtl")
+
+
+def meta_tag(config: Config) -> str | None:
+    """
+    Build a meta element containing the translation bundle
+
+    The `content` attribute contains an HTML-escaped JSON object of translated
+    interface strings for client-side scripts.
+
+    Parameters
+    ----------
+    config
+        Project configuration.
+
+    Returns
+    -------
+    :
+        The element, or `None` for English. Client-side scripts already
+        contain the English strings.
+    """
+    if config.lang == "en":
+        return None
+    bundle = json.dumps(
+        get_translations_bundle(config.lang), ensure_ascii=False, separators=(",", ":")
+    )
+    return f'<meta {_META_NAME} content="{html.escape(bundle, quote=True)}">'
+
+
+def _direction(config: Config) -> str | None:
+    """
+    Resolve the site's configured or language-default text direction
+
+    Parameters
+    ----------
+    config
+        Project configuration.
+
+    Returns
+    -------
+    :
+        The non-empty `site.dir` setting, or `"rtl"` for RTL languages when no
+        direction is configured. Return `None` for other languages without a
+        configured direction.
+    """
+    site_direction = config.site.get("dir")
+    if site_direction:
+        return str(site_direction)
+    return "rtl" if is_rtl(config.lang) else None
+
+
+def add_to_raw_page(page: str, config: Config) -> str:
+    """
+    Add the translation bundle and text direction to a raw custom page
+
+    Parameters
+    ----------
+    page
+        The page source.
+    config
+        Project configuration.
+
+    Returns
+    -------
+    :
+        The page with translations in `<head>` for non-English languages and
+        the configured or language-default direction on `<html>`. Preserve
+        any existing translation bundle or `dir` attribute.
+    """
+    tag = meta_tag(config)
+    if tag is not None:
+        page = head.insert(page, tag, unless=_META_NAME)
+
+    direction = _direction(config)
+    if direction is None:
+        return page
+
+    def _set_direction(match: re.Match[str]) -> str:
+        element = match[0]
+        if _DIR_ATTRIBUTE.search(element):
+            return element
+        return f'{element[:-1]} dir="{html.escape(direction, quote=True)}">'
+
+    return _HTML_TAG.sub(_set_direction, page, count=1)

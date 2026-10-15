@@ -8148,7 +8148,7 @@ def test_DED_i18n_translated_version_callout(pkg, page, title, label):
 @pytest.mark.dedicated
 @requires_bs4
 def test_DED_i18n_arabic_rtl_direction():
-    """Arabic site has dir='rtl' on <html> and gd-rtl meta tag."""
+    """Set `dir='rtl'` on the Arabic site's `<html>` element"""
     pkg = "gdtest_i18n_arabic"
     if not _has_rendered_site(pkg):
         pytest.skip(f"{pkg} not rendered")
@@ -8159,16 +8159,11 @@ def test_DED_i18n_arabic_rtl_direction():
     html_tag = soup.find("html")
     assert html_tag.get("dir") == "rtl", "Arabic site should have dir='rtl'"
 
-    # Check gd-rtl meta tag
-    rtl_meta = soup.find("meta", attrs={"name": "gd-rtl"})
-    assert rtl_meta is not None, "Missing <meta name='gd-rtl'> tag"
-    assert rtl_meta["content"] == "true"
-
 
 @pytest.mark.dedicated
 @requires_bs4
 def test_DED_i18n_non_arabic_no_rtl():
-    """Non-RTL sites should NOT have dir='rtl' or gd-rtl meta."""
+    """Leave right-to-left direction unset for French and Japanese sites"""
     for pkg in ("gdtest_i18n_french", "gdtest_i18n_japanese"):
         if not _has_rendered_site(pkg):
             continue
@@ -8176,8 +8171,6 @@ def test_DED_i18n_non_arabic_no_rtl():
         soup = _load_html(_site_dir(pkg) / "index.html")
         html_tag = soup.find("html")
         assert html_tag.get("dir") != "rtl", f"{pkg} should not have dir='rtl'"
-        rtl_meta = soup.find("meta", attrs={"name": "gd-rtl"})
-        assert rtl_meta is None, f"{pkg} should not have gd-rtl meta"
 
 
 # ── Announcement banner translation ──────────────────────────────────────────

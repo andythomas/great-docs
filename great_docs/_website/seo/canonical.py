@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import head
+from .. import head
 
 if TYPE_CHECKING:
     from ...config import Config
