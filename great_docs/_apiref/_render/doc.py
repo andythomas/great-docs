@@ -44,7 +44,7 @@ from .._format import (
     render_formatted_expr,
     repr_obj,
 )
-from .._globals import package_info
+from .._globals import package_info, translate, translate_versioned
 from ._section_dispatch import SECTION_METHOD
 from .base import RenderBase
 
@@ -64,6 +64,20 @@ if TYPE_CHECKING:
     )
 
 _log = logging.getLogger(__name__)
+
+# Translate standard docstring section titles and preserve custom titles.
+_SECTION_TITLE_KEYS = {
+    "Parameters": "parameters",
+    "Returns": "returns",
+    "Raises": "raises",
+    "Examples": "examples",
+    "Notes": "notes",
+    "Attributes": "attributes",
+    "Methods": "methods",
+    "See Also": "see_also",
+    "Warnings": "warnings_section",
+    "References": "references_section",
+}
 
 
 @dataclass
@@ -479,9 +493,10 @@ class __RenderDoc(RenderBase):
             if title in ("Text", "Deprecated"):
                 content = Div(body, Attr(classes=section_classes))
             else:
+                key = _SECTION_TITLE_KEYS.get(title)
                 header = Header(
                     self.level + 1,
-                    title,
+                    translate(key) if key else title,
                     Attr(classes=section_classes),
                 )
                 content = Blocks([header, body])
@@ -604,7 +619,7 @@ class __RenderDoc(RenderBase):
             Inlines(
                 [
                     Span(
-                        f"Deprecated since version {el.value.version}:",
+                        f"{translate_versioned('deprecated_since_version', el.value.version)}:",
                         Attr(classes=["versionmodified", "deprecated"]),
                     ),
                     el.value.description.strip(),
@@ -750,7 +765,7 @@ class __RenderDoc(RenderBase):
         """
         source = self.source_link if self.show_source_link else None
         return Div(
-            ["Usage", source],
+            [translate("usage"), source],
             attr=Attr(classes=["doc-usage-source"]),
         )
 
@@ -776,7 +791,9 @@ class __RenderDoc(RenderBase):
             return None
         anchor = f"#L{start}-L{end}" if end is not None and start != end else f"#L{start}"
         url = f"{base_url}/blob/{branch}/{rel_str}{anchor}"
-        return Link("Source", url, attr=Attr(attributes={"target": "_blank", "rel": "noopener"}))
+        return Link(
+            translate("source"), url, attr=Attr(attributes={"target": "_blank", "rel": "noopener"})
+        )
 
     def _source_relative_path(self) -> str | None:
         """

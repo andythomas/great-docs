@@ -58,7 +58,7 @@ class APIReference:
         block = self._select_block(cfg)
         block = {k: v for k, v in block.items() if k not in _REMOVED_KEYS}
 
-        self.settings = Settings.make(block)
+        self.settings = Settings.make(block, lang=self._read_lang(cfg))
         self.package = block["package"]
         self.title = block.get("title", "Function reference")
         self.desc = block.get("desc")
@@ -95,6 +95,28 @@ class APIReference:
             return config
         loaded = read_yaml(str(config))
         return cast("dict[str, Any]", loaded) if isinstance(loaded, dict) else {}
+
+    @staticmethod
+    def _read_lang(cfg: dict[str, Any]) -> str:
+        """
+        Read the reference language from the Quarto HTML settings
+
+        Parameters
+        ----------
+        cfg
+            Configuration mapping.
+
+        Returns
+        -------
+        The language at `format.html.lang`, with `en` as the default when absent.
+        """
+        format_config = cfg.get("format")
+        html = (
+            cast("dict[str, Any]", format_config).get("html")
+            if isinstance(format_config, dict)
+            else None
+        )
+        return cast("dict[str, Any]", html).get("lang", "en") if isinstance(html, dict) else "en"
 
     @staticmethod
     def _read_site_toc_depth(cfg: dict[str, Any]) -> int:
@@ -159,8 +181,11 @@ class APIReference:
     @cached_property
     def resolved(self) -> list[Section]:
         """The resolved section tree, computed once per instance"""
-        secs = self.sections or _autogenerate_sections(self._resolver, self.package)
-        return self._resolver.resolve_sections(secs)
+        # Object hooks need the reference settings even when resolution runs
+        # before the build, such as when listing documented objects.
+        with active_settings(self.settings):
+            secs = self.sections or _autogenerate_sections(self._resolver, self.package)
+            return self._resolver.resolve_sections(secs)
 
     @cached_property
     def documented_symbols(self) -> list[str]:

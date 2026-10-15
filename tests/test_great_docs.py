@@ -17947,6 +17947,50 @@ def test_bibliography_does_not_set_reference_section_title():
         assert "reference-section-title" not in config
 
 
+def _prepared_quarto_config(lang: str) -> dict:
+    """Read the generated Quarto configuration for the selected site language"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        (root / "pyproject.toml").write_text('[project]\nname = "mypkg"\n', encoding="utf-8")
+        (root / "README.md").write_text("# My Pkg\n", encoding="utf-8")
+        (root / "great-docs.yml").write_text(
+            f"package: mypkg\nsite:\n  lang: {lang}\n", encoding="utf-8"
+        )
+
+        docs = GreatDocs(project_path=tmp_dir)
+        with patch.object(docs, "_add_api_reference_config"):
+            with patch.object(docs, "_update_sidebar_from_sections"):
+                with patch.object(docs, "_update_reference_index_frontmatter"):
+                    docs._prepare_build_directory()
+
+        with open(docs.build_dir / "_quarto.yml", encoding="utf-8") as f:
+            return read_yaml(f)
+
+
+def test_callout_titles_are_supplied_where_quarto_has_no_translation():
+    from great_docs._translations import get_translation
+
+    config = _prepared_quarto_config("ar")
+
+    assert config["format"]["html"]["lang"] == "ar"
+    assert config["language"] == {
+        "ar": {
+            "callout-note-title": "ملاحظة",
+            "callout-tip-title": get_translation("tip_callout", "ar"),
+            "callout-warning-title": get_translation("warning_callout", "ar"),
+            "callout-important-title": get_translation("important_callout", "ar"),
+            "callout-caution-title": get_translation("caution_callout", "ar"),
+        }
+    }
+
+
+@pytest.mark.parametrize("lang", ["fr", "en"])
+def test_callout_titles_are_left_to_quarto_where_it_translates_them(lang: str):
+    config = _prepared_quarto_config(lang)
+
+    assert "language" not in config
+
+
 def test_prepare_build_directory_optional_js_copy_page():
     """Test _prepare_build_directory copies copy-page.js when markdown_pages_widget is set."""
 

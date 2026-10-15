@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from great_docs._apiref import spec
 from great_docs._apiref.api_reference import APIReference, Settings
@@ -83,6 +86,58 @@ def test_toc_depth_reads_source_config():
         }
     )
     assert ref.site_toc_depth == 5
+
+
+def test_lang_reads_the_quarto_html_format():
+    """Use the Quarto HTML language for the reference"""
+    ref = APIReference({"api-reference": {"package": "pkg"}, "format": {"html": {"lang": "fr"}}})
+    assert ref.settings.lang == "fr"
+
+
+def test_lang_defaults_to_english_like_quarto():
+    ref = APIReference({"api-reference": {"package": "pkg"}})
+    assert ref.settings.lang == "en"
+
+
+@pytest.mark.parametrize(
+    "format_config",
+    ["html", {"html": "default"}, None, {"html": None}, {}, {"html": {}}],
+)
+def test_lang_defaults_to_english_without_html_settings(format_config: Any) -> None:
+    ref = APIReference({"api-reference": {"package": "pkg"}, "format": format_config})
+    assert ref.settings.lang == "en"
+
+
+def test_lang_is_not_a_key_of_the_api_reference_block():
+    ref = APIReference({"api-reference": {"package": "pkg", "lang": "fr"}})
+    assert ref.settings.lang == "en"
+
+
+def test_resolution_sees_the_reference_lang(tmp_path, monkeypatch):
+    """
+    Use the reference language in hooks before the build starts
+
+    Listing documented objects resolves the reference before the build binds
+    its settings.
+    """
+    (tmp_path / "langpkg").mkdir()
+    (tmp_path / "langpkg" / "__init__.py").write_text(
+        'def grow():\n    """\n    Grow.\n\n    %versionadded 2.0\n    """\n',
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    ref = APIReference(
+        {
+            "api-reference": {"package": "langpkg", "sections": [{"contents": ["grow"]}]},
+            "format": {"html": {"lang": "fr"}},
+        }
+    )
+    (page,) = ref.resolved[0].contents
+    (doc,) = page.contents
+
+    assert 'title="Ajouté dans la version 2.0"' in doc.obj.docstring.value
 
 
 def test_settings_defaults():

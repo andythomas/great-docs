@@ -12,6 +12,7 @@ from great_docs.pandoc.blocks import (
 )
 from great_docs.pandoc.components import Attr
 
+from .._globals import translate
 from .._type_checks import (
     griffe_to_doc,
     is_doc_attribute,
@@ -384,7 +385,7 @@ class __RenderDocMembersMixin(RenderDoc):
 
         title = Header(
             self.level + 1,
-            slug.replace("-", " ").title(),
+            translate(slug.replace("-", "_")),
             Attr(classes=[f"doc-{slug}"]),
         )
 
@@ -438,7 +439,7 @@ class __RenderDocMembersMixin(RenderDoc):
 
         title = Header(
             self.level + 1,
-            slug.replace("-", " ").title(),
+            translate(slug.replace("-", "_")),
             Attr(classes=[f"doc-{slug}", "doc-pages"]),
         )
 

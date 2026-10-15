@@ -26,7 +26,12 @@ class CallableSignatures:
 
 @dataclass
 class Settings:
-    """How an API reference is generated and written — the non-content keys of the `api-reference:` block"""
+    """
+    Settings for generating an API reference
+
+    Read generation options from the `api-reference:` block and the language
+    from the site configuration. Exclude `version` from block options.
+    """
 
     parser: str = "numpy"
     callable_signatures: CallableSignatures = field(default_factory=CallableSignatures)
@@ -41,10 +46,25 @@ class Settings:
     rewrite_all_pages: bool = False
     typing_module_paths: list[str] = field(default_factory=list[str])
     version: str | None = None
+    lang: str = "en"
+    """The reference language as a BCP 47 tag"""
 
     @classmethod
-    def make(cls, block: dict[str, Any]) -> Settings:
-        """Build settings from the non-content keys of an `api-reference:` block"""
+    def make(cls, block: dict[str, Any], lang: str = "en") -> Settings:
+        """
+        Build reference settings from generation options and the site language
+
+        Parameters
+        ----------
+        block
+            The `api-reference:` block.
+        lang
+            The reference language as a BCP 47 tag.
+
+        Returns
+        -------
+        Settings with the supplied generation options and language.
+        """
         kwargs: dict[str, Any] = {
             k: block[k]
             for k in _SETTINGS_KEYS
@@ -60,7 +80,7 @@ class Settings:
         elif isinstance(sidebar, dict) and "file" not in sidebar:
             # Copy so the caller's config dict is not mutated.
             kwargs["sidebar"] = {**sidebar, "file": "_api-reference-sidebar.yml"}
-        return cls(**kwargs)
+        return cls(**kwargs, lang=lang)
 
 
 # Parity quirk preserved deliberately (do NOT "fix" here): `version` is not
@@ -68,7 +88,8 @@ class Settings:
 # its __init__ forced `self.version = None`, so the inventory was always built
 # with "0.0.9999". (`interlinks.fast` / `_fast_inventory` was confirmed dead
 # and dropped, per spec.)
-_SETTINGS_KEYS = {f.name for f in dc_fields(Settings)} - {"version"}
+# Read the language from the site configuration.
+_SETTINGS_KEYS = {f.name for f in dc_fields(Settings)} - {"version", "lang"}
 
 
 @contextmanager

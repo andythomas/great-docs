@@ -8069,10 +8069,14 @@ def test_DED_i18n_meta_tag_translations(pkg, key, expected_value):
         ("gdtest_i18n_japanese", "add.html", "doc-returns", "戻り値"),
         ("gdtest_i18n_arabic", "format_text.html", "doc-parameters", "المعلمات"),
         ("gdtest_i18n_arabic", "format_text.html", "doc-returns", "القيم المُعادة"),
+        ("gdtest_i18n_japanese", "add.html", "doc-see-also", "関連項目"),
+        ("gdtest_i18n_arabic", "escape_html.html", "doc-see-also", "انظر أيضًا"),
+        ("gdtest_i18n_french", "TraiteurDeDonnees.html", "doc-methods", "Méthodes"),
+        ("gdtest_i18n_japanese", "Calculator.html", "doc-methods", "メソッド"),
     ],
 )
 def test_DED_i18n_translated_section_headings(pkg, page, heading_class, expected_text):
-    """i18n sites translate Parameters/Returns headings in reference pages."""
+    """Translate reference section and member group headings"""
     if not _has_rendered_site(pkg):
         pytest.skip(f"{pkg} not rendered")
 
@@ -8090,6 +8094,52 @@ def test_DED_i18n_translated_section_headings(pkg, page, heading_class, expected
     assert any(el.get_text(strip=True).startswith(expected_text) for el in matches), (
         f"No element starting with '{expected_text}' found"
     )
+
+
+@pytest.mark.dedicated
+@requires_bs4
+@pytest.mark.parametrize(
+    "pkg, page, usage, source",
+    [
+        ("gdtest_i18n_japanese", "add.html", "使い方", "ソースコード"),
+        ("gdtest_i18n_arabic", "format_text.html", "الاستخدام", "المصدر"),
+    ],
+)
+def test_DED_i18n_translated_usage_and_source(pkg, page, usage, source):
+    """Translate Usage and Source labels above reference signatures"""
+    if not _has_rendered_site(pkg):
+        pytest.skip(f"{pkg} not rendered")
+
+    soup = _load_html(_ref_dir(pkg) / page)
+    row = soup.select_one(".doc-usage-source")
+
+    assert row is not None
+    assert [p.get_text(strip=True) for p in row.find_all("p")] == [usage, source]
+
+
+@pytest.mark.dedicated
+@requires_bs4
+@pytest.mark.parametrize(
+    "pkg, page, title, label",
+    [
+        # Use Quarto's wording for the French callout type label.
+        ("gdtest_i18n_french", "TraiteurDeDonnees.html", "Ajouté dans la version 0.1.0", "Note"),
+        ("gdtest_i18n_japanese", "Calculator.html", "バージョン 0.1.0 で追加", "ノート"),
+        # Supply the Arabic callout type label absent from Quarto.
+        ("gdtest_i18n_arabic", "Formatter.html", "أُضيف في الإصدار 0.1.0", "ملاحظة"),
+    ],
+)
+def test_DED_i18n_translated_version_callout(pkg, page, title, label):
+    """Translate version callout titles and type labels"""
+    if not _has_rendered_site(pkg):
+        pytest.skip(f"{pkg} not rendered")
+
+    soup = _load_html(_ref_dir(pkg) / page)
+    callout = soup.select_one(".callout-note.callout-titled")
+
+    assert callout is not None
+    assert callout.get("title") == title
+    assert callout.select_one(".screen-reader-only").get_text(strip=True) == label
 
 
 # ── Arabic RTL support ────────────────────────────────────────────────────────

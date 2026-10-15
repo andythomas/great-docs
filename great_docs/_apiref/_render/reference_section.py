@@ -11,6 +11,7 @@ from great_docs.pandoc.blocks import (
 )
 from great_docs.pandoc.components import Attr
 
+from .._globals import translate
 from .base import RenderBase
 from .html_table import html_table
 
@@ -19,6 +20,14 @@ if TYPE_CHECKING:
 
     from ..content import Section
     from ..typing import RenderObjType
+
+# Translate the standard English titles used by `great-docs init` and
+# preserve custom titles.
+_GROUP_TITLE_KEYS = {
+    "Classes": "classes",
+    "Functions": "functions",
+    "Methods": "methods",
+}
 
 
 @dataclass
@@ -53,7 +62,8 @@ class __RenderReferenceSection(RenderBase):
             level, title = self.level + 2, self.section.subtitle
         else:
             return None
-        return Header(level, title, Attr(classes=["doc-group"]))
+        key = _GROUP_TITLE_KEYS.get(title)
+        return Header(level, translate(key) if key else title, Attr(classes=["doc-group"]))
 
     def render_description(self) -> BlockContent:
         """
