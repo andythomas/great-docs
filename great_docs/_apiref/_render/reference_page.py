@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from great_docs._apiref._render.mixin_page import RenderPageMixin
+from great_docs._website.seo.description import metadata_value
 from great_docs.pandoc.blocks import (
     Blocks,
     Div,
@@ -70,6 +71,8 @@ class __RenderReferencePage(RenderPageMixin, RenderBase):
         # Subtitle headings render at `h3`; preserve any deeper site setting.
         if self.api_ref.site_toc_depth < 3:
             metadata["toc-depth"] = 3
+        if description := metadata_value(self.api_ref.desc):
+            metadata["description-meta"] = description
         return Meta(metadata)
 
     def render_body(self) -> BlockContent:

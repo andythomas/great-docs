@@ -34364,6 +34364,61 @@ def test_render_api_page_metadata():
     assert "title" in meta_str
 
 
+def _description_meta(meta) -> str | None:
+    """The `description-meta` value in rendered page front matter"""
+    return meta.table.get("description-meta")
+
+
+def test_render_api_page_metadata_description_from_docstring():
+    """An API page describes itself with its object's docstring summary as plain text."""
+
+    func_obj = gf.Function(name="my_func", lineno=1)
+    func_obj.docstring = gf.Docstring(
+        "Add the `values` of [](`~pkg.Frame`) and `*rest`.\n\nMore detail.", parent=func_obj
+    )
+    page = content.Page(path="reference/my_func", contents=[griffe_to_doc(func_obj)])
+
+    meta = RenderAPIPage(node=page, level=1).render_metadata()
+
+    assert _description_meta(meta) == "Add the values of Frame and \\*rest."
+
+
+def test_render_api_page_metadata_description_from_summary():
+    """An API page with a summary entry describes itself with the summary's text."""
+
+    func_obj = gf.Function(name="my_func", lineno=1)
+    func_obj.docstring = gf.Docstring("From the docstring.", parent=func_obj)
+    page = content.Page(
+        path="reference/my_func",
+        contents=[griffe_to_doc(func_obj)],
+        summary=content.SummaryItem(name="my_func", desc="From the summary"),
+    )
+
+    meta = RenderAPIPage(node=page, level=1).render_metadata()
+
+    assert _description_meta(meta) == "From the summary"
+
+
+def test_render_api_page_metadata_without_docstring_has_no_description():
+    """An API page without a docstring summary leaves the description to the site default."""
+
+    page = content.Page(path="reference/my_func", contents=[griffe_to_doc(gf.Function("f"))])
+
+    assert _description_meta(RenderAPIPage(node=page, level=1).render_metadata()) is None
+
+
+@pytest.mark.parametrize(("desc", "expected"), [("The `mypkg` API", "The mypkg API"), (None, None)])
+def test_render_reference_page_metadata_description(desc, expected):
+    """The reference index describes itself with the reference description, when set."""
+
+    ref = _make_render_ref(desc=desc)
+    sections = [content.Section(title="S", contents=[spec.SpecObject(name="x")])]
+
+    meta = RenderReferencePage(ref, sections, level=1).render_metadata()
+
+    assert _description_meta(meta) == expected
+
+
 def test_render_api_page_render_body():
     """RenderAPIPage.render_body() returns Blocks with render_objs."""
 
