@@ -8,6 +8,7 @@ import sys
 
 import pytest
 
+from great_docs._website import social_cards
 from great_docs.config import Config
 
 
@@ -86,6 +87,59 @@ class TestSocialCardsConfig:
         cfg = _make_config(tmp_project, "social_cards: true\n")
         assert cfg.social_cards_image is None
         assert cfg.social_cards_twitter_site is None
+
+
+class TestRegister:
+    """Site defaults for Open Graph and Twitter cards"""
+
+    IMAGE = "https://docs.example.com/pkg/card.png"
+
+    def test_enables_both_without_options(self, tmp_path: Path):
+        quarto: dict = {}
+        social_cards.register(quarto, Config(tmp_path), None, tmp_path)
+        assert quarto["website"] == {"open-graph": True, "twitter-card": True}
+
+    def test_image_and_twitter_options(self, tmp_path: Path):
+        config = _make_config(
+            tmp_path, "social_cards:\n  twitter_site: myhandle\n  twitter_card: summary\n"
+        )
+        quarto: dict = {"website": {"title": "Pkg"}}
+        social_cards.register(quarto, config, self.IMAGE, tmp_path)
+        assert quarto["website"] == {
+            "title": "Pkg",
+            "open-graph": {"image": self.IMAGE},
+            "twitter-card": {"image": self.IMAGE, "card-style": "summary", "site": "@myhandle"},
+        }
+
+    def test_keeps_an_at_sign(self, tmp_path: Path):
+        config = _make_config(tmp_path, 'social_cards:\n  twitter_site: "@myhandle"\n')
+        quarto: dict = {}
+        social_cards.register(quarto, config, None, tmp_path)
+        assert quarto["website"]["twitter-card"] == {"site": "@myhandle"}
+
+    def test_disabled(self, tmp_path: Path):
+        quarto: dict = {}
+        social_cards.register(quarto, _make_config(tmp_path, "social_cards: false\n"), None, tmp_path)
+        assert quarto == {}
+
+    def test_independent_of_seo(self, tmp_path: Path):
+        quarto: dict = {}
+        config = _make_config(tmp_path, "seo:\n  enabled: false\n")
+        social_cards.register(quarto, config, None, tmp_path)
+        assert quarto["website"]["open-graph"] is True
+
+    @pytest.mark.parametrize("as_file", [False, True])
+    def test_keeps_open_graph_tags_from_the_site_header(self, tmp_path: Path, as_file: bool):
+        tag = '<meta property="og:title" content="Mine">'
+        if as_file:
+            (tmp_path / "head.html").write_text(tag, encoding="utf-8")
+            entry: str | dict = "head.html"
+        else:
+            entry = {"text": tag}
+        quarto: dict = {"format": {"html": {"include-in-header": [entry]}}}
+        social_cards.register(quarto, Config(tmp_path), self.IMAGE, tmp_path)
+        assert "website" not in quarto
+        assert not social_cards.applies(quarto, Config(tmp_path), tmp_path)
 
 
 # Minimal HTML template for testing

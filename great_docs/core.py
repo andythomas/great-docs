@@ -28,7 +28,7 @@ from ._utils import (
     validate_layout_outputs,
     validate_tree_symlinks,
 )
-from ._website import i18n, page_url
+from ._website import i18n, page_url, social_cards
 from ._website.navigation import label as nav_label
 from ._website.seo import description as seo_description
 from .config import Config, create_default_config
@@ -13791,7 +13791,10 @@ anchor-sections: true
             self._config,
             self._get_canonical_base_url(),
             quarto_yml.parent,
-            og_url=self._config.social_cards_enabled,
+            og_url=social_cards.applies(config, self._config, quarto_yml.parent),
+        )
+        social_cards.register(
+            config, self._config, self._resolve_social_card_image_url(), quarto_yml.parent
         )
 
         # Apply explicit navbar ordering from config (if set)
@@ -15553,11 +15556,12 @@ anchor-sections: true
 
     def _write_metadata_partial(self, config: dict) -> None:
         """
-        Write a Quarto metadata partial with the page title and translations
+        Write a Quarto metadata partial with the page title, translations and `og:type`
 
         Use the bundled partial to keep metadata independent of the installed
         Quarto version. Apply a supported title template when SEO is enabled,
-        and add the translation bundle for languages other than English.
+        include translations for languages other than English, and include
+        the Open Graph page type when social cards are enabled.
         Register the partial only if its contents change and the configuration
         has an HTML mapping.
 
@@ -15593,6 +15597,9 @@ anchor-sections: true
         if meta_tag is not None:
             # Pandoc templates require `$$` to render a literal `$`.
             partial = partial.rstrip("\n") + "\n" + meta_tag.replace("$", "$$") + "\n"
+
+        if social_cards.applies(config, self._config, self.build_dir):
+            partial = partial.rstrip("\n") + "\n" + social_cards.OG_TYPE_TAG + "\n"
 
         if partial == bundled:
             return

@@ -158,7 +158,9 @@ def _write_partial(tmp_path: Path, yaml: str) -> tuple[GreatDocs, dict]:
 
 def test_partial_carries_translations_without_seo(tmp_path: Path):
     """Include translations when SEO is disabled"""
-    docs, config = _write_partial(tmp_path, "site:\n  lang: fr\nseo:\n  enabled: false\n")
+    docs, config = _write_partial(
+        tmp_path, "site:\n  lang: fr\nseo:\n  enabled: false\nsocial_cards: false\n"
+    )
 
     partial = (docs.build_dir / "metadata.html").read_text(encoding="utf-8")
     assert config["format"]["html"]["template-partials"] == ["metadata.html"]
@@ -168,8 +170,10 @@ def test_partial_carries_translations_without_seo(tmp_path: Path):
 
 
 def test_english_without_seo_registers_no_partial(tmp_path: Path):
-    """Keep Quarto's default partial for English sites with SEO disabled"""
-    docs, config = _write_partial(tmp_path, "seo:\n  enabled: false\n")
+    """
+    Keep the default English metadata when SEO and social cards are disabled
+    """
+    docs, config = _write_partial(tmp_path, "seo:\n  enabled: false\nsocial_cards: false\n")
 
     assert not (docs.build_dir / "metadata.html").exists()
     assert "template-partials" not in config["format"]["html"]
@@ -184,3 +188,24 @@ def test_partial_carries_title_and_translations(tmp_path: Path):
     partial = (docs.build_dir / "metadata.html").read_text(encoding="utf-8")
     assert "$title-prefix$ - $pagetitle$" in partial
     assert '<meta name="gd-i18n" content="' in partial
+
+
+def test_partial_carries_og_type_without_seo(tmp_path: Path):
+    """
+    Include the Open Graph page type even when SEO is disabled
+    """
+    docs, config = _write_partial(tmp_path, "seo:\n  enabled: false\n")
+
+    partial = (docs.build_dir / "metadata.html").read_text(encoding="utf-8")
+    assert config["format"]["html"]["template-partials"] == ["metadata.html"]
+    assert partial.count('<meta property="og:type" content="website">') == 1
+
+
+def test_partial_omits_og_type_without_social_cards(tmp_path: Path):
+    """
+    Omit the Open Graph page type when social cards are disabled
+    """
+    docs, _ = _write_partial(tmp_path, "social_cards: false\n")
+
+    partial = (docs.build_dir / "metadata.html").read_text(encoding="utf-8")
+    assert "og:type" not in partial
