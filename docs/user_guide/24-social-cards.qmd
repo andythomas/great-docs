@@ -12,7 +12,7 @@ When someone shares a link to your documentation on LinkedIn, Discord, Slack, Bl
 
 ## What's Generated
 
-For every page in your site, Great Docs injects two sets of `<meta>` tags into `<head>`:
+For every page in your site, Great Docs adds two sets of `<meta>` tags to `<head>`:
 
 **Open Graph** (used by LinkedIn, Discord, Slack, Bluesky, Mastodon, Facebook, and most other platforms):
 
@@ -42,10 +42,10 @@ These tags are generated per-page with the correct title, description, and URL f
 Social card tags are enabled by default. With no configuration at all, Great Docs will:
 
 - use the page `<title>` for `og:title` and `twitter:title`
-- extract a description from the page's meta description or first paragraph
+- use the page's meta description for `og:description` and `twitter:description`
 - fall back to the package description from `pyproject.toml` when no page-level description is available
 - build the `og:url` from your canonical base URL (auto-detected from GitHub Pages)
-- set `twitter:card` to `"summary"` (no image) or `"summary_large_image"` (when an image is configured)
+- set `twitter:card` to `"summary"` (no image) or `"summary_large_image"` (when the card has an image)
 
 No changes to `great-docs.yml` are needed for basic social card previews.
 
@@ -88,6 +88,27 @@ social_cards:
 ```
 
 This single image is used as the default `og:image` and `twitter:image` for **every page** on your site. It's copied to the site root during build and referenced with an absolute URL.
+
+### Page Images
+
+When no site image is configured, Quarto chooses a card image from the page. It looks first for an image with the `preview-image` class, then for an image with a preview file name, and finally for the first local image in the page content:
+
+```{.markdown filename="user_guide/04-plotting.qmd"}
+![A finished plot](images/plot.png){.preview-image}
+```
+
+Set `image` in a page's front matter to override both the configured site image and images chosen from the page:
+
+```{.yaml filename="user_guide/04-plotting.qmd"}
+---
+title: "Plotting"
+image: images/plot.png
+---
+```
+
+Keep that image in a folder of assets beside the page, such as `images/`, or also use it in the page's content. An image that only the front matter mentions is not otherwise copied into the site.
+
+Cards with an image use the `"summary_large_image"` Twitter/X format unless you set `twitter_card`.
 
 ### What to Put in the Image
 
@@ -147,7 +168,7 @@ social_cards:
   image: https://cdn.example.com/my-package-card.png
 ```
 
-When an image is provided, the `twitter:card` type automatically switches from `"summary"` to `"summary_large_image"` for a bigger preview on X.
+When a card has an image, the `twitter:card` type automatically switches from `"summary"` to `"summary_large_image"` for a bigger preview on X.
 
 The `twitter_site` key refers to the Twitter/X `@handle` for the site or organization. This appears in the card footer on X.
 
@@ -160,8 +181,8 @@ The `@` prefix is optional (Great Docs will add it if missing).
 
 Regarding `twitter_card`, this overrides the Twitter card type. By default, Great Docs chooses automatically:
 
-- `"summary"` when no image is configured
-- `"summary_large_image"` when an image is configured
+- `"summary"` when the card has no image
+- `"summary_large_image"` when the card has an image
 
 Set this to force a specific type regardless of image presence:
 
@@ -171,13 +192,14 @@ social_cards:
   twitter_card: summary  # Use small card even though an image exists
 ```
 
-## How Descriptions Are Extracted
+## Card Descriptions
 
-Social card descriptions are extracted automatically with this priority:
+Cards use the page's meta description. Great Docs chooses it in this order:
 
-1. **Existing meta description**: if the page already has a `<meta name="description">` tag (from SEO processing or manual frontmatter), that text is reused
-2. **First paragraph**: the first `<p>` in the page's `<main>` content with at least 30 characters of meaningful text
-3. **Default description**: the `seo.default_description` value from `great-docs.yml`, or the package description from `pyproject.toml`
+1. Use `description` or `description-meta` from the page's front matter, or the docstring summary for an API reference page.
+2. Use the `<meta name="description">` in the site's header includes, if there is one.
+3. Use the page's opening paragraph if it has at least 30 characters of text.
+4. Use `seo.default_description` from `great-docs.yml`, falling back to the package description in `pyproject.toml`.
 
 For the best previews, add a `description` to important pages' frontmatter:
 
@@ -187,6 +209,25 @@ title: "Configuration"
 description: "Complete guide to configuring Great Docs, including theming, navbar styles, and SEO settings."
 ---
 ```
+
+## Page Overrides
+
+Set `open-graph` or `twitter-card` in a page's front matter to customise its card:
+
+```{.yaml filename="user_guide/03-configuration.qmd"}
+---
+title: "Configuration"
+open-graph:
+  title: "Configure My Package"
+  description: "Every option in one place."
+twitter-card:
+  title: "Configure My Package"
+---
+```
+
+When a page sets either key, Great Docs leaves both card titles and descriptions to Quarto. A mapping, as above, retains the configured site image and Twitter/X handle.
+
+To supply your own social card tags across the site, add `og:` tags to the site's header includes. Great Docs then stops generating social card tags for pages rendered by Quarto. A page whose own `include-in-header` or `header-includes` declares `og:` tags likewise gets none of the generated ones. Quarto still replaces the content of the first `og:title` on every page with the page title.
 
 ## Testing Your Social Cards
 
