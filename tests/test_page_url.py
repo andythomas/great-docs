@@ -62,25 +62,46 @@ class TestRegister:
 
     def test_adds_the_filter_and_base_url(self, tmp_path):
         quarto: dict = {"filters": ["interlinks"]}
-        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path, og_url=False)
         assert quarto["filters"] == ["interlinks", "page-url"]
         assert quarto["gd-base-url"] == self.BASE
         assert quarto["gd-canonical"] is True
+        assert quarto["gd-og-url"] is False
+
+    @pytest.mark.parametrize("canonical", [True, False])
+    @pytest.mark.parametrize("og_url", [True, False])
+    def test_writes_each_switch(self, tmp_path, canonical, og_url):
+        yaml = "" if canonical else "seo:\n  canonical:\n    enabled: false\n"
+        quarto: dict = {}
+        page_url.register(quarto, _config(tmp_path, yaml), self.BASE, tmp_path, og_url=og_url)
+        if not (canonical or og_url):
+            assert quarto == {}
+            return
+        assert quarto["filters"] == ["page-url"]
+        assert quarto["gd-canonical"] is canonical
+        assert quarto["gd-og-url"] is og_url
+
+    def test_og_url_without_seo(self, tmp_path):
+        quarto: dict = {}
+        config = _config(tmp_path, "seo:\n  enabled: false\n")
+        page_url.register(quarto, config, self.BASE, tmp_path, og_url=True)
+        assert quarto["gd-canonical"] is False
+        assert quarto["gd-og-url"] is True
 
     def test_registers_once(self, tmp_path):
         quarto: dict = {"filters": ["page-url"]}
-        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path, og_url=False)
         assert quarto["filters"] == ["page-url"]
 
     def test_disabled(self, tmp_path):
         config = _config(tmp_path, "seo:\n  canonical:\n    enabled: false\n")
         quarto: dict = {"filters": []}
-        page_url.register(quarto, config, self.BASE, tmp_path)
+        page_url.register(quarto, config, self.BASE, tmp_path, og_url=False)
         assert quarto == {"filters": []}
 
     def test_without_a_base_url(self, tmp_path):
         quarto: dict = {}
-        page_url.register(quarto, _config(tmp_path), None, tmp_path)
+        page_url.register(quarto, _config(tmp_path), None, tmp_path, og_url=False)
         assert quarto == {}
 
     @pytest.mark.parametrize("as_file", [False, True])
@@ -92,9 +113,16 @@ class TestRegister:
         else:
             entry = {"text": link}
         quarto: dict = {"format": {"html": {"include-in-header": [entry]}}}
-        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path, og_url=False)
         assert "filters" not in quarto
         assert "gd-base-url" not in quarto
+
+    def test_keeps_og_url_when_the_site_header_has_a_canonical_link(self, tmp_path):
+        link = '<link rel="canonical" href="https://example.org/custom">'
+        quarto: dict = {"format": {"html": {"include-in-header": [{"text": link}]}}}
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path, og_url=True)
+        assert quarto["gd-canonical"] is False
+        assert quarto["gd-og-url"] is True
 
 
 class TestAddToRawPage:

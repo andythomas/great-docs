@@ -1664,8 +1664,8 @@ def _rewrite_quarto_yml_for_version(
     Adjust `_quarto.yml` for a documentation version
 
     For older versions, add the version prefix to `site-url` so root-relative
-    asset paths resolve within that version. Keep the latest version's canonical
-    base address so canonical links point to its matching pages.
+    asset paths resolve within that version. Use the latest version's base
+    address for canonical links and `og:url` tags to matching pages.
     """
     from yaml12 import read_yaml, write_yaml
 

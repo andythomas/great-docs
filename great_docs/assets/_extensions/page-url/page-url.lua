@@ -3,7 +3,8 @@
 -- Read the preferred site URL from `gd-base-url` in `_quarto.yml`. The URL
 -- must end with a slash. Skip pages when this setting is absent.
 --
--- Write a canonical link when `gd-canonical` is true.
+-- Write a canonical link when `gd-canonical` is true, and an Open Graph
+-- `og:url` when `gd-og-url` is true. Both hold the same address.
 --
 -- Use directory URLs for index pages: `guide/index.html` becomes `<base>guide/`,
 -- and `index.html` becomes `<base>`.
@@ -41,6 +42,9 @@ function Meta(meta)
     local url = page_url(pandoc.utils.stringify(base), path)
     if meta["gd-canonical"] == true then
         quarto.doc.include_text("in-header", '<link rel="canonical" href="' .. url .. '">')
+    end
+    if meta["gd-og-url"] == true then
+        quarto.doc.include_text("in-header", '<meta property="og:url" content="' .. url .. '">')
     end
     return nil
 end

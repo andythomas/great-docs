@@ -1,9 +1,9 @@
 """
-Preferred page addresses for canonical links
+Preferred page addresses for canonical links and Open Graph tags
 
-Rendered pages receive canonical links during Quarto rendering. Raw custom
-pages bypass Quarto and receive their links here. Older documentation
-versions use the latest version's base address to link to matching pages.
+Rendered pages receive canonical links and `og:url` tags during Quarto
+rendering. Raw custom pages receive their canonical links here. Older
+documentation versions use the latest version's base address for both tags.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 FILTER = "page-url"
 BASE_URL_KEY = "gd-base-url"
 CANONICAL_KEY = "gd-canonical"
+OG_URL_KEY = "gd-og-url"
 _CANONICAL_LINK = re.compile(r"""rel=["']?canonical""")
 
 
@@ -76,12 +77,15 @@ def address(base_url: str, page_path: str) -> str:
     return base_url + page_path
 
 
-def register(quarto_config: dict, config: Config, base_url: str | None, project_dir: Path) -> None:
+def register(
+    quarto_config: dict, config: Config, base_url: str | None, project_dir: Path, *, og_url: bool
+) -> None:
     """
-    Register the filter that adds a canonical link to each rendered page
+    Register canonical-link and Open Graph URL tags for rendered pages
 
-    Register nothing when canonical links are disabled, `base_url` is empty, or
-    the site's header includes already declare a canonical link.
+    Generate canonical links unless they are disabled or the site's header
+    includes contain one. Generate `og:url` when `og_url` is true. Register
+    nothing without a base address or when neither tag is needed.
 
     Parameters
     ----------
@@ -93,16 +97,20 @@ def register(quarto_config: dict, config: Config, base_url: str | None, project_
         The site address with a trailing slash.
     project_dir
         Base directory for relative header file paths.
+    og_url
+        Whether pages get an `og:url` tag.
     """
-    if not config.canonical_enabled or not base_url:
-        return
-    if head.includes_match(quarto_config, project_dir, _CANONICAL_LINK):
+    canonical = config.canonical_enabled and not head.includes_match(
+        quarto_config, project_dir, _CANONICAL_LINK
+    )
+    if not base_url or not (canonical or og_url):
         return
     filters = quarto_config.setdefault("filters", [])
     if FILTER not in filters:
         filters.append(FILTER)
     quarto_config[BASE_URL_KEY] = base_url
-    quarto_config[CANONICAL_KEY] = True
+    quarto_config[CANONICAL_KEY] = canonical
+    quarto_config[OG_URL_KEY] = og_url
 
 
 def add_to_raw_page(html: str, config: Config, base_url: str | None, page_path: str) -> str:

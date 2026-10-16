@@ -13785,8 +13785,14 @@ anchor-sections: true
         nav_label.register(config, self._config)
         i18n.register(config, self._config)
 
-        # Add each page's canonical link during Quarto rendering.
-        page_url.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)
+        # Canonical links and social cards share the preferred page address.
+        page_url.register(
+            config,
+            self._config,
+            self._get_canonical_base_url(),
+            quarto_yml.parent,
+            og_url=self._config.social_cards_enabled,
+        )
 
         # Apply explicit navbar ordering from config (if set)
         self._reorder_navbar(config)
