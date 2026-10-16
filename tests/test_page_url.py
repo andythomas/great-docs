@@ -1,12 +1,12 @@
 """
-Canonical links: base address, page addresses, registration and raw pages
+Base addresses, page addresses and canonical-link registration
 """
 
 from pathlib import Path
 
 import pytest
 
-from great_docs._website.seo import canonical
+from great_docs._website import page_url
 from great_docs.config import Config
 
 
@@ -20,7 +20,7 @@ class TestResolveBaseUrl:
         config = _config(
             tmp_path, "seo:\n  canonical:\n    base_url: https://docs.example.com/pkg\n"
         )
-        assert canonical.resolve_base_url(config, None, None) == "https://docs.example.com/pkg/"
+        assert page_url.resolve_base_url(config, None, None) == "https://docs.example.com/pkg/"
 
     def test_base_url_overrides_site_url(self, tmp_path):
         config = _config(
@@ -28,20 +28,20 @@ class TestResolveBaseUrl:
             "site_url: https://docs.example.com/pkg\n"
             "seo:\n  canonical:\n    base_url: https://example.org/docs\n",
         )
-        assert canonical.resolve_base_url(config, "acme", "pkg") == "https://example.org/docs/"
+        assert page_url.resolve_base_url(config, "acme", "pkg") == "https://example.org/docs/"
 
     def test_site_url_beats_github(self, tmp_path):
         config = _config(tmp_path, "site_url: https://docs.example.com/pkg/\n")
-        assert canonical.resolve_base_url(config, "acme", "pkg") == "https://docs.example.com/pkg/"
+        assert page_url.resolve_base_url(config, "acme", "pkg") == "https://docs.example.com/pkg/"
 
     def test_github_when_nothing_is_configured(self, tmp_path):
         assert (
-            canonical.resolve_base_url(_config(tmp_path), "acme", "pkg")
+            page_url.resolve_base_url(_config(tmp_path), "acme", "pkg")
             == "https://acme.github.io/pkg/"
         )
 
     def test_none_without_a_repository(self, tmp_path):
-        assert canonical.resolve_base_url(_config(tmp_path), None, None) is None
+        assert page_url.resolve_base_url(_config(tmp_path), None, None) is None
 
 
 @pytest.mark.parametrize(
@@ -53,8 +53,8 @@ class TestResolveBaseUrl:
         ("myindex.html", "https://x.test/pkg/myindex.html"),
     ],
 )
-def test_page_url(page_path, expected):
-    assert canonical.page_url("https://x.test/pkg/", page_path) == expected
+def test_address(page_path, expected):
+    assert page_url.address("https://x.test/pkg/", page_path) == expected
 
 
 class TestRegister:
@@ -62,24 +62,25 @@ class TestRegister:
 
     def test_adds_the_filter_and_base_url(self, tmp_path):
         quarto: dict = {"filters": ["interlinks"]}
-        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
-        assert quarto["filters"] == ["interlinks", "canonical"]
-        assert quarto["gd-canonical-base-url"] == self.BASE
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        assert quarto["filters"] == ["interlinks", "page-url"]
+        assert quarto["gd-base-url"] == self.BASE
+        assert quarto["gd-canonical"] is True
 
     def test_registers_once(self, tmp_path):
-        quarto: dict = {"filters": ["canonical"]}
-        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
-        assert quarto["filters"] == ["canonical"]
+        quarto: dict = {"filters": ["page-url"]}
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        assert quarto["filters"] == ["page-url"]
 
     def test_disabled(self, tmp_path):
         config = _config(tmp_path, "seo:\n  canonical:\n    enabled: false\n")
         quarto: dict = {"filters": []}
-        canonical.register(quarto, config, self.BASE, tmp_path)
+        page_url.register(quarto, config, self.BASE, tmp_path)
         assert quarto == {"filters": []}
 
     def test_without_a_base_url(self, tmp_path):
         quarto: dict = {}
-        canonical.register(quarto, _config(tmp_path), None, tmp_path)
+        page_url.register(quarto, _config(tmp_path), None, tmp_path)
         assert quarto == {}
 
     @pytest.mark.parametrize("as_file", [False, True])
@@ -91,9 +92,9 @@ class TestRegister:
         else:
             entry = {"text": link}
         quarto: dict = {"format": {"html": {"include-in-header": [entry]}}}
-        canonical.register(quarto, _config(tmp_path), self.BASE, tmp_path)
+        page_url.register(quarto, _config(tmp_path), self.BASE, tmp_path)
         assert "filters" not in quarto
-        assert "gd-canonical-base-url" not in quarto
+        assert "gd-base-url" not in quarto
 
 
 class TestAddToRawPage:
@@ -101,7 +102,7 @@ class TestAddToRawPage:
     HTML = "<html><head><title>W</title></head><body></body></html>"
 
     def test_adds_a_link_at_the_page_address(self, tmp_path):
-        page = canonical.add_to_raw_page(self.HTML, _config(tmp_path), self.BASE, "demos/w.html")
+        page = page_url.add_to_raw_page(self.HTML, _config(tmp_path), self.BASE, "demos/w.html")
         assert (
             '<link rel="canonical" href="https://docs.example.com/pkg/demos/w.html">\n</head>'
             in page
@@ -109,16 +110,16 @@ class TestAddToRawPage:
 
     def test_keeps_an_existing_link(self, tmp_path):
         html = '<html><head><link rel="canonical" href="https://x.test/"></head></html>'
-        page = canonical.add_to_raw_page(html, _config(tmp_path), self.BASE, "w.html")
+        page = page_url.add_to_raw_page(html, _config(tmp_path), self.BASE, "w.html")
         assert page == html
 
     def test_leaves_a_fragment_unchanged(self, tmp_path):
-        page = canonical.add_to_raw_page("<div>W</div>", _config(tmp_path), self.BASE, "w.html")
+        page = page_url.add_to_raw_page("<div>W</div>", _config(tmp_path), self.BASE, "w.html")
         assert page == "<div>W</div>"
 
     def test_without_a_base_url(self, tmp_path):
-        assert canonical.add_to_raw_page(self.HTML, _config(tmp_path), None, "w.html") == self.HTML
+        assert page_url.add_to_raw_page(self.HTML, _config(tmp_path), None, "w.html") == self.HTML
 
     def test_disabled(self, tmp_path):
         config = _config(tmp_path, "seo:\n  canonical:\n    enabled: false\n")
-        assert canonical.add_to_raw_page(self.HTML, config, self.BASE, "w.html") == self.HTML
+        assert page_url.add_to_raw_page(self.HTML, config, self.BASE, "w.html") == self.HTML

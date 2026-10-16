@@ -1,5 +1,5 @@
 """
-Canonical links in pages rendered by Quarto
+Canonical links in Quarto output
 """
 
 import re
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-_EXTENSION = Path(__file__).parent.parent / "great_docs" / "assets" / "_extensions" / "canonical"
+_EXTENSION = Path(__file__).parent.parent / "great_docs" / "assets" / "_extensions" / "page-url"
 
 pytestmark = pytest.mark.skipif(shutil.which("quarto") is None, reason="Quarto is not installed")
 
@@ -21,11 +21,11 @@ def _render_site(tmp_path: Path, base: str | None) -> Path:
     project = tmp_path / "proj"
     (project / "_extensions").mkdir(parents=True)
     (project / "guide").mkdir()
-    shutil.copytree(_EXTENSION, project / "_extensions" / "canonical")
+    shutil.copytree(_EXTENSION, project / "_extensions" / "page-url")
 
-    base_line = f'gd-canonical-base-url: "{base}"\n' if base else ""
+    base_line = f'gd-base-url: "{base}"\ngd-canonical: true\n' if base else ""
     (project / "_quarto.yml").write_text(
-        f"project:\n  type: website\n{base_line}filters:\n  - canonical\nwebsite:\n  title: t\n",
+        f"project:\n  type: website\n{base_line}filters:\n  - page-url\nwebsite:\n  title: t\n",
         encoding="utf-8",
     )
     for page in ("index.qmd", "guide/index.qmd", "guide/page.qmd"):

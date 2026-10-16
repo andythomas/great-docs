@@ -1,10 +1,9 @@
 """
-Canonical links that point search engines at the preferred address of a page
+Preferred page addresses for canonical links
 
-Rendered pages get their link from the `canonical` Quarto filter, which reads
-the base address from `_quarto.yml`. Raw custom pages skip Quarto and get theirs
-here. Pages in older documentation versions link to the matching page in the
-latest version by retaining its canonical base address.
+Rendered pages receive canonical links during Quarto rendering. Raw custom
+pages bypass Quarto and receive their links here. Older documentation
+versions use the latest version's base address to link to matching pages.
 """
 
 from __future__ import annotations
@@ -13,13 +12,14 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .. import head
+from . import head
 
 if TYPE_CHECKING:
-    from ...config import Config
+    from ..config import Config
 
-FILTER = "canonical"
-BASE_URL_KEY = "gd-canonical-base-url"
+FILTER = "page-url"
+BASE_URL_KEY = "gd-base-url"
+CANONICAL_KEY = "gd-canonical"
 _CANONICAL_LINK = re.compile(r"""rel=["']?canonical""")
 
 
@@ -55,7 +55,7 @@ def resolve_base_url(
     return None
 
 
-def page_url(base_url: str, page_path: str) -> str:
+def address(base_url: str, page_path: str) -> str:
     """
     Build the address of a page, mapping an `index.html` to its directory
 
@@ -102,6 +102,7 @@ def register(quarto_config: dict, config: Config, base_url: str | None, project_
     if FILTER not in filters:
         filters.append(FILTER)
     quarto_config[BASE_URL_KEY] = base_url
+    quarto_config[CANONICAL_KEY] = True
 
 
 def add_to_raw_page(html: str, config: Config, base_url: str | None, page_path: str) -> str:
@@ -129,5 +130,5 @@ def add_to_raw_page(html: str, config: Config, base_url: str | None, page_path: 
     """
     if not config.canonical_enabled or not base_url:
         return html
-    tag = f'<link rel="canonical" href="{page_url(base_url, page_path)}">'
+    tag = f'<link rel="canonical" href="{address(base_url, page_path)}">'
     return head.insert(html, tag, unless='rel="canonical"')

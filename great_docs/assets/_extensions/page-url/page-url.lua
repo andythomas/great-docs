@@ -1,7 +1,9 @@
--- Add a canonical link to each page rendered by Quarto.
+-- Add the preferred page address to metadata during Quarto rendering.
 --
--- Read the preferred site URL from `gd-canonical-base-url` in `_quarto.yml`.
--- The URL must end with a slash. Skip pages when this setting is absent.
+-- Read the preferred site URL from `gd-base-url` in `_quarto.yml`. The URL
+-- must end with a slash. Skip pages when this setting is absent.
+--
+-- Write a canonical link when `gd-canonical` is true.
 --
 -- Use directory URLs for index pages: `guide/index.html` becomes `<base>guide/`,
 -- and `index.html` becomes `<base>`.
@@ -22,7 +24,7 @@ end
 ---@param base string  Site address with a trailing slash.
 ---@param path string  Page path relative to the site root.
 ---@return string
-local function canonical_url(base, path)
+local function page_url(base, path)
     if path == "index.html" then return base end
     local dir = path:match("^(.*/)index%.html$")
     if dir then return base .. dir end
@@ -30,13 +32,15 @@ local function canonical_url(base, path)
 end
 
 function Meta(meta)
-    local base = meta["gd-canonical-base-url"]
+    local base = meta["gd-base-url"]
     if base == nil or quarto.doc.output_file == nil then return nil end
 
     local path = page_path(quarto.doc.output_file, quarto.project.output_directory)
     if path == nil then return nil end
 
-    local url = canonical_url(pandoc.utils.stringify(base), path)
-    quarto.doc.include_text("in-header", '<link rel="canonical" href="' .. url .. '">')
+    local url = page_url(pandoc.utils.stringify(base), path)
+    if meta["gd-canonical"] == true then
+        quarto.doc.include_text("in-header", '<link rel="canonical" href="' .. url .. '">')
+    end
     return nil
 end

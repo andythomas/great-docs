@@ -28,9 +28,8 @@ from ._utils import (
     validate_layout_outputs,
     validate_tree_symlinks,
 )
-from ._website import i18n
+from ._website import i18n, page_url
 from ._website.navigation import label as nav_label
-from ._website.seo import canonical
 from ._website.seo import description as seo_description
 from .config import Config, create_default_config
 
@@ -4201,7 +4200,7 @@ class GreatDocs:
                     layout = "passthrough"  # pragma: no cover
 
                 if layout == "raw":
-                    body = canonical.add_to_raw_page(
+                    body = page_url.add_to_raw_page(
                         body, self._config, canonical_base_url, output_rel_path.as_posix()
                     )
                     body = i18n.add_to_raw_page(body, self._config)
@@ -13787,7 +13786,7 @@ anchor-sections: true
         i18n.register(config, self._config)
 
         # Add each page's canonical link during Quarto rendering.
-        canonical.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)
+        page_url.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)
 
         # Apply explicit navbar ordering from config (if set)
         self._reorder_navbar(config)
@@ -15260,7 +15259,7 @@ anchor-sections: true
             The canonical base URL (with trailing slash) or None if not determined.
         """
         owner, repo, _ = self._get_github_repo_info()
-        return canonical.resolve_base_url(self._config, owner, repo)
+        return page_url.resolve_base_url(self._config, owner, repo)
 
     def _categorize_page(self, html_path: str) -> str:
         """

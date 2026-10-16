@@ -1267,8 +1267,8 @@ class TestCanonicalUrlInjection:
             write_yaml(
                 {
                     "project": {"type": "website"},
-                    "filters": ["interlinks", "canonical"],
-                    "gd-canonical-base-url": "https://example.com/pkg/",
+                    "filters": ["interlinks", "page-url"],
+                    "gd-base-url": "https://example.com/pkg/",
                     "website": {"title": "Test", "site-url": "https://example.com/pkg/"},
                 },
                 f,
@@ -1279,15 +1279,15 @@ class TestCanonicalUrlInjection:
 
     def test_older_version_keeps_the_latest_base_address(self, tmp_path: Path):
         old = self._rewritten(tmp_path, _make_entry("0.1"), "0.2")
-        assert old["filters"] == ["interlinks", "canonical"]
-        assert old["gd-canonical-base-url"] == "https://example.com/pkg/"
+        assert old["filters"] == ["interlinks", "page-url"]
+        assert old["gd-base-url"] == "https://example.com/pkg/"
         assert old["website"]["site-url"] == "https://example.com/pkg/v/0.1/"
         assert "include-in-header" not in old.get("format", {}).get("html", {})
 
     def test_latest_version_keeps_the_filter(self, tmp_path: Path):
         latest = self._rewritten(tmp_path, _make_entry("0.2", latest=True), "0.2")
-        assert latest["filters"] == ["interlinks", "canonical"]
-        assert latest["gd-canonical-base-url"] == "https://example.com/pkg/"
+        assert latest["filters"] == ["interlinks", "page-url"]
+        assert latest["gd-base-url"] == "https://example.com/pkg/"
 
 
 # ---------------------------------------------------------------------------
