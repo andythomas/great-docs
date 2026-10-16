@@ -4166,6 +4166,9 @@ class GreatDocs:
         raw_render_excludes: list[str] = []
         processed = 0
         canonical_base_url = self._get_canonical_base_url()
+        card_image_url = (
+            self._resolve_social_card_image_url() if self._config.social_cards_enabled else None
+        )
 
         for source in sources:
             source_dir = source["source_dir"]
@@ -4207,6 +4210,17 @@ class GreatDocs:
                     body = i18n.add_to_raw_page(body, self._config)
                     if self._config.seo_enabled:
                         body = seo_description.add_to_raw_page(body, self._default_description())
+                    raw_url = None
+                    if canonical_base_url:
+                        raw_url = page_url.address(canonical_base_url, output_rel_path.as_posix())
+                    body = social_cards.add_to_raw_page(
+                        body,
+                        self._config,
+                        site_name=self._get_site_name(),
+                        default=self._default_description(),
+                        url=raw_url,
+                        image_url=card_image_url,
+                    )
                     dest_path.write_text(body, encoding="utf-8")
                     raw_resource = output_rel_path.as_posix()
                     resources_to_add.append(raw_resource)

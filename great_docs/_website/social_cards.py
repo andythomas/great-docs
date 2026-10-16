@@ -13,6 +13,7 @@ and the page's first paragraph.
 
 from __future__ import annotations
 
+import html
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -35,6 +36,10 @@ OWN_CARDS_KEY = "gd-own-social-cards"
 OG_TYPE_PARTIAL = f"$if({OWN_CARDS_KEY})$$else${OG_TYPE_TAG}$endif$"
 """The `og:type` tag for the metadata partial, left out of pages with their own tags"""
 _OG_PROPERTY = re.compile(r"""property=["']?og:""")
+_TITLE = re.compile(r"<title[^>]*>([^<]*)</title>", re.IGNORECASE)
+_DESCRIPTION = re.compile(
+    r"""<meta\s+name=["']?description["']?\s+content="([^"]*)\"""", re.IGNORECASE
+)
 
 
 def applies(quarto_config: dict[str, Any], config: Config, project_dir: Path) -> bool:
@@ -238,3 +243,80 @@ def page_entries(
     if value:
         card["description"] = value
     return {"open-graph": card, "twitter-card": dict(card)} if card else {}
+
+
+def add_to_raw_page(
+    page: str,
+    config: Config,
+    *,
+    site_name: str | None,
+    default: str | None,
+    url: str | None,
+    image_url: str | None,
+) -> str:
+    """
+    Add social card tags to a raw custom page
+
+    The card takes the page's `<title>` and meta description, falling back to
+    the site name and the default description.
+
+    Parameters
+    ----------
+    page
+        The page source.
+    config
+        Project configuration.
+    site_name
+        The site's name.
+    default
+        The site's default description as plain text.
+    url
+        The page's address, or `None` when the site has no base address.
+    image_url
+        The default card image address, or `None` for no image.
+
+    Returns
+    -------
+    :
+        The page with the tags added, or unchanged when social cards are
+        disabled, the page has an `og:title` already, or it has no `<head>`.
+    """
+    if not config.social_cards_enabled:
+        return page
+
+    head_html = page.split("</head>", 1)[0]
+    found = _TITLE.search(head_html)
+    title = html.unescape(found.group(1)).strip() if found else ""
+    found = _DESCRIPTION.search(head_html)
+    summary = html.unescape(found.group(1)) if found else ""
+    title = title or site_name or ""
+    summary = summary or default or ""
+
+    handle = config.social_cards_twitter_site
+    open_graph = {
+        "type": "website",
+        "title": title,
+        "description": summary,
+        "url": url,
+        "site_name": site_name,
+        "image": image_url,
+    }
+    twitter = {
+        "card": config.social_cards_twitter_card
+        or ("summary_large_image" if image_url else "summary"),
+        "title": title,
+        "description": summary,
+        "image": image_url,
+        "site": twitter_handle(handle) if handle else None,
+    }
+    tags = [
+        f'<meta property="og:{key}" content="{html.escape(value)}">'
+        for key, value in open_graph.items()
+        if value
+    ]
+    tags += [
+        f'<meta name="twitter:{key}" content="{html.escape(value)}">'
+        for key, value in twitter.items()
+        if value
+    ]
+    return head.insert(page, "\n".join(tags), unless='property="og:title"')

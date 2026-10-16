@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import click
+import pytest
 import requests
 
 from great_docs import GreatDocs
@@ -2628,6 +2629,35 @@ class TestCanonicalIntegration:
         assert (
             '<link rel="canonical" href="https://docs.example.com/pkg/custom/widget.html">' in page
         )
+
+    @pytest.mark.parametrize("seo", ["true", "false"])
+    def test_raw_custom_page_gets_social_cards(self, tmp_path, monkeypatch, seo):
+        (tmp_path / "great-docs.yml").write_text(
+            f"module: mypkg\nseo:\n  enabled: {seo}\n", encoding="utf-8"
+        )
+        gd = GreatDocs(project_path=str(tmp_path))
+        gd.build_dir.mkdir(parents=True, exist_ok=True)
+        (gd.build_dir / "_quarto.yml").write_text(
+            "website:\n  title: Pkg\n  sidebar: []\n  navbar:\n    left: []\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: "https://docs.example.com/pkg/")
+        custom = tmp_path / "custom"
+        custom.mkdir()
+        (custom / "widget.html").write_text(
+            "---\nlayout: raw\n---\n<html><head><title>Widget Lab</title></head></html>",
+            encoding="utf-8",
+        )
+
+        gd._process_custom_pages()
+
+        page = (gd.build_dir / "custom" / "widget.html").read_text(encoding="utf-8")
+        assert page.count('<meta property="og:title" content="Widget Lab">') == 1
+        assert '<meta property="og:site_name" content="Pkg">' in page
+        assert (
+            '<meta property="og:url" content="https://docs.example.com/pkg/custom/widget.html">'
+            in page
+        )
+        assert '<meta name="twitter:card" content="summary">' in page
 
     def test_raw_custom_page_gets_the_translation_bundle(self, tmp_path):
         (tmp_path / "great-docs.yml").write_text(

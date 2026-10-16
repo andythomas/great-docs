@@ -142,6 +142,52 @@ class TestRegister:
         assert not social_cards.applies(quarto, Config(tmp_path), tmp_path)
 
 
+class TestAddToRawPage:
+    """Social card metadata for pages that bypass Quarto"""
+
+    HEAD = "<html><head>{}</head><body></body></html>"
+
+    def _add(self, tmp_path: Path, page: str, yaml: str = "", **kwargs) -> str:
+        options = {"site_name": "Pkg", "default": "Default", "url": None, "image_url": None}
+        options.update(kwargs)
+        return social_cards.add_to_raw_page(page, _make_config(tmp_path, yaml), **options)
+
+    def test_takes_the_page_title_and_description(self, tmp_path: Path):
+        page = self.HEAD.format(
+            '<title>A &amp; "B"</title><meta name="description" content="Mine &lt;3">'
+        )
+        result = self._add(tmp_path, page)
+        assert '<meta property="og:title" content="A &amp; &quot;B&quot;">' in result
+        assert '<meta name="twitter:description" content="Mine &lt;3">' in result
+
+    def test_falls_back_to_the_site(self, tmp_path: Path):
+        result = self._add(tmp_path, self.HEAD.format(""))
+        assert '<meta property="og:title" content="Pkg">' in result
+        assert '<meta property="og:description" content="Default">' in result
+        assert "og:url" not in result
+
+    def test_image_url_and_handle(self, tmp_path: Path):
+        result = self._add(
+            tmp_path,
+            self.HEAD.format(""),
+            "social_cards:\n  twitter_site: myhandle\n",
+            url="https://x.test/w.html",
+            image_url="https://x.test/card.png",
+        )
+        assert '<meta property="og:url" content="https://x.test/w.html">' in result
+        assert '<meta property="og:image" content="https://x.test/card.png">' in result
+        assert '<meta name="twitter:card" content="summary_large_image">' in result
+        assert '<meta name="twitter:site" content="@myhandle">' in result
+
+    def test_keeps_a_page_with_its_own_tags(self, tmp_path: Path):
+        page = self.HEAD.format('<meta property="og:title" content="Mine">')
+        assert self._add(tmp_path, page) == page
+
+    def test_disabled(self, tmp_path: Path):
+        page = self.HEAD.format("")
+        assert self._add(tmp_path, page, "social_cards: false\n") == page
+
+
 # Minimal HTML template for testing
 _HTML = """\
 <html>
