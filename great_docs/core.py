@@ -15633,30 +15633,17 @@ anchor-sections: true
         """
         metadata = self._get_package_metadata()
 
-        # Handle social card image (copy to build dir if needed)
-        social_image_url = None
-        if self._config.social_cards_enabled:
-            social_image_url = self._resolve_social_card_image_url()
-
         return {
             "seo_enabled": self._config.seo_enabled,
             "canonical_base_url": self._get_canonical_base_url(),
             "structured_data_enabled": self._config.structured_data_enabled,
             "structured_data_type": self._config.structured_data_type,
-            "default_description": (
-                self._config.seo_default_description or metadata.get("description", "")
-            ),
             "package_name": self._detect_package_name() or "",
             "package_description": metadata.get("description", ""),
             "package_license": metadata.get("license", ""),
             "package_version": metadata.get("version", ""),
             "repo_url": metadata.get("urls", {}).get("Repository", ""),
             "site_name": self._get_site_name(),
-            # Social cards
-            "social_cards_enabled": self._config.social_cards_enabled,
-            "social_cards_image": social_image_url,
-            "social_cards_twitter_card": self._config.social_cards_twitter_card,
-            "social_cards_twitter_site": self._config.social_cards_twitter_site,
         }
 
     def _prerender_term_player(self, log) -> None:  # pragma: no cover

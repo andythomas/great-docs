@@ -271,129 +271,6 @@ def inject_noindex_meta(html_content: str, page_path: str) -> str:
     return html_content
 
 
-def inject_social_cards(html_content: str, page_path: str) -> str:
-    """
-    Inject Open Graph and Twitter/X Card meta tags for social media previews.
-
-    Generates per-page `og:title`, `og:description`, `og:url`, and `og:image` tags (plus Twitter
-    Card equivalents) so that links shared on LinkedIn, Discord, Slack, Bluesky, Mastodon, X, and
-    other platforms show rich previews.
-
-    Parameters
-    ----------
-    html_content
-        The HTML content to modify.
-    page_path
-        The page path relative to the site root (e.g., "reference/MyClass.html").
-
-    Returns
-    -------
-    str
-        The modified HTML with social card meta tags.
-    """
-    if not _gd_options.get("social_cards_enabled", False):
-        return html_content
-
-    # Skip if OG tags already exist (e.g., user added manually)
-    if 'property="og:title"' in html_content:
-        return html_content
-
-    site_name = _gd_options.get("site_name", "")
-    base_url = _gd_options.get("canonical_base_url", "")
-    default_description = _gd_options.get("default_description", "")
-    image_url = _gd_options.get("social_cards_image")
-    twitter_site = _gd_options.get("social_cards_twitter_site")
-    twitter_card_override = _gd_options.get("social_cards_twitter_card")
-
-    # ── Extract page title ────────────────────────────────────────────────
-    page_title = site_name
-    title_match = re.search(r"<title>([^<]*)</title>", html_content)
-    if title_match:
-        page_title = title_match.group(1).strip()
-
-    # ── Extract page description ──────────────────────────────────────────
-    description = ""
-
-    # First try existing meta description
-    desc_match = re.search(r'<meta\s+name="description"\s+content="([^"]*)"', html_content)
-    if desc_match:
-        description = desc_match.group(1)
-
-    # Fall back to first meaningful paragraph
-    if not description:
-        main_match = re.search(r"<main[^>]*>(.*?)</main>", html_content, re.DOTALL)
-        if main_match:
-            p_match = re.search(
-                r"<p[^>]*>([^<]+(?:<(?!/?p)[^>]*>[^<]*)*)</p>",
-                main_match.group(1),
-            )
-            if p_match:
-                desc_text = re.sub(r"<[^>]+>", "", p_match.group(1)).strip()
-                if len(desc_text) > 30:
-                    if len(desc_text) > 200:
-                        desc_text = desc_text[:197].rsplit(" ", 1)[0] + "..."
-                    description = desc_text
-
-    # Fall back to site-level default
-    if not description:
-        description = default_description
-
-    # HTML-escape attribute values
-    def _esc(val: str) -> str:
-        return (
-            val.replace("&", "&amp;")
-            .replace('"', "&quot;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
-
-    # ── Build page URL ────────────────────────────────────────────────────
-    page_url = ""
-    if base_url:
-        if page_path == "index.html":
-            page_url = base_url.rstrip("/")
-        elif page_path.endswith("/index.html"):
-            page_url = base_url + page_path[:-10]  # Remove /index.html
-        else:
-            page_url = base_url + page_path
-
-    # ── Assemble meta tags ────────────────────────────────────────────────
-    tags: list[str] = []
-
-    # Open Graph (works on LinkedIn, Discord, Slack, Bluesky, Mastodon, etc.)
-    tags.append('<meta property="og:type" content="website">')
-    tags.append(f'<meta property="og:title" content="{_esc(page_title)}">')
-    if description:
-        tags.append(f'<meta property="og:description" content="{_esc(description)}">')
-    if page_url:
-        tags.append(f'<meta property="og:url" content="{_esc(page_url)}">')
-    if site_name:
-        tags.append(f'<meta property="og:site_name" content="{_esc(site_name)}">')
-    if image_url:
-        tags.append(f'<meta property="og:image" content="{_esc(image_url)}">')
-
-    # Twitter/X Card
-    if twitter_card_override:
-        card_type = twitter_card_override
-    else:
-        card_type = "summary_large_image" if image_url else "summary"
-    tags.append(f'<meta name="twitter:card" content="{card_type}">')
-    tags.append(f'<meta name="twitter:title" content="{_esc(page_title)}">')
-    if description:
-        tags.append(f'<meta name="twitter:description" content="{_esc(description)}">')
-    if image_url:
-        tags.append(f'<meta name="twitter:image" content="{_esc(image_url)}">')
-    if twitter_site:
-        handle = twitter_site if twitter_site.startswith("@") else f"@{twitter_site}"
-        tags.append(f'<meta name="twitter:site" content="{_esc(handle)}">')
-
-    # Inject all tags before </head>
-    tag_block = "\n  ".join(tags)
-    html_content = html_content.replace("</head>", f"  {tag_block}\n</head>", 1)
-
-    return html_content
-
-
 def apply_seo_processing(html_content: str, page_path: str) -> str:
     """
     Apply all SEO processing to an HTML page.
@@ -412,7 +289,6 @@ def apply_seo_processing(html_content: str, page_path: str) -> str:
     """
     html_content = inject_json_ld(html_content, page_path)
     html_content = inject_noindex_meta(html_content, page_path)
-    html_content = inject_social_cards(html_content, page_path)
     return html_content
 
 
@@ -2169,8 +2045,7 @@ print("##GD:PASS:Markdown alternate links injected", flush=True)
 # ══════════════════════════════════════════════════════════════════════════════
 # SEO PROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
-# Add JSON-LD structured data and social cards to HTML pages. Mark internal
-# pages with noindex.
+# Add JSON-LD structured data and mark internal pages with noindex.
 
 if _gd_options.get("seo_enabled", False):
     print("\n🔍 Applying SEO enhancements to HTML files...")
