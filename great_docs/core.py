@@ -28,10 +28,10 @@ from ._utils import (
     validate_layout_outputs,
     validate_tree_symlinks,
 )
-from ._website import i18n
+from ._website import i18n, page_metadata, page_url, social_cards
 from ._website.navigation import label as nav_label
-from ._website.seo import canonical
 from ._website.seo import description as seo_description
+from ._website.seo import title as seo_title
 from .config import Config, create_default_config
 
 if TYPE_CHECKING:
@@ -4166,6 +4166,9 @@ class GreatDocs:
         raw_render_excludes: list[str] = []
         processed = 0
         canonical_base_url = self._get_canonical_base_url()
+        card_image_url = (
+            self._resolve_social_card_image_url() if self._config.social_cards_enabled else None
+        )
 
         for source in sources:
             source_dir = source["source_dir"]
@@ -4201,12 +4204,23 @@ class GreatDocs:
                     layout = "passthrough"  # pragma: no cover
 
                 if layout == "raw":
-                    body = canonical.add_to_raw_page(
+                    body = page_url.add_to_raw_page(
                         body, self._config, canonical_base_url, output_rel_path.as_posix()
                     )
                     body = i18n.add_to_raw_page(body, self._config)
                     if self._config.seo_enabled:
                         body = seo_description.add_to_raw_page(body, self._default_description())
+                    raw_url = None
+                    if canonical_base_url:
+                        raw_url = page_url.address(canonical_base_url, output_rel_path.as_posix())
+                    body = social_cards.add_to_raw_page(
+                        body,
+                        self._config,
+                        site_name=self._get_site_name(),
+                        default=self._default_description(),
+                        url=raw_url,
+                        image_url=card_image_url,
+                    )
                     dest_path.write_text(body, encoding="utf-8")
                     raw_resource = output_rel_path.as_posix()
                     resources_to_add.append(raw_resource)
@@ -6247,18 +6261,19 @@ class GreatDocs:
         package_description = self._get_package_metadata().get("description")
         return seo_description.default_description(self._config, package_description)
 
-    def _write_page_descriptions(self) -> None:
+    def _write_page_metadata(self) -> None:
         """
-        Write a search description into every page in the build directory that lacks one
+        Write search descriptions and social card options into the build directory's pages
 
-        Each page gets its opening paragraph, or else the site's default
-        description. Run after every page is written and before rendering.
+        Run after generating all pages and before rendering.
         """
-        # A versioned build describes each version after resolving its version fences
-        if not self._config.seo_enabled or self._config.has_versions:
+        # Versioned pages need descriptions from their resolved content.
+        if self._config.has_versions:
             return
         quarto_config = self._read_quarto_config(self.build_dir / "_quarto.yml")
-        seo_description.write_to_pages(self.build_dir, quarto_config, self._default_description())
+        page_metadata.write_to_pages(
+            self.build_dir, quarto_config, self._config, self._default_description()
+        )
 
     def _normalize_freeze_shorthand(self) -> list[str]:
         """Rewrite page-level `freeze: auto|true` to `execute: freeze: auto|true`.
@@ -13786,8 +13801,17 @@ anchor-sections: true
         nav_label.register(config, self._config)
         i18n.register(config, self._config)
 
-        # Add each page's canonical link during Quarto rendering.
-        canonical.register(config, self._config, self._get_canonical_base_url(), quarto_yml.parent)
+        # Canonical links and social cards share the preferred page address.
+        page_url.register(
+            config,
+            self._config,
+            self._get_canonical_base_url(),
+            quarto_yml.parent,
+            og_url=social_cards.applies(config, self._config, quarto_yml.parent),
+        )
+        social_cards.register(
+            config, self._config, self._resolve_social_card_image_url(), quarto_yml.parent
+        )
 
         # Apply explicit navbar ordering from config (if set)
         self._reorder_navbar(config)
@@ -15260,7 +15284,7 @@ anchor-sections: true
             The canonical base URL (with trailing slash) or None if not determined.
         """
         owner, repo, _ = self._get_github_repo_info()
-        return canonical.resolve_base_url(self._config, owner, repo)
+        return page_url.resolve_base_url(self._config, owner, repo)
 
     def _categorize_page(self, html_path: str) -> str:
         """
@@ -15533,26 +15557,20 @@ anchor-sections: true
             The `<title>` element, or `None` unless the template is a string
             that contains `{page_title}` and excludes `$`.
         """
-        page_key = "{page_title}"
-        site_key = "{site_name}"
-
-        if not isinstance(template, str):
+        if not seo_title.is_valid(template):
             return None
 
-        # `$` opens a Pandoc template expression and would corrupt the partial.
-        if "$" in template or page_key not in template:
-            return None
-
-        titled = template.replace(page_key, "$pagetitle$").replace(site_key, "$title-prefix$")
+        titled = seo_title.apply(template, "$pagetitle$", "$title-prefix$")
         return f"<title>$if(title-prefix)${titled}$else$$pagetitle$$endif$</title>"
 
     def _write_metadata_partial(self, config: dict) -> None:
         """
-        Write a Quarto metadata partial with the page title and translations
+        Write a Quarto metadata partial with the page title, translations and `og:type`
 
         Use the bundled partial to keep metadata independent of the installed
         Quarto version. Apply a supported title template when SEO is enabled,
-        and add the translation bundle for languages other than English.
+        include translations for languages other than English, and include
+        the Open Graph page type when social cards are enabled.
         Register the partial only if its contents change and the configuration
         has an HTML mapping.
 
@@ -15589,6 +15607,9 @@ anchor-sections: true
             # Pandoc templates require `$$` to render a literal `$`.
             partial = partial.rstrip("\n") + "\n" + meta_tag.replace("$", "$$") + "\n"
 
+        if social_cards.applies(config, self._config, self.build_dir):
+            partial = partial.rstrip("\n") + "\n" + social_cards.OG_TYPE_PARTIAL + "\n"
+
         if partial == bundled:
             return
 
@@ -15612,30 +15633,17 @@ anchor-sections: true
         """
         metadata = self._get_package_metadata()
 
-        # Handle social card image (copy to build dir if needed)
-        social_image_url = None
-        if self._config.social_cards_enabled:
-            social_image_url = self._resolve_social_card_image_url()
-
         return {
             "seo_enabled": self._config.seo_enabled,
             "canonical_base_url": self._get_canonical_base_url(),
             "structured_data_enabled": self._config.structured_data_enabled,
             "structured_data_type": self._config.structured_data_type,
-            "default_description": (
-                self._config.seo_default_description or metadata.get("description", "")
-            ),
             "package_name": self._detect_package_name() or "",
             "package_description": metadata.get("description", ""),
             "package_license": metadata.get("license", ""),
             "package_version": metadata.get("version", ""),
             "repo_url": metadata.get("urls", {}).get("Repository", ""),
             "site_name": self._get_site_name(),
-            # Social cards
-            "social_cards_enabled": self._config.social_cards_enabled,
-            "social_cards_image": social_image_url,
-            "social_cards_twitter_card": self._config.social_cards_twitter_card,
-            "social_cards_twitter_site": self._config.social_cards_twitter_site,
         }
 
     def _prerender_term_player(self, log) -> None:  # pragma: no cover
@@ -16132,7 +16140,7 @@ anchor-sections: true
 
             # Normalize freeze shorthand (runs right before render in a full build)
             self._normalize_freeze_shorthand()
-            self._write_page_descriptions()
+            self._write_page_metadata()
 
             # Expand source-code: mock cells
             from great_docs._mock_code import process_directory as _expand_mock
@@ -16922,7 +16930,7 @@ anchor-sections: true
 
             # Normalize page-level freeze shorthand before Quarto render
             frozen_pages = self._normalize_freeze_shorthand()
-            self._write_page_descriptions()
+            self._write_page_metadata()
             has_freeze_cache = self.layout.freeze_dir.is_dir()
 
             if frozen_pages or has_freeze_cache:

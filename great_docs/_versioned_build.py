@@ -33,7 +33,7 @@ from great_docs._versioning import (
     process_version_fences,
     version_url_segment,
 )
-from great_docs._website.seo import description as seo_description
+from great_docs._website import page_metadata
 
 if TYPE_CHECKING:
     from great_docs._api_diff import ApiSnapshot
@@ -533,7 +533,6 @@ def preprocess_version(
     section_configs: list[dict] | None = None,
     badge_expiry: "BadgeExpiry | None" = None,
     config: Config | None = None,
-    default_description: str | None = None,
 ) -> list[str]:
     """
     Prepare the documentation source for one version
@@ -548,8 +547,6 @@ def preprocess_version(
        the inventory and interlinks index to match them.
     6. Generate API reference pages from a configured Git tag, and rebuild
        the inventory and interlinks index to match them.
-    7. Write a search description into each page that lacks one, when SEO is
-       enabled.
 
     Parameters
     ----------
@@ -572,8 +569,6 @@ def preprocess_version(
         Project configuration, forwarded to steps 5 and 6 for rebuilding the
         inventory and interlinks index. Skipped for a version that keeps the
         live inventory when omitted.
-    default_description
-        The site's default search description as plain text.
 
     Returns
     -------
@@ -673,15 +668,7 @@ def preprocess_version(
         if updated != content:
             qmd_file.write_text(updated, encoding="utf-8")
 
-    # 7. Describe pages from this version's content, now that fences are resolved
-    if config is not None and config.seo_enabled:
-        from yaml12 import read_yaml
-
-        quarto_yml = dest_dir / "_quarto.yml"
-        quarto_config = read_yaml(quarto_yml) if quarto_yml.exists() else {}
-        seo_description.write_to_pages(dest_dir, quarto_config or {}, default_description)
-
-    # 8. Update _page_status.json with upcoming pages for this version
+    # 7. Update _page_status.json with upcoming pages for this version
     if upcoming_pages:
         _update_page_status_json(dest_dir, upcoming_pages)
 
@@ -1655,6 +1642,33 @@ def expand_version_callouts(content: str, entry: VersionEntry) -> str:
     return result
 
 
+def _write_page_metadata(dest_dir: Path, config: Config, default: str | None) -> None:
+    """
+    Write search descriptions and social card options into a version's pages
+
+    Run after resolving version fences to describe each version's content.
+
+    Run before setting the version's site title so cards use the latest site
+    title. The versions share a freeze cache keyed by page path and checked
+    against the page source. Version-specific card titles would change that
+    source and force repeated execution.
+
+    Parameters
+    ----------
+    dest_dir
+        Quarto project directory for the version.
+    config
+        Project configuration.
+    default
+        The site's default description as plain text.
+    """
+    from yaml12 import read_yaml
+
+    quarto_yml = dest_dir / "_quarto.yml"
+    quarto_config = read_yaml(quarto_yml) if quarto_yml.exists() else {}
+    page_metadata.write_to_pages(dest_dir, quarto_config or {}, config, default)
+
+
 def _rewrite_quarto_yml_for_version(
     dest_dir: Path,
     entry: VersionEntry,
@@ -1664,8 +1678,8 @@ def _rewrite_quarto_yml_for_version(
     Adjust `_quarto.yml` for a documentation version
 
     For older versions, add the version prefix to `site-url` so root-relative
-    asset paths resolve within that version. Keep the latest version's canonical
-    base address so canonical links point to its matching pages.
+    asset paths resolve within that version. Use the latest version's base
+    address for canonical links and `og:url` tags to matching pages.
     """
     from yaml12 import read_yaml, write_yaml
 
@@ -2228,8 +2242,9 @@ def run_versioned_build(  # pragma: no cover
             project_root=project_root,
             badge_expiry=badge_expiry,
             config=config,
-            default_description=default_description,
         )
+        if config is not None:
+            _write_page_metadata(ver_dir, config, default_description)
         _prune_missing_sidebar_pages(ver_dir)
         _rewrite_quarto_yml_for_version(ver_dir, entry, latest_tag)
         _sync_status_inline_script(ver_dir)

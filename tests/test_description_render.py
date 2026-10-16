@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from great_docs._website.seo.description import add_to_page, metadata_value, write_to_pages
+from great_docs._website.page_metadata import add_to_page, write_to_pages
+from great_docs._website.seo.description import metadata_value
+from great_docs.config import Config
 
 pytestmark = pytest.mark.skipif(shutil.which("quarto") is None, reason="Quarto is not installed")
 
@@ -38,13 +40,17 @@ def test_descriptions_reach_the_page_intact(tmp_path: Path):
         "code": "---\ntitle: Code\n---\n\n```python\nx = 1\n```\n",
         "summary": add_to_page(
             "---\ntitle: Summary\n---\n\nText\n",
-            metadata_value("Compare `a < b` with [](`~pkg.Frame`) and `**kwargs`") or "",
+            {
+                "description-meta": metadata_value(
+                    "Compare `a < b` with [](`~pkg.Frame`) and `**kwargs`"
+                )
+            },
         ),
     }
     for name, content in pages.items():
         (project / f"{name}.qmd").write_text(content, encoding="utf-8")
 
-    write_to_pages(project, quarto_config, "Site default")
+    write_to_pages(project, quarto_config, Config(tmp_path), "Site default")
     subprocess.run(["quarto", "render"], cwd=project, check=True, capture_output=True)
 
     def descriptions(name: str) -> list[str]:

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import click
+import pytest
 import requests
 
 from great_docs import GreatDocs
@@ -2629,6 +2630,35 @@ class TestCanonicalIntegration:
             '<link rel="canonical" href="https://docs.example.com/pkg/custom/widget.html">' in page
         )
 
+    @pytest.mark.parametrize("seo", ["true", "false"])
+    def test_raw_custom_page_gets_social_cards(self, tmp_path, monkeypatch, seo):
+        (tmp_path / "great-docs.yml").write_text(
+            f"module: mypkg\nseo:\n  enabled: {seo}\n", encoding="utf-8"
+        )
+        gd = GreatDocs(project_path=str(tmp_path))
+        gd.build_dir.mkdir(parents=True, exist_ok=True)
+        (gd.build_dir / "_quarto.yml").write_text(
+            "website:\n  title: Pkg\n  sidebar: []\n  navbar:\n    left: []\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(gd, "_get_canonical_base_url", lambda: "https://docs.example.com/pkg/")
+        custom = tmp_path / "custom"
+        custom.mkdir()
+        (custom / "widget.html").write_text(
+            "---\nlayout: raw\n---\n<html><head><title>Widget Lab</title></head></html>",
+            encoding="utf-8",
+        )
+
+        gd._process_custom_pages()
+
+        page = (gd.build_dir / "custom" / "widget.html").read_text(encoding="utf-8")
+        assert page.count('<meta property="og:title" content="Widget Lab">') == 1
+        assert '<meta property="og:site_name" content="Pkg">' in page
+        assert (
+            '<meta property="og:url" content="https://docs.example.com/pkg/custom/widget.html">'
+            in page
+        )
+        assert '<meta name="twitter:card" content="summary">' in page
+
     def test_raw_custom_page_gets_the_translation_bundle(self, tmp_path):
         (tmp_path / "great-docs.yml").write_text(
             "module: mypkg\nsite:\n  lang: fr\n", encoding="utf-8"
@@ -2672,18 +2702,21 @@ class TestPageDescriptions:
         code = gd.build_dir / "code.qmd"
         code.write_text("```python\nx = 1\n```\n", encoding="utf-8")
 
-        gd._write_page_descriptions()
+        gd._write_page_metadata()
 
         assert f"description-meta: {self.LONG}" in prose.read_text(encoding="utf-8")
         assert "description-meta: Site default" in code.read_text(encoding="utf-8")
 
-    def test_nothing_is_written_when_seo_is_disabled(self, tmp_path, monkeypatch):
+    def test_nothing_is_written_when_seo_and_social_cards_are_disabled(
+        self, tmp_path, monkeypatch
+    ):
         gd = self._gd(tmp_path, monkeypatch)
         _patch_cfg(monkeypatch, gd, "seo_enabled", False)
+        _patch_cfg(monkeypatch, gd, "social_cards_enabled", False)
         page = gd.build_dir / "guide.qmd"
         page.write_text(f"{self.LONG}\n", encoding="utf-8")
 
-        gd._write_page_descriptions()
+        gd._write_page_metadata()
 
         assert "description-meta" not in page.read_text(encoding="utf-8")
 
@@ -2693,7 +2726,7 @@ class TestPageDescriptions:
         page = gd.build_dir / "guide.qmd"
         page.write_text(f"{self.LONG}\n", encoding="utf-8")
 
-        gd._write_page_descriptions()
+        gd._write_page_metadata()
 
         assert "description-meta" not in page.read_text(encoding="utf-8")
 

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
-import importlib
-import json
-import sys
 
 import pytest
 
+from great_docs._website import social_cards
 from great_docs.config import Config
 
 
@@ -88,308 +85,100 @@ class TestSocialCardsConfig:
         assert cfg.social_cards_twitter_site is None
 
 
-# Minimal HTML template for testing
-_HTML = """\
-<html>
-<head>
-<title>{title}</title>
-</head>
-<body>
-<main>
-<p>{paragraph}</p>
-</main>
-</body>
-</html>
-"""
+class TestRegister:
+    """Site defaults for Open Graph and Twitter cards"""
 
-_GD_OPTIONS_BASE = {
-    "social_cards_enabled": True,
-    "site_name": "My Package",
-    "canonical_base_url": "https://example.github.io/my-package/",
-    "default_description": "A great Python package",
-    "social_cards_image": None,
-    "social_cards_twitter_card": None,
-    "social_cards_twitter_site": None,
-    "seo_enabled": False,  # Disable other SEO processing for isolated tests
-}
+    IMAGE = "https://docs.example.com/pkg/card.png"
 
+    def test_enables_both_without_options(self, tmp_path: Path):
+        quarto: dict = {}
+        social_cards.register(quarto, Config(tmp_path), None, tmp_path)
+        assert quarto["website"] == {"open-graph": True, "twitter-card": True}
 
-def _load_inject_social_cards(gd_options: dict):
-    """
-    Import inject_social_cards from post-render.py with patched _gd_options.
-
-    The post-render script reads _gd_options at module level, so we need to
-    patch it before importing the function.
-    """
-    import importlib
-    import types
-
-    post_render_path = (
-        Path(__file__).resolve().parent.parent / "great_docs" / "assets" / "post-render.py"
-    )
-
-    # Read the source and extract only what we need
-    source = post_render_path.read_text(encoding="utf-8")
-
-    # Create a minimal module with just the function + its dependencies
-    mod = types.ModuleType("_post_render_test")
-    mod.__dict__["__builtins__"] = __builtins__
-    mod.__dict__["_gd_options"] = gd_options
-
-    # We need 're' available
-    import re
-
-    mod.__dict__["re"] = re
-
-    # Extract and exec just the inject_social_cards function
-    # Since it only depends on _gd_options and re, we can exec it directly
-    import textwrap
-
-    func_source = textwrap.dedent("""\
-    import re
-
-    def inject_social_cards(html_content, page_path):
-        _gd_options = __gd_options__
-
-        if not _gd_options.get("social_cards_enabled", False):
-            return html_content
-
-        if 'property="og:title"' in html_content:
-            return html_content
-
-        site_name = _gd_options.get("site_name", "")
-        base_url = _gd_options.get("canonical_base_url", "")
-        default_description = _gd_options.get("default_description", "")
-        image_url = _gd_options.get("social_cards_image")
-        twitter_site = _gd_options.get("social_cards_twitter_site")
-        twitter_card_override = _gd_options.get("social_cards_twitter_card")
-
-        page_title = site_name
-        title_match = re.search(r"<title>([^<]*)</title>", html_content)
-        if title_match:
-            page_title = title_match.group(1).strip()
-
-        description = ""
-        desc_match = re.search(
-            r'<meta\\s+name="description"\\s+content="([^"]*)"', html_content
+    def test_image_and_twitter_options(self, tmp_path: Path):
+        config = _make_config(
+            tmp_path, "social_cards:\n  twitter_site: myhandle\n  twitter_card: summary\n"
         )
-        if desc_match:
-            description = desc_match.group(1)
-
-        if not description:
-            main_match = re.search(r"<main[^>]*>(.*?)</main>", html_content, re.DOTALL)
-            if main_match:
-                p_match = re.search(
-                    r"<p[^>]*>([^<]+(?:<(?!/?p)[^>]*>[^<]*)*)</p>",
-                    main_match.group(1),
-                )
-                if p_match:
-                    desc_text = re.sub(r"<[^>]+>", "", p_match.group(1)).strip()
-                    if len(desc_text) > 30:
-                        if len(desc_text) > 200:
-                            desc_text = desc_text[:197].rsplit(" ", 1)[0] + "..."
-                        description = desc_text
-
-        if not description:
-            description = default_description
-
-        def _esc(val):
-            return (
-                val.replace("&", "&amp;")
-                .replace('"', "&quot;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-
-        page_url = ""
-        if base_url:
-            if page_path == "index.html":
-                page_url = base_url.rstrip("/")
-            elif page_path.endswith("/index.html"):
-                page_url = base_url + page_path[:-10]
-            else:
-                page_url = base_url + page_path
-
-        tags = []
-
-        tags.append(f'<meta property="og:type" content="website">')
-        tags.append(f'<meta property="og:title" content="{_esc(page_title)}">')
-        if description:
-            tags.append(f'<meta property="og:description" content="{_esc(description)}">')
-        if page_url:
-            tags.append(f'<meta property="og:url" content="{_esc(page_url)}">')
-        if site_name:
-            tags.append(f'<meta property="og:site_name" content="{_esc(site_name)}">')
-        if image_url:
-            tags.append(f'<meta property="og:image" content="{_esc(image_url)}">')
-
-        if twitter_card_override:
-            card_type = twitter_card_override
-        else:
-            card_type = "summary_large_image" if image_url else "summary"
-        tags.append(f'<meta name="twitter:card" content="{card_type}">')
-        tags.append(f'<meta name="twitter:title" content="{_esc(page_title)}">')
-        if description:
-            tags.append(f'<meta name="twitter:description" content="{_esc(description)}">')
-        if image_url:
-            tags.append(f'<meta name="twitter:image" content="{_esc(image_url)}">')
-        if twitter_site:
-            handle = twitter_site if twitter_site.startswith("@") else f"@{twitter_site}"
-            tags.append(f'<meta name="twitter:site" content="{_esc(handle)}">')
-
-        tag_block = "\\n  ".join(tags)
-        html_content = html_content.replace("</head>", f"  {tag_block}\\n</head>", 1)
-
-        return html_content
-    """)
-
-    ns = {"__gd_options__": gd_options}
-    exec(func_source, ns)
-    return ns["inject_social_cards"]
-
-
-class TestInjectSocialCards:
-    """Tests for the inject_social_cards post-render function."""
-
-    def test_basic_og_tags_injected(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(title="Getting Started", paragraph="Learn how to use the package.")
-        result = inject(html, "user-guide/getting-started.html")
-
-        assert 'property="og:type" content="website"' in result
-        assert 'property="og:title" content="Getting Started"' in result
-        assert 'property="og:url"' in result
-        assert 'property="og:site_name" content="My Package"' in result
-
-    def test_twitter_card_tags_injected(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(title="API Ref", paragraph="Reference documentation for all classes.")
-        result = inject(html, "reference/index.html")
-
-        assert 'name="twitter:card" content="summary"' in result
-        assert 'name="twitter:title" content="API Ref"' in result
-
-    def test_summary_large_image_when_image_provided(self):
-        opts = {**_GD_OPTIONS_BASE, "social_cards_image": "https://example.com/og.png"}
-        inject = _load_inject_social_cards(opts)
-        html = _HTML.format(title="Home", paragraph="Welcome to the docs.")
-        result = inject(html, "index.html")
-
-        assert 'name="twitter:card" content="summary_large_image"' in result
-        assert 'property="og:image" content="https://example.com/og.png"' in result
-        assert 'name="twitter:image" content="https://example.com/og.png"' in result
-
-    def test_twitter_card_override(self):
-        opts = {
-            **_GD_OPTIONS_BASE,
-            "social_cards_image": "https://example.com/og.png",
-            "social_cards_twitter_card": "summary",
+        quarto: dict = {"website": {"title": "Pkg"}}
+        social_cards.register(quarto, config, self.IMAGE, tmp_path)
+        assert quarto["website"] == {
+            "title": "Pkg",
+            "open-graph": {"image": self.IMAGE},
+            "twitter-card": {"image": self.IMAGE, "card-style": "summary", "site": "@myhandle"},
         }
-        inject = _load_inject_social_cards(opts)
-        html = _HTML.format(title="Home", paragraph="Welcome to the docs.")
-        result = inject(html, "index.html")
 
-        # Even with image, should use the override
-        assert 'name="twitter:card" content="summary"' in result
+    def test_keeps_an_at_sign(self, tmp_path: Path):
+        config = _make_config(tmp_path, 'social_cards:\n  twitter_site: "@myhandle"\n')
+        quarto: dict = {}
+        social_cards.register(quarto, config, None, tmp_path)
+        assert quarto["website"]["twitter-card"] == {"site": "@myhandle"}
 
-    def test_twitter_site_with_at_prefix(self):
-        opts = {**_GD_OPTIONS_BASE, "social_cards_twitter_site": "@myhandle"}
-        inject = _load_inject_social_cards(opts)
-        html = _HTML.format(title="Home", paragraph="Welcome to the docs.")
-        result = inject(html, "index.html")
+    def test_disabled(self, tmp_path: Path):
+        quarto: dict = {}
+        social_cards.register(quarto, _make_config(tmp_path, "social_cards: false\n"), None, tmp_path)
+        assert quarto == {}
 
-        assert 'name="twitter:site" content="@myhandle"' in result
+    def test_independent_of_seo(self, tmp_path: Path):
+        quarto: dict = {}
+        config = _make_config(tmp_path, "seo:\n  enabled: false\n")
+        social_cards.register(quarto, config, None, tmp_path)
+        assert quarto["website"]["open-graph"] is True
 
-    def test_twitter_site_without_at_prefix(self):
-        opts = {**_GD_OPTIONS_BASE, "social_cards_twitter_site": "myhandle"}
-        inject = _load_inject_social_cards(opts)
-        html = _HTML.format(title="Home", paragraph="Welcome to the docs.")
-        result = inject(html, "index.html")
+    @pytest.mark.parametrize("as_file", [False, True])
+    def test_keeps_open_graph_tags_from_the_site_header(self, tmp_path: Path, as_file: bool):
+        tag = '<meta property="og:title" content="Mine">'
+        if as_file:
+            (tmp_path / "head.html").write_text(tag, encoding="utf-8")
+            entry: str | dict = "head.html"
+        else:
+            entry = {"text": tag}
+        quarto: dict = {"format": {"html": {"include-in-header": [entry]}}}
+        social_cards.register(quarto, Config(tmp_path), self.IMAGE, tmp_path)
+        assert "website" not in quarto
+        assert not social_cards.applies(quarto, Config(tmp_path), tmp_path)
 
-        assert 'name="twitter:site" content="@myhandle"' in result
 
-    def test_disabled_does_nothing(self):
-        opts = {**_GD_OPTIONS_BASE, "social_cards_enabled": False}
-        inject = _load_inject_social_cards(opts)
-        html = _HTML.format(title="Home", paragraph="Welcome.")
-        result = inject(html, "index.html")
+class TestAddToRawPage:
+    """Social card metadata for pages that bypass Quarto"""
 
-        assert 'property="og:title"' not in result
+    HEAD = "<html><head>{}</head><body></body></html>"
 
-    def test_existing_og_tags_not_duplicated(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(title="Home", paragraph="Welcome.").replace(
-            "</head>",
-            '  <meta property="og:title" content="Custom">\n</head>',
+    def _add(self, tmp_path: Path, page: str, yaml: str = "", **kwargs) -> str:
+        options = {"site_name": "Pkg", "default": "Default", "url": None, "image_url": None}
+        options.update(kwargs)
+        return social_cards.add_to_raw_page(page, _make_config(tmp_path, yaml), **options)
+
+    def test_takes_the_page_title_and_description(self, tmp_path: Path):
+        page = self.HEAD.format(
+            '<title>A &amp; "B"</title><meta name="description" content="Mine &lt;3">'
         )
-        result = inject(html, "index.html")
+        result = self._add(tmp_path, page)
+        assert '<meta property="og:title" content="A &amp; &quot;B&quot;">' in result
+        assert '<meta name="twitter:description" content="Mine &lt;3">' in result
 
-        # Should not add a second og:title
-        assert result.count('property="og:title"') == 1
+    def test_falls_back_to_the_site(self, tmp_path: Path):
+        result = self._add(tmp_path, self.HEAD.format(""))
+        assert '<meta property="og:title" content="Pkg">' in result
+        assert '<meta property="og:description" content="Default">' in result
+        assert "og:url" not in result
 
-    def test_homepage_url_strips_trailing_path(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(title="Home", paragraph="Welcome to the package docs.")
-        result = inject(html, "index.html")
-
-        assert 'og:url" content="https://example.github.io/my-package"' in result
-
-    def test_subpage_url_keeps_path(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(
-            title="Config Guide", paragraph="How to configure the package settings."
+    def test_image_url_and_handle(self, tmp_path: Path):
+        result = self._add(
+            tmp_path,
+            self.HEAD.format(""),
+            "social_cards:\n  twitter_site: myhandle\n",
+            url="https://x.test/w.html",
+            image_url="https://x.test/card.png",
         )
-        result = inject(html, "user-guide/config.html")
+        assert '<meta property="og:url" content="https://x.test/w.html">' in result
+        assert '<meta property="og:image" content="https://x.test/card.png">' in result
+        assert '<meta name="twitter:card" content="summary_large_image">' in result
+        assert '<meta name="twitter:site" content="@myhandle">' in result
 
-        assert (
-            'og:url" content="https://example.github.io/my-package/user-guide/config.html"'
-            in result
-        )
+    def test_keeps_a_page_with_its_own_tags(self, tmp_path: Path):
+        page = self.HEAD.format('<meta property="og:title" content="Mine">')
+        assert self._add(tmp_path, page) == page
 
-    def test_description_from_paragraph(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(
-            title="Tutorial",
-            paragraph="This tutorial teaches you everything about the advanced features in great detail.",
-        )
-        result = inject(html, "tutorial.html")
-
-        assert 'og:description"' in result
-        assert "This tutorial teaches" in result
-
-    def test_description_fallback_to_default(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        # Short paragraph (< 30 chars) won't be used
-        html = _HTML.format(title="Page", paragraph="Short.")
-        result = inject(html, "page.html")
-
-        assert 'og:description" content="A great Python package"' in result
-
-    def test_html_entities_escaped(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(
-            title='Docs &amp; "More"',
-            paragraph="A paragraph about configuration and settings for your project documentation.",
-        )
-        result = inject(html, "page.html")
-
-        # The title in og:title should have escaped entities
-        assert 'og:title"' in result
-        assert "&amp;" in result
-
-    def test_no_base_url_omits_og_url(self):
-        opts = {**_GD_OPTIONS_BASE, "canonical_base_url": ""}
-        inject = _load_inject_social_cards(opts)
-        html = _HTML.format(title="Home", paragraph="Welcome to the package documentation.")
-        result = inject(html, "index.html")
-
-        assert 'og:url"' not in result
-
-    def test_index_html_in_subdir_strips_index(self):
-        inject = _load_inject_social_cards(_GD_OPTIONS_BASE)
-        html = _HTML.format(
-            title="Reference", paragraph="API reference documentation for the package."
-        )
-        result = inject(html, "reference/index.html")
-
-        assert 'og:url" content="https://example.github.io/my-package/reference/"' in result
+    def test_disabled(self, tmp_path: Path):
+        page = self.HEAD.format("")
+        assert self._add(tmp_path, page, "social_cards: false\n") == page
