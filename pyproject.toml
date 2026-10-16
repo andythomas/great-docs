@@ -77,9 +77,7 @@ docs = [
     "polars>=0.20",
     "pandas>=2.0",
     "pyarrow>=12.0",
-    # Pin below 0.22: that release depends on multimark, a compiled package
-    # with no WASM wheel, which breaks the marimo notebooks' Pyodide export.
-    "great_tables>=0.21.0,<0.22",
+    "great_tables>=1.1.0",
     "great-docs[mcp,marimo]",
 ]
 
