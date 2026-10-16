@@ -3143,7 +3143,15 @@ cli.add_command(seo)
     "checks",
     multiple=True,
     type=click.Choice(
-        ["config", "docstrings", "cross-refs", "style", "directives", "stale-versions"]
+        [
+            "config",
+            "docstrings",
+            "cross-refs",
+            "style",
+            "directives",
+            "stale-versions",
+            "descriptions",
+        ]
     ),
     help="Run only specific checks (can be repeated). Default: all checks.",
 )
@@ -3165,7 +3173,8 @@ def lint(
     Analyzes your package's public API for documentation issues including
     missing docstrings, broken cross-references, inconsistent formatting,
     malformed directives, and stale version annotations. Also reports
-    outdated keys in great-docs.yml.
+    outdated keys in great-docs.yml, and pages that fall back to the default
+    search description.
 
     \b
     Checks performed:
@@ -3179,6 +3188,7 @@ def lint(
       • stale-badge          Version badges far behind latest release
       • stale-callout        Version callouts that are very old
       • stale-upcoming       'upcoming:' frontmatter for already-released versions
+      • default-description  Pages with no opening paragraph to describe them in search
 
     \b
     Examples:
@@ -3186,6 +3196,7 @@ def lint(
       great-docs lint --check stale-versions         # Only check for stale annotations
       great-docs lint --check docstrings             # Only check for missing docstrings
       great-docs lint --check config                 # Only check great-docs.yml keys
+      great-docs lint --check descriptions           # Only check search descriptions
       great-docs lint --check cross-refs --check style
       great-docs lint --json                         # JSON output for CI
       great-docs lint --json | jq '.issues[] | select(.severity == "error")'

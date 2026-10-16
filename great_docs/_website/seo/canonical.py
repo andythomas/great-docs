@@ -23,41 +23,6 @@ BASE_URL_KEY = "gd-canonical-base-url"
 _CANONICAL_LINK = re.compile(r"""rel=["']?canonical""")
 
 
-def _header_has_canonical(quarto_config: dict, project_dir: Path) -> bool:
-    """
-    Check whether the site's header includes declare a canonical link
-
-    Parameters
-    ----------
-    quarto_config
-        Contents of `_quarto.yml`.
-    project_dir
-        Base directory for relative header file paths.
-
-    Returns
-    -------
-    :
-        `True` when an inline entry or a header file declares a canonical link.
-    """
-    includes = quarto_config.get("format", {}).get("html", {}).get("include-in-header", [])
-    if not isinstance(includes, list):
-        includes = [includes]
-    for item in includes:
-        if isinstance(item, dict):
-            text = item.get("text")
-            path = item.get("file")
-        else:
-            text, path = None, item
-        if text is None and path is not None:
-            try:
-                text = (project_dir / str(path)).read_text(encoding="utf-8")
-            except OSError:
-                continue
-        if text and _CANONICAL_LINK.search(text):
-            return True
-    return False
-
-
 def resolve_base_url(
     config: Config, github_owner: str | None, github_repo: str | None
 ) -> str | None:
@@ -131,7 +96,7 @@ def register(quarto_config: dict, config: Config, base_url: str | None, project_
     """
     if not config.canonical_enabled or not base_url:
         return
-    if _header_has_canonical(quarto_config, project_dir):
+    if head.includes_match(quarto_config, project_dir, _CANONICAL_LINK):
         return
     filters = quarto_config.setdefault("filters", [])
     if FILTER not in filters:

@@ -2650,6 +2650,75 @@ class TestCanonicalIntegration:
         assert page.count('<meta name="gd-i18n"') == 1
 
 
+class TestPageDescriptions:
+    """`GreatDocs` writes a search description into each page before rendering."""
+
+    LONG = "This page explains how the package adds numbers together."
+
+    def _gd(self, tmp_path: Path, monkeypatch, *, default: str | None = "Site default"):
+        gd = _make_gd(tmp_path)
+        gd.build_dir.mkdir(parents=True, exist_ok=True)
+        (gd.build_dir / "_quarto.yml").write_text(
+            "website:\n  sidebar: []\n  navbar:\n    left: []\n", encoding="utf-8"
+        )
+        _patch_cfg(monkeypatch, gd, "seo_default_description", default)
+        monkeypatch.setattr(gd, "_get_package_metadata", lambda: {})
+        return gd
+
+    def test_pages_get_their_opening_paragraph_or_the_default(self, tmp_path, monkeypatch):
+        gd = self._gd(tmp_path, monkeypatch)
+        prose = gd.build_dir / "guide.qmd"
+        prose.write_text(f"---\ntitle: Guide\n---\n\n{self.LONG}\n", encoding="utf-8")
+        code = gd.build_dir / "code.qmd"
+        code.write_text("```python\nx = 1\n```\n", encoding="utf-8")
+
+        gd._write_page_descriptions()
+
+        assert f"description-meta: {self.LONG}" in prose.read_text(encoding="utf-8")
+        assert "description-meta: Site default" in code.read_text(encoding="utf-8")
+
+    def test_nothing_is_written_when_seo_is_disabled(self, tmp_path, monkeypatch):
+        gd = self._gd(tmp_path, monkeypatch)
+        _patch_cfg(monkeypatch, gd, "seo_enabled", False)
+        page = gd.build_dir / "guide.qmd"
+        page.write_text(f"{self.LONG}\n", encoding="utf-8")
+
+        gd._write_page_descriptions()
+
+        assert "description-meta" not in page.read_text(encoding="utf-8")
+
+    def test_versioned_sites_are_described_per_version(self, tmp_path, monkeypatch):
+        gd = self._gd(tmp_path, monkeypatch)
+        _patch_cfg(monkeypatch, gd, "has_versions", True)
+        page = gd.build_dir / "guide.qmd"
+        page.write_text(f"{self.LONG}\n", encoding="utf-8")
+
+        gd._write_page_descriptions()
+
+        assert "description-meta" not in page.read_text(encoding="utf-8")
+
+    def test_default_falls_back_to_the_package_description(self, tmp_path, monkeypatch):
+        gd = self._gd(tmp_path, monkeypatch, default=None)
+        monkeypatch.setattr(
+            gd, "_get_package_metadata", lambda: {"description": "From `pyproject`"}
+        )
+
+        assert gd._default_description() == "From pyproject"
+
+    def test_raw_custom_page_gets_the_default(self, tmp_path, monkeypatch):
+        gd = self._gd(tmp_path, monkeypatch, default="Tom & Jerry")
+        custom = tmp_path / "custom"
+        custom.mkdir()
+        (custom / "widget.html").write_text(
+            "---\nlayout: raw\n---\n<html><head></head></html>", encoding="utf-8"
+        )
+
+        gd._process_custom_pages()
+
+        page = (gd.build_dir / "custom" / "widget.html").read_text(encoding="utf-8")
+        assert page.count('<meta name="description" content="Tom &amp; Jerry">') == 1
+
+
 # ---------------------------------------------------------------------------
 # _inject_version_selector – full function coverage
 # ---------------------------------------------------------------------------

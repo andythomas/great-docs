@@ -351,10 +351,19 @@ page. Great Docs generates these automatically from your content.
 
 ### Auto-Generation
 
-For each page, Great Docs extracts a description from:
+Great Docs gives each page a description from the first of these that applies:
 
-1. the first meaningful paragraph in the page content
-2. falls back to the default description if no suitable content is found
+1. the page's own `description` or `description-meta` front matter
+2. for an API reference page, the summary line of the object's docstring
+3. the paragraph the page opens with, when it is longer than 30 characters
+4. the default description
+
+Only the first block after the page title counts as the opening paragraph. A page that opens with
+anything else, such as a code block, a callout, an image, a list or a table, gets the default
+description. The homepage's opening paragraph is read from your README after badges are removed.
+
+Run `great-docs lint --check descriptions` to list the pages that get the default description (see
+[Docs Linting](linting.qmd#search-descriptions)).
 
 ### Setting a Default Description
 
@@ -377,6 +386,10 @@ title: "Installation"
 description: "How to install My Package using pip, conda, or from source."
 ---
 ```
+
+Quarto also shows a `description` below the page title. To set the search description without
+showing it on the page, use `description-meta` instead. Write `description-meta` as plain text,
+because Quarto does not convert Markdown in it.
 
 ## Noindex for Internal Pages
 

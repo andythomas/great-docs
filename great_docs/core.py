@@ -31,6 +31,7 @@ from ._utils import (
 from ._website import i18n
 from ._website.navigation import label as nav_label
 from ._website.seo import canonical
+from ._website.seo import description as seo_description
 from .config import Config, create_default_config
 
 if TYPE_CHECKING:
@@ -4204,6 +4205,8 @@ class GreatDocs:
                         body, self._config, canonical_base_url, output_rel_path.as_posix()
                     )
                     body = i18n.add_to_raw_page(body, self._config)
+                    if self._config.seo_enabled:
+                        body = seo_description.add_to_raw_page(body, self._default_description())
                     dest_path.write_text(body, encoding="utf-8")
                     raw_resource = output_rel_path.as_posix()
                     resources_to_add.append(raw_resource)
@@ -6230,6 +6233,32 @@ class GreatDocs:
 
     # Regex for detecting a top-level `freeze:` key in YAML frontmatter
     _FREEZE_FM_RE = re.compile(r"^freeze:\s+(.+)$", re.MULTILINE)
+
+    def _default_description(self) -> str | None:
+        """
+        Resolve the site's default search description
+
+        Returns
+        -------
+        :
+            The description as plain text, or `None` when neither
+            `seo.default_description` nor the package description is set.
+        """
+        package_description = self._get_package_metadata().get("description")
+        return seo_description.default_description(self._config, package_description)
+
+    def _write_page_descriptions(self) -> None:
+        """
+        Write a search description into every page in the build directory that lacks one
+
+        Each page gets its opening paragraph, or else the site's default
+        description. Run after every page is written and before rendering.
+        """
+        # A versioned build describes each version after resolving its version fences
+        if not self._config.seo_enabled or self._config.has_versions:
+            return
+        quarto_config = self._read_quarto_config(self.build_dir / "_quarto.yml")
+        seo_description.write_to_pages(self.build_dir, quarto_config, self._default_description())
 
     def _normalize_freeze_shorthand(self) -> list[str]:
         """Rewrite page-level `freeze: auto|true` to `execute: freeze: auto|true`.
@@ -11211,6 +11240,8 @@ title: "Authors and Citation"
         # appear on an auto-generated landing page; a user-authored source file
         # may override it via its frontmatter title.
         homepage_title = ""
+        # Description keys an authored source carries over to the homepage
+        homepage_description: dict[str, object] = {}
 
         if source_file is None:
             print("No index source file found (index.qmd, index.md, README.md, or README.rst)")
@@ -11241,6 +11272,9 @@ title: "Authors and Citation"
             source_title = source_fm.get("title", "")
             if isinstance(source_title, str) and source_title:
                 homepage_title = source_title
+            homepage_description = {
+                key: source_fm[key] for key in seo_description.PAGE_KEYS if key in source_fm
+            }
 
             # Copy images referenced in the source file to the build directory
             readme_content = self._rebase_source_references(readme_content, source_file, index_qmd)
@@ -11264,6 +11298,13 @@ title: "Authors and Citation"
                 first_h1 = _re.match(r"^#\s+(.+)$", readme_content.strip(), _re.MULTILINE)
                 if first_h1 and first_h1.group(1).strip().lower() == hero_name.strip().lower():
                     readme_content = readme_content.replace(first_h1.group(0), "", 1).lstrip("\n")
+
+        # The wrapper below puts markup above the README, so the README's own
+        # opening paragraph must be found before it is wrapped
+        if self._config.seo_enabled and not homepage_description:
+            opening = seo_description.first_paragraph(readme_content).text
+            if opening:
+                homepage_description = {"description-meta": seo_description.as_metadata(opening)}
 
         if source_file is not None:
             # Adjust heading levels: bump all headings up by one level. This
@@ -11298,13 +11339,13 @@ section.level2:first-of-type > h2:first-child,
 
 """
 
-        # Render the title line YAML-safe (quotes/colons in an authored title
+        # Render the authored keys YAML-safe (quotes/colons in an authored title
         # are escaped). Empty title renders as `title: ""`.
-        title_line = format_yaml({"title": homepage_title}).rstrip()
+        page_keys = format_yaml({"title": homepage_title, **homepage_description}).rstrip()
 
         if margin_content:
             qmd_content = f"""---
-{title_line}
+{page_keys}
 toc: false
 body-classes: "gd-homepage"
 ---
@@ -11317,7 +11358,7 @@ body-classes: "gd-homepage"
 """
         else:
             qmd_content = f"""---  # pragma: no cover
-{title_line}
+{page_keys}
 toc: false
 body-classes: "gd-homepage"
 ---
@@ -16091,6 +16132,7 @@ anchor-sections: true
 
             # Normalize freeze shorthand (runs right before render in a full build)
             self._normalize_freeze_shorthand()
+            self._write_page_descriptions()
 
             # Expand source-code: mock cells
             from great_docs._mock_code import process_directory as _expand_mock
@@ -16880,6 +16922,7 @@ anchor-sections: true
 
             # Normalize page-level freeze shorthand before Quarto render
             frozen_pages = self._normalize_freeze_shorthand()
+            self._write_page_descriptions()
             has_freeze_cache = self.layout.freeze_dir.is_dir()
 
             if frozen_pages or has_freeze_cache:
@@ -16975,6 +17018,7 @@ anchor-sections: true
                     badge_expiry_raw=self._config["new_is_old"],
                     config=self._config,
                     layout=self.layout,
+                    default_description=self._default_description(),
                 )
 
                 for warning in vb_result.get("warnings", []):

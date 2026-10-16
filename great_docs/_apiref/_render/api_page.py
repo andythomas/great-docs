@@ -5,6 +5,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, cast
 
 from great_docs._apiref._render.mixin_page import RenderPageMixin
+from great_docs._website.seo.description import metadata_value
 from great_docs.pandoc.blocks import (
     BlockContent,
     Blocks,
@@ -93,6 +94,9 @@ class __RenderAPIPage(RenderPageMixin, RenderBase):
         # Add a page override only when the site depth excludes members.
         if self.toc_depth < _MIN_MEMBER_TOC_DEPTH:
             metadata["toc-depth"] = _MIN_MEMBER_TOC_DEPTH
+        summary = self.page.summary
+        if description := metadata_value(summary.desc if summary else obj.docstring_subject):
+            metadata["description-meta"] = description
         return Meta(metadata)
 
     def render_body(self) -> BlockContent:
