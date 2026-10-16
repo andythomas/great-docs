@@ -43,7 +43,8 @@ function Meta(meta)
     if meta["gd-canonical"] == true then
         quarto.doc.include_text("in-header", '<link rel="canonical" href="' .. url .. '">')
     end
-    if meta["gd-og-url"] == true then
+    -- A page whose own header includes declare Open Graph tags keeps them alone
+    if meta["gd-og-url"] == true and meta["gd-own-social-cards"] ~= true then
         quarto.doc.include_text("in-header", '<meta property="og:url" content="' .. url .. '">')
     end
     return nil

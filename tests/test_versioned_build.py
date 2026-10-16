@@ -27,6 +27,7 @@ from great_docs._versioned_build import (
     _snapshot_cache_path,
     _validate_git_ref_is_tag,
     _version_build_dir,
+    _write_page_metadata,
     _write_snapshot_inventory,
     assemble_site,
     create_version_aliases,
@@ -281,13 +282,14 @@ class TestPreprocessVersion:
                 ),
             },
         )
-        config = cast("Config", SimpleNamespace(seo_enabled=True))
+        config = cast("Config", SimpleNamespace(seo_enabled=True, social_cards_enabled=False))
         versions = self._setup_versions()
 
         descriptions = []
         for i, entry in enumerate(versions[:2]):
             dest = tmp_path / f"build{i}"
             preprocess_version(source, dest, entry, versions, config=config)
+            _write_page_metadata(dest, config, None)
             front_matter = (dest / "page.qmd").read_text().split("---")[1]
             descriptions.append(parse_yaml(front_matter)["description-meta"])
 
@@ -1283,6 +1285,7 @@ class TestCanonicalUrlInjection:
         assert old["gd-base-url"] == "https://example.com/pkg/"
         assert old["website"]["site-url"] == "https://example.com/pkg/v/0.1/"
         assert "include-in-header" not in old.get("format", {}).get("html", {})
+
 
     def test_latest_version_keeps_the_filter(self, tmp_path: Path):
         latest = self._rewritten(tmp_path, _make_entry("0.2", latest=True), "0.2")

@@ -9,7 +9,6 @@ import pytest
 from great_docs._website.seo import description
 from great_docs._website.seo.description import (
     FirstParagraph,
-    add_to_page,
     add_to_raw_page,
     as_metadata,
     default_description,
@@ -17,7 +16,6 @@ from great_docs._website.seo.description import (
     metadata_value,
     page_description,
     plain_text,
-    write_to_pages,
 )
 
 LONG = "This sentence is comfortably longer than thirty characters."
@@ -132,60 +130,6 @@ def test_page_description(content: str, expected: str | None):
 
 def test_page_description_without_a_default():
     assert page_description("```\ncode\n```\n", None) is None
-
-
-def test_add_to_page_keeps_the_author_front_matter():
-    content = "---\ntitle: A  # a comment\n---\n\nBody\n"
-    assert add_to_page(content, "Desc") == (
-        "---\ndescription-meta: Desc\ntitle: A  # a comment\n---\n\nBody\n"
-    )
-
-
-def test_add_to_page_creates_front_matter():
-    assert add_to_page("Body\n", "Desc") == "---\ndescription-meta: Desc\n---\n\nBody\n"
-
-
-def test_add_to_page_quotes_yaml():
-    result = add_to_page("Body\n", "Colon: and \\*star")
-    front_matter, _ = description.split_front_matter(result)
-    assert front_matter == {"description-meta": "Colon: and \\*star"}
-
-
-def _write(root: Path, rel: str, text: str) -> Path:
-    path = root / rel
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
-def test_write_to_pages(tmp_path: Path):
-    prose = _write(tmp_path, "user-guide/intro.qmd", f"---\ntitle: Intro\n---\n\n{LONG}\n")
-    code = _write(tmp_path, "notes.md", "```\ncode\n```\n")
-    own = _write(tmp_path, "own.qmd", f"---\ndescription: Own\n---\n\n{LONG}\n")
-    partial = _write(tmp_path, "_partial.qmd", f"{LONG}\n")
-    hidden = _write(tmp_path, "_site/page.md", f"{LONG}\n")
-    skill = _write(tmp_path, "skill.md", f"{LONG}\n")
-    quarto_config = {"project": {"render": ["*.qmd", "*.md", "!skill.md"]}}
-
-    changed = write_to_pages(tmp_path, quarto_config, "Site default")
-
-    assert sorted(changed) == sorted([prose, code])
-    assert f"description-meta: {LONG}" in prose.read_text()
-    assert "description-meta: Site default" in code.read_text()
-    for untouched in (own, partial, hidden, skill):
-        assert "description-meta" not in untouched.read_text()
-
-
-def test_write_to_pages_defers_to_a_header_description(tmp_path: Path):
-    page = _write(tmp_path, "page.qmd", f"{LONG}\n")
-    quarto_config = {
-        "format": {
-            "html": {"include-in-header": [{"text": '<meta name="description" content="x">'}]}
-        }
-    }
-
-    assert write_to_pages(tmp_path, quarto_config, "Site default") == []
-    assert "description-meta" not in page.read_text()
 
 
 def test_add_to_raw_page():

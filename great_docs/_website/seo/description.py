@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from fnmatch import fnmatchcase
-from html import escape
+from html import escape, unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from yaml12 import format_yaml, parse_yaml
+from yaml12 import parse_yaml
 
 from .. import head
 
@@ -53,6 +52,9 @@ _TABLE = re.compile(r"(\||\+[-=]+\+)")
 _SHORTCODE = re.compile(r"\{\{<.*>\}\}\s*")
 
 _HEADER_DESCRIPTION = re.compile(r"""<meta\s+name=["']?description""")
+_HEADER_DESCRIPTION_CONTENT = re.compile(
+    r"""<meta\s+name=["']?description["']?\s+content=(?:"([^"]*)"|'([^']*)')"""
+)
 
 
 @dataclass(frozen=True)
@@ -314,73 +316,53 @@ def page_description(content: str, default: str | None) -> str | None:
     return as_metadata(text) if text else None
 
 
-def add_to_page(content: str, value: str) -> str:
+def applies(quarto_config: dict[str, Any], config: Config, project_dir: Path) -> bool:
     """
-    Add a `description-meta` entry to a page's front matter
-
-    The entry goes first, so the rest of the author's front matter, comments
-    included, is left as written.
+    Check whether pages get a generated `description-meta`
 
     Parameters
     ----------
-    content
-        The page source.
-    value
-        The escaped description.
-
-    Returns
-    -------
-    :
-        The page with the entry, in a new front matter block when it had none.
-    """
-    entry = format_yaml({"description-meta": value}).rstrip()
-    if content.startswith("---\n"):
-        return f"---\n{entry}\n{content[4:]}"
-    return f"---\n{entry}\n---\n\n{content}"
-
-
-def write_to_pages(
-    project_dir: Path, quarto_config: dict[str, Any], default: str | None
-) -> list[Path]:
-    """
-    Write `description-meta` into every page Quarto renders that lacks one
-
-    Pages with `description` or `description-meta` keep theirs. Nothing is
-    written when the site's header includes already declare a description.
-
-    Parameters
-    ----------
-    project_dir
-        The Quarto project directory.
     quarto_config
-        Contents of its `_quarto.yml`.
-    default
-        The site's default description as plain text.
+        Contents of `_quarto.yml`.
+    config
+        Project configuration.
+    project_dir
+        Base directory for relative header file paths.
 
     Returns
     -------
     :
-        The pages that were changed.
+        `True` when SEO is enabled and the site's header includes declare no
+        description.
     """
-    if head.includes_match(quarto_config, project_dir, _HEADER_DESCRIPTION):
-        return []
+    return config.seo_enabled and not head.includes_match(
+        quarto_config, project_dir, _HEADER_DESCRIPTION
+    )
 
-    render = quarto_config.get("project", {}).get("render", [])
-    excluded = [p[1:] for p in render if isinstance(p, str) and p.startswith("!")]
 
-    changed: list[Path] = []
-    for path in sorted([*project_dir.rglob("*.qmd"), *project_dir.rglob("*.md")]):
-        rel = path.relative_to(project_dir)
-        # Quarto renders no file whose path has a part starting with `_` or `.`
-        if any(part.startswith(("_", ".")) for part in rel.parts):
-            continue
-        if any(fnmatchcase(rel.as_posix(), pattern) for pattern in excluded):
-            continue
-        content = path.read_text(encoding="utf-8")
-        if value := page_description(content, default):
-            path.write_text(add_to_page(content, value), encoding="utf-8")
-            changed.append(path)
-    return changed
+def header_description(quarto_config: dict[str, Any], project_dir: Path) -> str | None:
+    """
+    Read the description that the site's header includes declare
+
+    Parameters
+    ----------
+    quarto_config
+        Contents of `_quarto.yml`.
+    project_dir
+        Base directory for relative header file paths.
+
+    Returns
+    -------
+    :
+        The description as a metadata value, or `None` when the header
+        includes declare none or it has no readable `content`.
+    """
+    includes = head.site_includes(quarto_config)
+    match = head.search_includes(includes, project_dir, _HEADER_DESCRIPTION_CONTENT)
+    if match is None:
+        return None
+    text = unescape(match.group(1) or match.group(2) or "").strip()
+    return as_metadata(text) if text else None
 
 
 def add_to_raw_page(html: str, default: str | None) -> str:

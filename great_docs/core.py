@@ -28,9 +28,10 @@ from ._utils import (
     validate_layout_outputs,
     validate_tree_symlinks,
 )
-from ._website import i18n, page_url, social_cards
+from ._website import i18n, page_metadata, page_url, social_cards
 from ._website.navigation import label as nav_label
 from ._website.seo import description as seo_description
+from ._website.seo import title as seo_title
 from .config import Config, create_default_config
 
 if TYPE_CHECKING:
@@ -6246,18 +6247,19 @@ class GreatDocs:
         package_description = self._get_package_metadata().get("description")
         return seo_description.default_description(self._config, package_description)
 
-    def _write_page_descriptions(self) -> None:
+    def _write_page_metadata(self) -> None:
         """
-        Write a search description into every page in the build directory that lacks one
+        Write search descriptions and social card options into the build directory's pages
 
-        Each page gets its opening paragraph, or else the site's default
-        description. Run after every page is written and before rendering.
+        Run after generating all pages and before rendering.
         """
-        # A versioned build describes each version after resolving its version fences
-        if not self._config.seo_enabled or self._config.has_versions:
+        # Versioned pages need descriptions from their resolved content.
+        if self._config.has_versions:
             return
         quarto_config = self._read_quarto_config(self.build_dir / "_quarto.yml")
-        seo_description.write_to_pages(self.build_dir, quarto_config, self._default_description())
+        page_metadata.write_to_pages(
+            self.build_dir, quarto_config, self._config, self._default_description()
+        )
 
     def _normalize_freeze_shorthand(self) -> list[str]:
         """Rewrite page-level `freeze: auto|true` to `execute: freeze: auto|true`.
@@ -15541,17 +15543,10 @@ anchor-sections: true
             The `<title>` element, or `None` unless the template is a string
             that contains `{page_title}` and excludes `$`.
         """
-        page_key = "{page_title}"
-        site_key = "{site_name}"
-
-        if not isinstance(template, str):
+        if not seo_title.is_valid(template):
             return None
 
-        # `$` opens a Pandoc template expression and would corrupt the partial.
-        if "$" in template or page_key not in template:
-            return None
-
-        titled = template.replace(page_key, "$pagetitle$").replace(site_key, "$title-prefix$")
+        titled = seo_title.apply(template, "$pagetitle$", "$title-prefix$")
         return f"<title>$if(title-prefix)${titled}$else$$pagetitle$$endif$</title>"
 
     def _write_metadata_partial(self, config: dict) -> None:
@@ -15599,7 +15594,7 @@ anchor-sections: true
             partial = partial.rstrip("\n") + "\n" + meta_tag.replace("$", "$$") + "\n"
 
         if social_cards.applies(config, self._config, self.build_dir):
-            partial = partial.rstrip("\n") + "\n" + social_cards.OG_TYPE_TAG + "\n"
+            partial = partial.rstrip("\n") + "\n" + social_cards.OG_TYPE_PARTIAL + "\n"
 
         if partial == bundled:
             return
@@ -16144,7 +16139,7 @@ anchor-sections: true
 
             # Normalize freeze shorthand (runs right before render in a full build)
             self._normalize_freeze_shorthand()
-            self._write_page_descriptions()
+            self._write_page_metadata()
 
             # Expand source-code: mock cells
             from great_docs._mock_code import process_directory as _expand_mock
@@ -16934,7 +16929,7 @@ anchor-sections: true
 
             # Normalize page-level freeze shorthand before Quarto render
             frozen_pages = self._normalize_freeze_shorthand()
-            self._write_page_descriptions()
+            self._write_page_metadata()
             has_freeze_cache = self.layout.freeze_dir.is_dir()
 
             if frozen_pages or has_freeze_cache:

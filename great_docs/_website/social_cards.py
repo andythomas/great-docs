@@ -5,6 +5,10 @@ Generate social card tags unless the site's header includes already contain
 an Open Graph property. Quarto does not check for existing tags, so this
 avoids duplicates. Configure Quarto's `open-graph` and `twitter-card` options
 for most tags, and add the page type and preferred URL separately.
+
+Use page front matter to match card titles and descriptions to the page's
+`<title>` and meta description. Otherwise Quarto uses its own title format
+and the page's first paragraph.
 """
 
 from __future__ import annotations
@@ -14,11 +18,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import head
+from .seo import description
+from .seo import title as seo_title
 
 if TYPE_CHECKING:
     from ..config import Config
 
+PAGE_KEYS = ("open-graph", "twitter-card")
+"""Front matter keys that set a page's own card options"""
+
 OG_TYPE_TAG = '<meta property="og:type" content="website">'
+
+OWN_CARDS_KEY = "gd-own-social-cards"
+"""Front matter key marking a page whose own header includes declare its card tags"""
+
+OG_TYPE_PARTIAL = f"$if({OWN_CARDS_KEY})$$else${OG_TYPE_TAG}$endif$"
+"""The `og:type` tag for the metadata partial, left out of pages with their own tags"""
 _OG_PROPERTY = re.compile(r"""property=["']?og:""")
 
 
@@ -99,3 +114,127 @@ def register(
     website = quarto_config.setdefault("website", {})
     website["open-graph"] = open_graph or True
     website["twitter-card"] = twitter_card or True
+
+
+def page_title(title: object, site_name: str | None, config: Config) -> str | None:
+    """
+    Build the card title that matches a page's `<title>`
+
+    Parameters
+    ----------
+    title
+        The page's `title` front matter, which may have any type.
+    site_name
+        The site's `website.title`.
+    config
+        Project configuration.
+
+    Returns
+    -------
+    :
+        The title as a metadata value, or `None` when Quarto's own title
+        already matches `<title>`. Use the site name for an empty title to
+        avoid Quarto's leading dash.
+    """
+    if not isinstance(title, str) or not site_name:
+        return None
+    if not title.strip():
+        return description.as_metadata(site_name)
+    template = seo_title.template(config)
+    if template is None:
+        return None
+    return seo_title.apply(
+        template, title, description.as_metadata(site_name), escape=description.as_metadata
+    )
+
+
+def declares_own_tags(front_matter: dict[str, Any], page_dir: Path) -> bool:
+    """
+    Check whether a page's own header includes declare an Open Graph property
+
+    Parameters
+    ----------
+    front_matter
+        The page's front matter.
+    page_dir
+        Base directory for the page's relative header file paths.
+
+    Returns
+    -------
+    :
+        `True` when its `include-in-header` or `header-includes` declares one.
+    """
+    page_format = front_matter.get("format")
+    html_format = page_format.get("html") if isinstance(page_format, dict) else None
+    for includes in (
+        front_matter.get("include-in-header"),
+        html_format.get("include-in-header") if isinstance(html_format, dict) else None,
+    ):
+        if includes is not None and head.search_includes(includes, page_dir, _OG_PROPERTY):
+            return True
+    texts = front_matter.get("header-includes")
+    if not isinstance(texts, list):
+        texts = [texts]
+    return any(isinstance(text, str) and _OG_PROPERTY.search(text) for text in texts)
+
+
+def page_entries(
+    content: str,
+    page_dir: Path,
+    site_name: str | None,
+    config: Config,
+    default: str | None,
+    header_description: str | None = None,
+) -> dict[str, Any]:
+    """
+    Choose the card options Python writes into a page's front matter
+
+    Parameters
+    ----------
+    content
+        The page source.
+    page_dir
+        Directory holding the page.
+    site_name
+        The site's `website.title`.
+    config
+        Project configuration.
+    default
+        The site's default description as plain text.
+    header_description
+        The description the site's header includes declare, as a metadata value.
+
+    Returns
+    -------
+    :
+        `open-graph` and `twitter-card` entries that each hold a `title`, a
+        `description` or both. A page whose own header includes declare Open
+        Graph tags instead gets entries that switch the generated tags off.
+        Empty when the page sets either card key itself or there is nothing to
+        write.
+    """
+    front_matter, _ = description.split_front_matter(content)
+    front_matter = front_matter or {}
+    if any(key in front_matter for key in PAGE_KEYS):
+        return {}
+    if declares_own_tags(front_matter, page_dir):
+        # Quarto would add its tags beside the page's own and overwrite its `og:title`
+        entries: dict[str, Any] = {OWN_CARDS_KEY: True}
+        if "website" not in front_matter:
+            entries["website"] = {"open-graph": False, "twitter-card": False}
+        return entries
+
+    card: dict[str, str] = {}
+    if value := page_title(front_matter.get("title"), site_name, config):
+        card["title"] = value
+    # A page's own `description` reaches its card unaided; `description-meta` does not
+    own = front_matter.get("description-meta")
+    if isinstance(own, str):
+        value = own
+    elif header_description and "description" not in front_matter:
+        value = header_description
+    else:
+        value = description.page_description(content, default)
+    if value:
+        card["description"] = value
+    return {"open-graph": card, "twitter-card": dict(card)} if card else {}

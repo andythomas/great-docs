@@ -14,6 +14,62 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def search_includes(
+    includes: Any, base_dir: Path, pattern: re.Pattern[str]
+) -> re.Match[str] | None:
+    """
+    Find the first match for `pattern` in an `include-in-header` value
+
+    Parameters
+    ----------
+    includes
+        An `include-in-header` value: a file path, an entry with `text` or
+        `file`, or a list of them.
+    base_dir
+        Base directory for relative header file paths.
+    pattern
+        The markup to look for.
+
+    Returns
+    -------
+    :
+        The match in an inline entry or a readable header file, or `None`.
+    """
+    if not isinstance(includes, list):
+        includes = [includes]
+    for item in includes:
+        if isinstance(item, dict):
+            text = item.get("text")
+            path = item.get("file")
+        else:
+            text, path = None, item
+        if text is None and path is not None:
+            try:
+                text = (base_dir / str(path)).read_text(encoding="utf-8")
+            except OSError:
+                continue
+        if isinstance(text, str) and (match := pattern.search(text)):
+            return match
+    return None
+
+
+def site_includes(quarto_config: dict[str, Any]) -> Any:
+    """
+    Return the site's `include-in-header` value
+
+    Parameters
+    ----------
+    quarto_config
+        Contents of `_quarto.yml`.
+
+    Returns
+    -------
+    :
+        The value, or an empty list when the site has none.
+    """
+    return quarto_config.get("format", {}).get("html", {}).get("include-in-header", [])
+
+
 def includes_match(
     quarto_config: dict[str, Any], project_dir: Path, pattern: re.Pattern[str]
 ) -> bool:
@@ -34,23 +90,7 @@ def includes_match(
     :
         `True` when an inline entry or a readable header file matches.
     """
-    includes = quarto_config.get("format", {}).get("html", {}).get("include-in-header", [])
-    if not isinstance(includes, list):
-        includes = [includes]
-    for item in includes:
-        if isinstance(item, dict):
-            text = item.get("text")
-            path = item.get("file")
-        else:
-            text, path = None, item
-        if text is None and path is not None:
-            try:
-                text = (project_dir / str(path)).read_text(encoding="utf-8")
-            except OSError:
-                continue
-        if text and pattern.search(text):
-            return True
-    return False
+    return search_includes(site_includes(quarto_config), project_dir, pattern) is not None
 
 
 def insert(html: str, tag: str, *, unless: str) -> str:

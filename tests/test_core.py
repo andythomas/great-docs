@@ -2672,18 +2672,21 @@ class TestPageDescriptions:
         code = gd.build_dir / "code.qmd"
         code.write_text("```python\nx = 1\n```\n", encoding="utf-8")
 
-        gd._write_page_descriptions()
+        gd._write_page_metadata()
 
         assert f"description-meta: {self.LONG}" in prose.read_text(encoding="utf-8")
         assert "description-meta: Site default" in code.read_text(encoding="utf-8")
 
-    def test_nothing_is_written_when_seo_is_disabled(self, tmp_path, monkeypatch):
+    def test_nothing_is_written_when_seo_and_social_cards_are_disabled(
+        self, tmp_path, monkeypatch
+    ):
         gd = self._gd(tmp_path, monkeypatch)
         _patch_cfg(monkeypatch, gd, "seo_enabled", False)
+        _patch_cfg(monkeypatch, gd, "social_cards_enabled", False)
         page = gd.build_dir / "guide.qmd"
         page.write_text(f"{self.LONG}\n", encoding="utf-8")
 
-        gd._write_page_descriptions()
+        gd._write_page_metadata()
 
         assert "description-meta" not in page.read_text(encoding="utf-8")
 
@@ -2693,7 +2696,7 @@ class TestPageDescriptions:
         page = gd.build_dir / "guide.qmd"
         page.write_text(f"{self.LONG}\n", encoding="utf-8")
 
-        gd._write_page_descriptions()
+        gd._write_page_metadata()
 
         assert "description-meta" not in page.read_text(encoding="utf-8")
 
